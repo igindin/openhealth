@@ -23,6 +23,14 @@ AUTHORIZATION_URL = "https://api.prod.whoop.com/oauth/oauth2/auth"
 TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
 API_BASE_URL = "https://api.prod.whoop.com/developer/v2"
 WHOOP_SOURCE_ID = "whoop-live"
+# WHOOP sits behind Cloudflare, which bans the default urllib User-Agent
+# (Error 1010 "browser_signature_banned"). Send a browser-like UA so OAuth
+# token exchange and API calls are not blocked at the WAF.
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/123.0.0.0 Safari/537.36"
+)
 DEFAULT_SCOPES = (
     "read:profile",
     "read:recovery",
@@ -932,7 +940,8 @@ def _request_json(
     data: Optional[bytes] = None,
     path_hint: str = "",
 ) -> Dict[str, Any]:
-    headers = headers or {}
+    headers = dict(headers or {})
+    headers.setdefault("User-Agent", USER_AGENT)
     request = Request(url, data=data, headers=headers, method=method)
     try:
         with urlopen(request, timeout=30) as response:
