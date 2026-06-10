@@ -211,7 +211,42 @@ def build_biomarkers(con: sqlite3.Connection) -> list[dict]:
             "trend": [v],
             "discuss": discuss,
         })
-    return out
+
+    # Лабораторные маркеры из загруженных панелей (lab-panel): реальные значения
+    # с собственными референсами/флагами (например, панель 2024-07-11). Отличаем
+    # от микробиоты по наличию reference_low в payload.
+    lab_rows = con.execute(
+        "SELECT payload_json FROM records WHERE record_type='Observation' "
+        "AND json_extract(payload_json,'$.observation_kind')='test_result' "
+        "AND json_extract(payload_json,'$.reference_low') IS NOT NULL "
+        "ORDER BY rowid"
+    ).fetchall()
+    lab_out = []
+    for (payload,) in lab_rows:
+        p = json.loads(payload)
+        v = p.get("value")
+        if v is None:
+            continue
+        lo = p.get("reference_low")
+        hi = p.get("reference_high")
+        flag = (p.get("flag") or "").upper()
+        status = "high" if flag == "H" else ("low" if flag == "L" else "optimal")
+        lab_out.append({
+            "name": p.get("title") or p.get("metric_name"),
+            "value": v,
+            "unit": p.get("unit", ""),
+            "refMin": lo,
+            "refMax": hi,
+            "optMin": lo,
+            "optMax": hi,
+            "status": status,
+            "grade": "C5",
+            "trend": [v],
+            "discuss": p.get("summary") or "",
+            "date": p.get("date"),
+        })
+    # Лабораторные — впереди (свежие, измеренные), микробиота Atlas — следом.
+    return lab_out + out
 
 
 def build_connections(con: sqlite3.Connection) -> dict:
