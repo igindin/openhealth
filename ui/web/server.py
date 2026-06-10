@@ -1866,6 +1866,15 @@ class BridgeHandler(SimpleHTTPRequestHandler):
 
 
 def main(argv=None) -> None:
+    # macOS python.org-сборки часто без CA-бандла для ssl → исходящий HTTPS
+    # (погода/Open-Meteo, WHOOP token-exchange) падал бы на CERTIFICATE_VERIFY_FAILED
+    # и коннекторы молча возвращали бы None. Подставляем рабочий бандл до старта.
+    try:
+        from openhealth._certs import ensure_ca_certs
+        ensure_ca_certs()
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(
         description="OpenHealth dashboard bridge: static files + local agent runner (127.0.0.1 only)."
     )

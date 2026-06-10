@@ -123,6 +123,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # CA-бандл для исходящего HTTPS (WHOOP token-exchange/sync, Withings) до сети.
+    try:
+        from ._certs import ensure_ca_certs
+        ensure_ca_certs()
+    except Exception:
+        pass
     parser = build_parser()
     args = parser.parse_args(argv)
     repo_root = Path(args.repo_root).resolve()
