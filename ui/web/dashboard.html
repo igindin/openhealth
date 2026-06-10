@@ -9845,7 +9845,9 @@ const titles = {
   reports: "Отчёты",
   digests: "Дайджесты",
   diagnostics: "Диагностика",
-  settings: "Настройки"
+  settings: "Настройки",
+  medications: "Препараты и БАДы",
+  methodology: "Методологии"
 };
 
 // === Переиспользуемый модал ================================================
@@ -10499,73 +10501,26 @@ function go(z) {
   // Быстрая навигация: прерываем переход в полёте, иначе две зоны остаются .on.
   gsap.killTweensOf('.zone');
 
-  gsap.to(activeSection || targetSection, {
-    opacity: 0,
-    y: 10,
-    duration: activeSection ? 0.25 : 0,
-    ease: "power2.in",
-    onComplete: () => {
-      document.querySelectorAll('.zone.on').forEach(s => {
-        s.classList.remove('on');
-        gsap.set(s, { clearProps: 'opacity,transform' });
-      });
-      targetSection.classList.add('on');
-
-      // Пустой NodeList (зона рендерится ниже) — GSAP спамит warning, обходим.
-      const cards = Array.from(targetSection.querySelectorAll('.card-outer'));
-      if (cards.length) gsap.set(cards, { opacity: 0, y: 20 });
-
-      gsap.to(targetSection, {
-        opacity: 1,
-        y: 0,
-        duration: 0.1
-      });
-
-      if (cards.length) gsap.to(cards, {
-        opacity: 1,
-        y: 0,
-        duration: 0.5,
-        stagger: 0.06,
-        ease: "power2.out"
-      });
-      
-      if (z === 'today') {
-        animateTodayEnter();
-      } else if (z === 'whoop-overview') {
-        animateWhoopRings();
-      } else if (z === 'pulse') {
-        initPulseScreen();
-      } else if (z === 'trends') {
-        initTrendsScreen();
-      } else if (z === 'reports') {
-        renderReport(true);
-      } else if (z === 'biomarkers') {
-        animateBiomarkersEnter();
-      } else if (z === 'timeline') {
-        renderTimeline();
-      } else if (z === 'journal') {
-        loadJournalCandidates();
-      } else if (z === 'diagnostics') {
-        renderDiagnostics();
-      } else if (z === 'settings') {
-        renderSettingsScreen();
-      } else if (z === 'sync') {
-        renderSyncScreen();
-      } else if (z === 'dna') {
-        renderDnaScreen();
-      } else if (z === 'vaccination') {
-        renderVaccinationScreen();
-      } else if (z === 'protocols') {
-        renderProtocolsScreen();
-      } else if (z === 'workouts') {
-        renderWorkoutsScreen();
-      } else if (z === 'medications') {
-        renderMedications();
-      } else if (z === 'methodology') {
-        renderMethodology();
-      }
-    }
+  // Переключение зоны и РЕНДЕР контента — синхронно. Раньше рендер жил в onComplete
+  // gsap-твина и не срабатывал при заморозке rAF (фоновая вкладка / reduced-motion /
+  // слабое железо) — отсюда «пустые» ДНК/Препараты/Прививки. Контент больше не зависит
+  // от завершения анимации; анимация осталась только косметикой.
+  document.querySelectorAll('.zone.on').forEach(s => {
+    s.classList.remove('on');
+    gsap.set(s, { clearProps: 'opacity,transform' });
   });
+  targetSection.classList.add('on');
+  enterZone(z);
+
+  // Косметический вход. Состояние покоя = видимое (clearProps в конце), поэтому
+  // замороженный тикер не оставит зону пустой; setTimeout — страховка для throttled-вкладок.
+  const cards = Array.from(targetSection.querySelectorAll('.card-outer'));
+  gsap.fromTo(targetSection, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.25, ease: 'power2.out', clearProps: 'opacity,transform' });
+  if (cards.length) gsap.fromTo(cards, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5, stagger: 0.06, ease: 'power2.out', clearProps: 'opacity,transform' });
+  setTimeout(() => {
+    gsap.set(targetSection, { clearProps: 'opacity,transform' });
+    if (cards.length) gsap.set(cards, { clearProps: 'opacity,transform' });
+  }, 520);
 
   document.querySelectorAll('aside nav a').forEach(a => {
     a.classList.toggle('active', a.dataset.z === z);
@@ -10573,6 +10528,46 @@ function go(z) {
   syncNavIcons();
 
   document.getElementById('zoneTitle').textContent = titles[z] || "OpenHealth";
+}
+
+// Рендер контента зоны по её ключу. Вызывается СИНХРОННО из go() (не из onComplete
+// анимации), чтобы зоны с ленивым рендером не оставались пустыми при заморозке rAF.
+function enterZone(z) {
+  if (z === 'today') {
+    animateTodayEnter();
+  } else if (z === 'whoop-overview') {
+    animateWhoopRings();
+  } else if (z === 'pulse') {
+    initPulseScreen();
+  } else if (z === 'trends') {
+    initTrendsScreen();
+  } else if (z === 'reports') {
+    renderReport(true);
+  } else if (z === 'biomarkers') {
+    animateBiomarkersEnter();
+  } else if (z === 'timeline') {
+    renderTimeline();
+  } else if (z === 'journal') {
+    loadJournalCandidates();
+  } else if (z === 'diagnostics') {
+    renderDiagnostics();
+  } else if (z === 'settings') {
+    renderSettingsScreen();
+  } else if (z === 'sync') {
+    renderSyncScreen();
+  } else if (z === 'dna') {
+    renderDnaScreen();
+  } else if (z === 'vaccination') {
+    renderVaccinationScreen();
+  } else if (z === 'protocols') {
+    renderProtocolsScreen();
+  } else if (z === 'workouts') {
+    renderWorkoutsScreen();
+  } else if (z === 'medications') {
+    renderMedications();
+  } else if (z === 'methodology') {
+    renderMethodology();
+  }
 }
 
 // Активный пункт меню — duotone-вес иконки, остальные — light (data-icon на <a>).
