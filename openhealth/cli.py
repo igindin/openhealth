@@ -1,6 +1,7 @@
 import argparse
 import json
 import secrets
+from dataclasses import replace
 from pathlib import Path
 from typing import List, Optional
 
@@ -40,6 +41,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     whoop_auth = subparsers.add_parser("whoop-auth-url", help="Generate a WHOOP OAuth authorization URL.")
     whoop_auth.add_argument("--state", help="Eight-character CSRF state. Generated automatically if omitted.")
+    whoop_auth.add_argument(
+        "--scope",
+        action="append",
+        metavar="SCOPE",
+        help=(
+            "WHOOP OAuth scope to request (repeatable). Overrides "
+            "OPENHEALTH_WHOOP_SCOPES and the built-in default set. Use this "
+            "when your app is not granted every default scope."
+        ),
+    )
 
     whoop_exchange = subparsers.add_parser("whoop-exchange-code", help="Exchange a WHOOP OAuth code for tokens.")
     whoop_exchange.add_argument("--code", required=True, help="Authorization code returned by WHOOP.")
@@ -132,8 +143,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         result = refresh_contexts(paths, index)
     elif args.command == "whoop-auth-url":
         credentials = load_credentials_from_env()
+        if args.scope:
+            credentials = replace(credentials, scopes=tuple(args.scope))
         state = args.state or secrets.token_hex(4)
-        result = {"authorization_url": build_authorization_url(credentials, state), "state": state}
+        result = {
+            "authorization_url": build_authorization_url(credentials, state),
+            "state": state,
+            "scopes": list(credentials.scopes),
+        }
     elif args.command == "whoop-exchange-code":
         paths = ensure_repo_structure(repo_root)
         credentials = load_credentials_from_env()

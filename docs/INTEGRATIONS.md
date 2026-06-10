@@ -79,10 +79,10 @@ Create credentials:
 
 1. Sign in at https://developer-dashboard.whoop.com/ with your WHOOP account (the dashboard where apps are created).
 2. Create a Team (once), then **Create App** (up to 5 apps per account).
-3. Scopes: `read:profile`, `read:recovery`, `read:cycles`, `read:sleep` (`read:workout` optional).
+3. Scopes: `read:profile`, `read:recovery`, `read:cycles`, `read:sleep` (`read:workout` optional). If your app is **not** granted some of these (e.g. no `read:profile` / `read:body_measurement`), request only the granted ones — otherwise the authorize step returns `invalid_scope`. Set `OPENHEALTH_WHOOP_SCOPES` (space- or comma-separated) or pass `--scope` to `whoop-auth-url`, and run `whoop-sync --no-profile --no-body-measurements` to skip endpoints you lack access to.
 4. Add a redirect URL, e.g. `http://localhost:8765/callback` — it must match the OAuth request exactly.
 5. Copy Client ID and Client Secret (the secret is server-side only).
-6. Export `OPENHEALTH_WHOOP_CLIENT_ID`, `OPENHEALTH_WHOOP_CLIENT_SECRET`, `OPENHEALTH_WHOOP_REDIRECT_URI`, then run `openhealth whoop-auth-url` and `openhealth whoop-exchange-code` to finish the flow; `openhealth whoop-sync` pulls data.
+6. Export `OPENHEALTH_WHOOP_CLIENT_ID`, `OPENHEALTH_WHOOP_CLIENT_SECRET`, `OPENHEALTH_WHOOP_REDIRECT_URI` (optionally `OPENHEALTH_WHOOP_SCOPES`), then run `openhealth whoop-auth-url` and `openhealth whoop-exchange-code` to finish the flow; `openhealth whoop-sync` pulls data.
 
 Rate limits: per-app defaults around 100 req/min and 10,000/day — a daily sync uses a handful of calls.
 

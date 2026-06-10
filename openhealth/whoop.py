@@ -86,6 +86,17 @@ class WhoopApiError(RuntimeError):
     """Raised when WHOOP returns an unexpected response."""
 
 
+def parse_scopes(raw: Optional[str]) -> Tuple[str, ...]:
+    """Parse a comma- or space-separated scope string into a tuple.
+
+    Empty / missing input yields an empty tuple so callers can fall back to
+    ``DEFAULT_SCOPES``.
+    """
+    if not raw:
+        return ()
+    return tuple(token for token in raw.replace(",", " ").split() if token)
+
+
 def load_credentials_from_env() -> WhoopCredentials:
     client_id = os.getenv("OPENHEALTH_WHOOP_CLIENT_ID")
     client_secret = os.getenv("OPENHEALTH_WHOOP_CLIENT_SECRET")
@@ -101,7 +112,17 @@ def load_credentials_from_env() -> WhoopCredentials:
     ]
     if missing:
         raise WhoopApiError("Missing WHOOP credentials in environment: %s" % ", ".join(missing))
-    return WhoopCredentials(client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri)
+    # Not every WHOOP app is granted the full default scope set (e.g. apps
+    # without read:profile / read:body_measurement). OPENHEALTH_WHOOP_SCOPES
+    # lets the user request exactly the scopes their app allows and avoid an
+    # invalid_scope error at the authorize step.
+    scopes = parse_scopes(os.getenv("OPENHEALTH_WHOOP_SCOPES")) or DEFAULT_SCOPES
+    return WhoopCredentials(
+        client_id=client_id,
+        client_secret=client_secret,
+        redirect_uri=redirect_uri,
+        scopes=scopes,
+    )
 
 
 def build_authorization_url(credentials: WhoopCredentials, state: str) -> str:
