@@ -252,6 +252,7 @@ def parse_lab_panel(
     records: List[Dict[str, Any]] = []
     abnormal: List[str] = []
     critical_flags: List[str] = []
+    dropped_implausible = 0
 
     note = ContextNote(
         id="note-%s-labpanel" % source_id,
@@ -277,6 +278,20 @@ def parse_lab_panel(
         unit = marker.get("unit")
         report_low = _to_float(marker.get("reference_low"))
         report_high = _to_float(marker.get("reference_high"))
+
+        # Gate правдоподобия для нестрогого извлечения (текст/PDF): значение
+        # дальше чем в 8x за напечатанным референсом почти наверняка ошибка парса
+        # (не тот столбец/число), как 'натрий 11' при норме 135-145. Не заносим мусор.
+        if (extraction_quality != "structured" and value is not None
+                and (report_low is not None or report_high is not None)):
+            if ((report_high is not None and report_high > 0 and value > report_high * 8)
+                    or (report_low is not None and report_low > 0 and value < report_low / 8)):
+                dropped_implausible += 1
+                parser_notes.append(
+                    "Маркер '%s'=%s отброшен как неправдоподобный (далеко за референсом) "
+                    "— вероятна ошибка извлечения из PDF; нужен vision-парс." % (name, value)
+                )
+                continue
 
         assessment = reference_ranges.assess_marker(
             name=name, value=value, unit=unit, sex=sex,
@@ -320,6 +335,12 @@ def parse_lab_panel(
 
         if assessment is None:
             parser_notes.append("Marker '%s' not recognised; stored raw without reference range." % name)
+
+    if dropped_implausible:
+        parser_notes.append(
+            "Извлечение PDF низкого качества: отброшено %d неправдоподобных маркеров "
+            "— рекомендуется vision-парс файла, иначе данные неполные." % dropped_implausible
+        )
 
     # Surface abnormal / critical findings as a review prompt, never a diagnosis.
     if critical_flags:
