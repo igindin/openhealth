@@ -11389,6 +11389,25 @@ function renderDnaScreen() {
           <p class="step-text" style="margin:0 0 6px;">Разбор генетических данных — только через агента с твоим файлом и твоим контекстом: популяционные интерпретации без контекста вредны — один и тот же вариант значит разное в зависимости от образа жизни, среды и остального генома.</p>
           <p class="cmd-hint">Агент сформулирует приоритеты для образа жизни как гипотезы C1-C2, не как диагнозы.</p>
 
+          ${(function () {
+            const v = DATA.dna || [];
+            if (!v.length) return '';
+            const rows = v.map(d => `
+              <tr>
+                <td style="font-weight:600;">${escapeHtml(d.gene)}</td>
+                <td style="font-family:var(--mono);">${escapeHtml(d.genotype)}</td>
+                <td>${escapeHtml(d.trait)}</td>
+                <td style="color:var(--mut);">${escapeHtml(d.note)}</td>
+                <td><span class="biomarker-grade">${escapeHtml(d.grade)}</span></td>
+              </tr>`).join('');
+            return `
+              <div style="font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin:18px 0 8px;">Твои ключевые варианты (${v.length}) · реальный генотип из файла</div>
+              <div style="overflow-x:auto;"><table class="biomarker-table"><thead><tr>
+                <th>Ген</th><th>Генотип</th><th>Признак</th><th>Трактовка (осторожно)</th><th>Доверие</th>
+              </tr></thead><tbody>${rows}</tbody></table></div>
+              <p class="cmd-hint" style="margin-top:8px;">Это твои фактические генотипы; трактовка зависит от контекста, не диагноз. Сырой файл — локально, никуда не уходит.</p>`;
+          })()}
+
           <div style="display:flex; justify-content:flex-end; margin-top:16px;">
             <button class="btn-primary agent-btn" id="dnaAgentBtn" onclick="runDnaAgent()">
               <i class="ph-light ph-sparkle"></i> Разобрать с агентом

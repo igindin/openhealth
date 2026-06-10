@@ -863,6 +863,81 @@ def build_correlations_block(con: sqlite3.Connection) -> dict:
     }
 
 
+# Доказательные образ-жизненные варианты для зоны ДНК. Показываем РЕАЛЬНЫЙ генотип
+# (факт из raw-файла) + осторожную трактовку с C-грейдом. Не диагноз. Где ориентация
+# аллеля стренд-зависима (MTHFR/VDR) — направленную трактовку не утверждаем (interp=None).
+_DNA_SPEC = [
+    ("rs762551", "CYP1A2", "Метаболизм кофеина", "C3",
+     {"AA": "быстрый метаболизм кофеина", "AC": "промежуточный", "CC": "медленный — кофе действует сильнее/дольше"}),
+    ("rs4988235", "MCM6/LCT", "Переносимость лактозы", "C4",
+     {"AA": "лактаза сохраняется (молоко обычно ок)", "AG": "сниженная переносимость", "GG": "склонность к непереносимости лактозы"}),
+    ("rs1815739", "ACTN3", "Тип мышечных волокон", "C3",
+     {"CC": "есть α-актинин-3 — уклон в силу/спринт", "CT": "смешанный тип", "TT": "нет α-актинина-3 — уклон в выносливость"}),
+    ("rs9939609", "FTO", "Аппетит / склонность к весу", "C3",
+     {"TT": "нет рискового аллеля", "AT": "один рисковый аллель (промежуточно)", "AA": "два рисковых — выше тяга к еде"}),
+    ("rs1800562", "HFE C282Y", "Перегрузка железом", "C3",
+     {"GG": "нет мутации C282Y — гемохроматоз маловероятен", "AG": "носитель C282Y", "AA": "C282Y/C282Y — риск перегрузки железом"}),
+    ("rs1799945", "HFE H63D", "Перегрузка железом", "C3",
+     {"CC": "нет мутации H63D", "CG": "носитель H63D", "GG": "H63D/H63D"}),
+    ("rs671", "ALDH2", "Метаболизм алкоголя", "C4",
+     {"GG": "нормальный — без флаш-реакции", "AG": "сниженный — флаш, выше вред алкоголя", "AA": "очень низкий"}),
+    ("rs4680", "COMT Val158Met", "Дофамин / стресс", "C2",
+     {"GG": "Val/Val — быстрый распад дофамина", "AG": "Val/Met — промежуточно", "AA": "Met/Met — медленный распад (стресс-чувствительность, фокус)"}),
+    ("rs7903146", "TCF7L2", "Регуляция глюкозы", "C3",
+     {"CC": "нет рискового T — благоприятно", "CT": "один рисковый T", "TT": "два рисковых T — выше риск по глюкозе"}),
+    ("rs6265", "BDNF Val66Met", "Нейропластичность", "C2",
+     {"CC": "Val/Val (типичный)", "CT": "Val/Met", "TT": "Met/Met"}),
+    ("rs1801133", "MTHFR C677T", "Фолатный обмен", "C2", None),
+    ("rs1801131", "MTHFR A1298C", "Фолатный обмен", "C2", None),
+    ("rs2228570", "VDR FokI", "Рецептор витамина D", "C1", None),
+]
+
+
+def build_dna(con: sqlite3.Connection) -> list[dict]:
+    """Read the raw genotype file (local) and surface real genotypes for a
+    curated set of well-established lifestyle variants. Factual call + cautious
+    note + C-grade. Never a diagnosis; strand-ambiguous loci show no direction."""
+    row = con.execute(
+        "SELECT payload_json FROM sources WHERE source_id LIKE '%genotype%' LIMIT 1"
+    ).fetchone()
+    if not row:
+        return []
+    files = json.loads(row[0]).get("files") or []
+    path = files[0] if files else None
+    if not path or not os.path.exists(path):
+        return []
+    want = {s[0] for s in _DNA_SPEC}
+    found: dict[str, str] = {}
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if not line or line[0] != "r":
+                    continue
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 4:
+                    continue
+                if parts[0] in want:
+                    found[parts[0]] = parts[3].strip()
+                    if len(found) == len(want):
+                        break
+    except OSError:
+        return []
+    out = []
+    for rsid, gene, trait, grade, interp in _DNA_SPEC:
+        gt = found.get(rsid)
+        if not gt:
+            continue
+        if interp:
+            note = interp.get(gt) or next(
+                (v for k, v in interp.items() if sorted(k) == sorted(gt)), None
+            ) or "вариант определён; трактовка — у агента"
+        else:
+            note = "трактовка зависит от ориентации аллеля/контекста — разбор у агента"
+        out.append({"rsid": rsid, "gene": gene, "trait": trait,
+                    "genotype": gt, "note": note, "grade": grade})
+    return out
+
+
 def build_payload(db_path: Path) -> dict:
     con = sqlite3.connect(str(db_path))
     try:
@@ -875,6 +950,7 @@ def build_payload(db_path: Path) -> dict:
         lab_block = build_lab_block(con)
         quality_block = build_quality_block(con)
         correlations_block = build_correlations_block(con)
+        dna_block = build_dna(con)
     finally:
         con.close()
 
@@ -883,6 +959,8 @@ def build_payload(db_path: Path) -> dict:
     payload.update(readiness)
     payload["biomarkers"] = biomarkers
     payload["biomarkersConnected"] = bool(biomarkers)
+    if dna_block:
+        payload["dna"] = dna_block
     payload["connections"] = connections
     payload["insights"] = insights_block.get("insights", [])
     payload["protocols"] = insights_block.get("protocols", [])
