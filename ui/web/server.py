@@ -848,7 +848,9 @@ def handle_agent_request(payload: dict, base_dir: Path) -> "tuple":
             # становится контекстом следующих разборов (контур замыкается).
             saved = save_research_result(base_dir, param, result)
             if saved:
-                result["saved_as"] = saved
+                # необязательное поле: имя сохранённого файла (контракт ответа
+                # /api/agent не меняется, UI его игнорирует, если не нужно)
+                result["saved"] = saved
     return 200, result
 
 
@@ -1461,6 +1463,8 @@ def save_research_result(base_dir: Path, param: str, result: dict) -> "str | Non
             "{text}\n"
         ).format(topic=topic, agent=result.get("agent") or "?", date=date, text=text)
         (research_dir / name).write_text(body, encoding="utf-8")
+        # лог только статус + имя файла, без содержимого (нет персональных данных)
+        log("saved research {}".format(name))
         return name
     except OSError as exc:
         log("research save failed: {}".format(exc.__class__.__name__))
@@ -1514,6 +1518,70 @@ def handle_research_file(base_dir: Path, name: "str | None") -> "tuple":
     except OSError:
         return 500, {"status": "error", "message": "cannot read file"}
     return 200, {"status": "ok", "name": name, "content": content}
+
+
+# --- rebuild: пересборка data.local.json из индекса ---------------------------
+
+REBUILD_TIMEOUT_S = 60
+_DEFAULT_INDEX = Path("~/health-os/data/index/health_os.sqlite3").expanduser()
+_BUILD_SCRIPT = Path(__file__).resolve().with_name("build_dashboard_data.py")
+
+
+def handle_rebuild(base_dir: Path) -> "tuple":
+    """POST /api/rebuild -> пересобрать <base_dir>/data.local.json из индекса.
+
+    Запускает build_dashboard_data.py через subprocess (тот же --db и --out, что
+    по умолчанию у билда): индекс ищем рядом с runtime-каталогом (как делает
+    /api/journal), фолбэк — дефолт ~/health-os/data/index/health_os.sqlite3;
+    выход — <base_dir>/data.local.json. Это закрывает контур: после чек-ина или
+    нового WHOOP-синка фронт может попросить пересборку и увидеть свежие числа.
+
+    Возвращает {status:"ok", generatedAt, rebuilt:True, summary:{recovery,
+    dataDate}} либо {status:"error", message}. Никогда не падает; логирует только
+    статус, не данные.
+    """
+    db_path = find_journal_db(base_dir) or _DEFAULT_INDEX
+    if not db_path.is_file():
+        return 200, {
+            "status": "error",
+            "rebuilt": False,
+            "message": "индекс не найден ({}); сначала собери индекс движком "
+                       "или подключи источник".format(db_path),
+        }
+    out_path = base_dir / DATA_FILE
+    cmd = [sys.executable, str(_BUILD_SCRIPT), "--db", str(db_path), "--out", str(out_path)]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=REBUILD_TIMEOUT_S,
+            cwd=str(_REPO_ROOT),
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        return 200, {"status": "error", "rebuilt": False,
+                     "message": "пересборка превысила {}с".format(REBUILD_TIMEOUT_S)}
+    except OSError as exc:
+        return 200, {"status": "error", "rebuilt": False,
+                     "message": "не удалось запустить пересборку: {}".format(exc.__class__.__name__)}
+    if proc.returncode != 0:
+        tail = ((proc.stderr or "").strip() or (proc.stdout or "").strip())[-MAX_STDERR_TAIL:]
+        return 200, {"status": "error", "rebuilt": False,
+                     "message": "сборка завершилась с ошибкой: {}".format(tail or "no output")}
+
+    # Перечитываем результат, чтобы вернуть свежую сводку (числа на диск пишет билд).
+    data = load_local_data(base_dir) or {}
+    meta = data.get("_meta") or {}
+    return 200, {
+        "status": "ok",
+        "rebuilt": True,
+        "generatedAt": meta.get("generatedAt"),
+        "summary": {
+            "recovery": data.get("recovery"),
+            "dataDate": data.get("date"),
+        },
+    }
 
 
 # --- HTTP handler ------------------------------------------------------------
@@ -1647,8 +1715,16 @@ class BridgeHandler(SimpleHTTPRequestHandler):
                         "/api/journal/day", "/api/journal/focus",
                         "/api/params", "/api/params/reset",
                         "/api/methodology/save", "/api/profile",
-                        "/api/weather/location"):
+                        "/api/weather/location", "/api/rebuild"):
             self._send_json({"status": "error", "message": "not found"}, status=404)
+            return
+
+        # /api/rebuild не несёт тела — обрабатываем до чтения JSON.
+        if path == "/api/rebuild":
+            status, body = handle_rebuild(self.base_dir)
+            log("POST /api/rebuild -> {} (rebuilt={})".format(
+                body.get("status"), body.get("rebuilt", "-")))
+            self._send_json(body, status=status)
             return
 
         payload, error = self._read_json_body()

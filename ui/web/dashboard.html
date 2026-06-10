@@ -305,6 +305,16 @@
     border-bottom: 1px solid var(--line);
   }
 
+  /* Десктоп: жёсткое центрирование переключателя дней — grid 1fr|auto|1fr,
+     средний столбец всегда по центру независимо от ширины заголовка/лейбла
+     (раньше space-between заставлял его прыгать влево-вправо). */
+  @media (min-width: 601px) {
+    .topbar { display: grid; grid-template-columns: 1fr auto 1fr; }
+    .topbar-left { justify-self: start; min-width: 0; }
+    .topbar-left h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #topPill { justify-self: end; white-space: nowrap; }
+  }
+
   [data-theme="light"] .topbar {
     background: rgba(249, 250, 251, 0.75);
   }
@@ -3745,6 +3755,641 @@
     .day-selector .day-label { min-width: 72px; }
     .mood-quad-grid { grid-template-columns: 1fr; }
   }
+
+/* ==================== RENDER ZONES — собранный CSS (7 зон) ==================== */
+
+/* === ЗОНА WEATHER (Пульс → «Погода сегодня») === */
+/* Префикс wx-. Переиспользуем cal-fact-row/.k/.v, cand-hint, settings-info-row, btn-primary. */
+/* Цвета — ТОЛЬКО токены тем (--ok/--warn/--bad + -text/-glow), без RGB-литералов. */
+
+.wx-summary {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 2px 0 14px;
+}
+.wx-temp {
+  font: 300 34px var(--mono);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--ink);
+}
+.wx-temp small { font-size: 14px; color: var(--dim); letter-spacing: 0; }
+
+/* Ряд чипов по активным флагам погоды. Border — токен -glow (или --line),
+   тяжесть передаём фоном (-glow) и текстом (-text), без хардкода rgba. */
+.wx-flags { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 14px; }
+.wx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 500 11px var(--mono);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+}
+.wx-chip i { font-size: 13px; flex-shrink: 0; }
+.wx-chip.st-warn { color: var(--warn-text); background: var(--warn-glow); border-color: var(--warn-glow); }
+.wx-chip.st-bad  { color: var(--bad-text);  background: var(--bad-glow);  border-color: var(--bad-glow); }
+.wx-chip.st-info { color: var(--mut); background: var(--card-outer); border-color: var(--line); }
+
+/* UV-бейдж с цвет-зоной */
+.wx-uv-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 11px var(--mono);
+  border-radius: 999px;
+  padding: 3px 11px;
+}
+.wx-uv-badge.uv-ok   { color: var(--ok-text);   background: var(--ok-glow); }
+.wx-uv-badge.uv-warn { color: var(--warn-text); background: var(--warn-glow); }
+.wx-uv-badge.uv-bad  { color: var(--bad-text);  background: var(--bad-glow); }
+
+.wx-daylight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 500 12px var(--mono);
+  color: var(--mut);
+  padding: 8px 0;
+}
+.wx-daylight i { font-size: 15px; color: var(--warn); }
+.wx-daylight b { color: var(--ink); font-weight: 600; }
+
+.wx-stale { font-size: 11px; color: var(--dim); margin: 10px 0 0; display: flex; align-items: center; gap: 6px; }
+.wx-stale i { font-size: 12px; }
+
+  /* === MEDICATIONS (med-) ================================================ */
+  /* select в форме препарата: form-group стилизует только text/date/textarea,
+     поэтому select получает свой med-префиксный вид (копия inputа). */
+  .form-group select.med-select {
+    width: 100%;
+    background: var(--card-outer);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 13px;
+    transition: border-color 0.2s ease;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+  }
+  .form-group select.med-select:focus { outline: none; border-color: var(--line2); }
+
+  .med-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .med-card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-inner);
+    background: var(--card-outer);
+    padding: 13px 14px;
+  }
+  .med-card.med-paused { opacity: 0.72; }
+  .med-card.med-stopped { opacity: 0.55; }
+
+  .med-card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .med-name { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+  .med-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+  /* мелкие мета-чипы препарата (доза, расписание, тип, источник) */
+  .med-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font: 500 10px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--mut);
+    background: var(--card-inner);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 9px;
+  }
+  .med-chip i { font-size: 12px; }
+
+  /* Статус-чип (переключаемый кликом). active/paused переиспользуют
+     существующие segbar-состояния (.st-optimal/.st-normal), здесь —
+     только то, чего у segbar нет: кнопочное поведение и нейтральный
+     вариант для осознанно отменённого препарата (stopped). */
+  .med-status {
+    border: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: var(--mono);
+  }
+  .med-status.med-st-stopped { background: var(--line2); color: var(--ink); }
+
+  /* предупреждение «обсудить ревизию» (>6 мес) */
+  .med-revise {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--warn-text);
+    background: var(--warn-glow);
+    border: 1px solid var(--warn);
+    border-radius: 9px;
+    padding: 7px 10px;
+    margin-top: 10px;
+  }
+  .med-revise i { font-size: 14px; flex-shrink: 0; }
+
+  .med-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+
+  /* иконочная кнопка-удалить, как vacc-del */
+  .med-del {
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--mut);
+    cursor: pointer;
+    padding: 6px 9px;
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.2s ease;
+  }
+  .med-del:hover { color: var(--bad); background: var(--bad-glow); border-color: var(--bad); }
+
+  .med-note { margin-top: 14px; }
+
+  /* ===== Зона methodology: список + просмотр + markdown ===== */
+  .meth-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 18px;
+    align-items: start;
+  }
+  @media (max-width: 760px) {
+    .meth-layout { grid-template-columns: 1fr; }
+  }
+
+  .meth-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .meth-list-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    color: var(--ink);
+    font: 500 13px var(--font);
+    transition: all 0.18s ease;
+  }
+  .meth-list-btn:hover { border-color: var(--line2); background: var(--card-outer); }
+  .meth-list-btn.active {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+  .meth-list-btn > i { font-size: 15px; color: var(--dim); flex-shrink: 0; }
+  .meth-list-btn.active > i { color: var(--accent-text); }
+  .meth-list-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .meth-ver {
+    flex-shrink: 0;
+    font: 600 10px var(--mono);
+    line-height: 1;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: var(--card-inner);
+    border: 1px solid var(--line2);
+    color: var(--mut);
+    letter-spacing: 0.02em;
+  }
+
+  .meth-view {
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-inner);
+    background: var(--card-inner);
+    padding: 22px 24px;
+  }
+  .meth-view-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .meth-view-meta { min-width: 0; }
+  .meth-view-meta .path {
+    font: 500 11px var(--mono);
+    color: var(--dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .meth-view-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+  /* ---- markdown-рендер (ohRenderMarkdown), общий для methodology + research ---- */
+  .md-body { font: 400 13.5px/1.65 var(--font); color: var(--ink); }
+  .md-body h1 { font-size: 20px; font-weight: 650; margin: 0 0 14px; line-height: 1.25; }
+  .md-body h2 {
+    font-size: 16px; font-weight: 650; margin: 26px 0 10px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--line); line-height: 1.3;
+  }
+  .md-body h3 { font-size: 14px; font-weight: 650; margin: 20px 0 8px; color: var(--mut); }
+  .md-body p { margin: 0 0 12px; }
+  .md-body ul, .md-body ol { margin: 0 0 12px; padding-left: 22px; }
+  .md-body li { margin: 0 0 4px; }
+  .md-body strong { font-weight: 650; color: var(--ink); }
+  .md-body a { color: var(--accent-text); text-decoration: none; border-bottom: 1px solid var(--line2); }
+  .md-body a:hover { border-bottom-color: var(--accent); }
+  .md-body blockquote {
+    margin: 0 0 12px; padding: 8px 14px;
+    border-left: 3px solid var(--line2); background: var(--card-outer);
+    border-radius: 0 8px 8px 0; color: var(--mut);
+  }
+  .md-body hr { border: none; border-top: 1px solid var(--line); margin: 20px 0; }
+  .md-body code.md-inline {
+    font: 500 12px var(--mono); background: var(--card-outer);
+    border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; color: var(--ink);
+  }
+  .md-body pre.md-fence {
+    margin: 0 0 14px; padding: 14px 16px; overflow-x: auto;
+    background: var(--card-outer); border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .md-body pre.md-fence code {
+    font: 400 12px/1.55 var(--mono); color: var(--ink);
+    white-space: pre; background: none; border: none; padding: 0;
+  }
+  .md-body table.md-table {
+    width: 100%; border-collapse: collapse; margin: 0 0 16px;
+    font-size: 12.5px;
+  }
+  .md-body table.md-table th, .md-body table.md-table td {
+    border: 1px solid var(--line); padding: 7px 11px; text-align: left; vertical-align: top;
+  }
+  .md-body table.md-table th { background: var(--card-outer); font-weight: 650; }
+
+  /* textarea редактора методологии */
+  .meth-editor {
+    width: 100%;
+    min-height: 480px;
+    resize: vertical;
+    font: 400 12.5px/1.6 var(--mono);
+    color: var(--ink);
+    background: var(--card-outer);
+    border: 1px solid var(--line2);
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-sizing: border-box;
+  }
+  .meth-editor:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ===== Зона params: параметры расчётов (Настройки → #paramsBox) ===== */
+.param-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin: 4px 0 16px;
+}
+.param-toolbar .param-count { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--dim); }
+.param-group { margin-bottom: 18px; }
+.param-group:last-child { margin-bottom: 0; }
+.param-group-head {
+  font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--dim); margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+.param-row {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 12px 0; border-bottom: 1px solid var(--line);
+}
+.param-row:last-child { border-bottom: none; }
+.param-row-unwired { opacity: 0.72; }
+.param-row-main { flex: 1 1 auto; min-width: 0; }
+.param-row-name { font-size: 13px; color: var(--ink); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.param-row-desc { font-size: 11px; color: var(--dim); margin-top: 3px; line-height: 1.4; }
+.param-row-ctl { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; padding-top: 1px; }
+.param-input-wrap { position: relative; display: inline-flex; align-items: center; }
+.param-input {
+  width: 86px; background: var(--card-outer); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 10px; color: var(--ink);
+  font-family: var(--mono); font-size: 13px; text-align: right;
+  transition: border-color 0.2s ease;
+}
+.param-input:focus { outline: none; border-color: var(--line2); }
+.param-input.param-busy { border-color: var(--accent); }
+.param-unit { font: 500 10px var(--mono); color: var(--mut); min-width: 38px; }
+.param-default { font: 500 10px var(--mono); color: var(--dim); white-space: nowrap; }
+.param-reset-row {
+  background: none; border: 1px solid var(--line); border-radius: 8px;
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--mut); cursor: pointer; flex: 0 0 auto; transition: border-color 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+.param-reset-row:hover { border-color: var(--line2); color: var(--ink); }
+.param-reset-row:disabled { opacity: 0.3; cursor: default; }
+.param-state {
+  background: var(--card-inner); border: 1px solid var(--line); border-radius: var(--radius-inner);
+  padding: 16px; font-size: 12px; color: var(--mut); display: flex; align-items: flex-start; gap: 10px;
+}
+.param-state i { font-size: 16px; margin-top: 1px; flex-shrink: 0; }
+
+/* Контейнер бейджа в строке имени + скрытие пустого. */
+.param-badge { display: inline-flex; align-items: center; gap: 6px; }
+.param-hidden { display: none; }
+
+/* Inline-safe модификатор segbar-pill: база (.segbar-pill, стр 878) —
+   position:absolute + ::after-ромб под трек биомаркеров. Здесь бейдж стоит
+   в потоке flex-строки, поэтому гасим абсолют и стрелку, оставляя типографику. */
+.segbar-pill.param-pill {
+  position: static; transform: none; box-shadow: none;
+  padding: 2px 7px; font: 600 9px var(--mono);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.segbar-pill.param-pill::after { display: none; }
+/* «изменён» — акцентом, по образцу .st-optimal/.st-normal (тёмный текст на ярком фоне). */
+.segbar-pill.param-pill.st-changed { background: var(--accent); color: #03130c; }
+/* «пока не подключено» — приглушённый бейдж (реестр: wired:False). */
+.segbar-pill.param-pill.param-wired {
+  background: transparent; color: var(--dim);
+  border: 1px solid var(--line2); box-shadow: none;
+}
+
+@media (max-width: 560px) {
+  .param-row { flex-direction: column; gap: 8px; }
+  .param-row-ctl { width: 100%; }
+  .param-input { flex: 1 1 auto; width: auto; }
+}
+
+  /* === Профиль тела (zone profile) ============================== */
+  .prof-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    margin-bottom: 4px;
+  }
+  @media (max-width: 560px) { .prof-grid { grid-template-columns: 1fr; } }
+
+  .prof-grid .form-group { margin-bottom: 0; }
+
+  /* number/select наследуют тот же вид, что text/date в .form-group
+     (.form-group стилит только text|date|textarea — dashboard.html:1316) */
+  .prof-grid input[type="number"],
+  .prof-field input[type="number"],
+  .prof-grid select {
+    width: 100%;
+    background: var(--card-outer);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 13px;
+    transition: border-color 0.2s ease;
+  }
+  .prof-grid input[type="number"]:focus,
+  .prof-field input[type="number"]:focus,
+  .prof-grid select:focus {
+    outline: none;
+    border-color: var(--line2);
+  }
+  /* убрать спиннеры у number — чище под общий стиль */
+  .prof-grid input[type="number"]::-webkit-inner-spin-button,
+  .prof-grid input[type="number"]::-webkit-outer-spin-button,
+  .prof-field input[type="number"]::-webkit-inner-spin-button,
+  .prof-field input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  .prof-grid input[type="number"],
+  .prof-field input[type="number"] { -moz-appearance: textfield; }
+
+  .prof-err {
+    display: block;
+    font: 600 10px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--bad-text, var(--bad));
+    margin-top: 6px;
+    min-height: 0;
+  }
+
+  .prof-weight-head {
+    font: 600 11px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--mut);
+    margin: 18px 0 10px;
+  }
+
+  .prof-weight-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+
+  .prof-weight-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 13px;
+    background: var(--card-outer);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .prof-weight-row .d { color: var(--mut); font-size: 12px; font-family: var(--mono); }
+  .prof-weight-row .kg { color: var(--ink); font-weight: 600; font-size: 13px; }
+  .prof-weight-row.is-latest .kg { color: var(--accent-text, var(--accent)); }
+
+  .prof-weight-empty {
+    font-size: 12px; color: var(--dim);
+    padding: 9px 2px 12px;
+  }
+
+  .prof-add {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .prof-add .prof-field { flex: 1 1 130px; min-width: 0; }
+  .prof-add .prof-field label {
+    display: block;
+    font: 600 10px var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--dim);
+    margin-bottom: 6px;
+  }
+  .prof-add .prof-field input[type="date"] {
+    width: 100%;
+    background: var(--card-outer);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 13px;
+    color-scheme: dark;
+  }
+  [data-theme="light"] .prof-add .prof-field input[type="date"],
+  [data-theme="brutalist"] .prof-add .prof-field input[type="date"] { color-scheme: light; }
+  .prof-add .prof-field input[type="date"]:focus { outline: none; border-color: var(--line2); }
+  .prof-add .btn-secondary { flex: 0 0 auto; white-space: nowrap; }
+
+  .prof-hint a { color: var(--accent-text, var(--accent)); cursor: pointer; text-decoration: none; }
+  .prof-hint a:hover { text-decoration: underline; }
+
+  /* === Зона locations (Настройки → Город и локации) === */
+  .loc-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--ok-text);
+    margin: -4px 0 14px;
+    min-height: 16px;
+  }
+  .loc-current.loc-empty { color: var(--mut); }
+  .loc-current .ph-light { font-size: 14px; }
+
+  .loc-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+  .loc-row .form-group { flex: 1 1 200px; margin-bottom: 0; }
+  .loc-row .btn-primary, .loc-row .btn-secondary { flex-shrink: 0; }
+
+  /* select под общий стиль .form-group input[type=text] (стр 1316) */
+  .form-group select.loc-select {
+    width: 100%;
+    background: var(--card-outer);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 13px;
+    transition: border-color 0.2s ease;
+    color-scheme: dark;
+  }
+  [data-theme="light"] .form-group select.loc-select,
+  [data-theme="brutalist"] .form-group select.loc-select { color-scheme: light; }
+  .form-group select.loc-select:focus { outline: none; border-color: var(--line2); }
+
+  .loc-divider {
+    border: none;
+    border-top: 1px solid var(--line);
+    margin: 22px 0 16px;
+  }
+  .loc-sec-head {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ink);
+    margin: 0 0 4px;
+  }
+  /* приглушённая подпись: голый .sub в файле не стилизуется (только scoped),
+     поэтому свой класс по геометрии .card-title-group .sub (стр 469) */
+  .loc-hint {
+    font-size: 11px;
+    color: var(--mut);
+    line-height: 1.4;
+    margin: 0 0 14px;
+  }
+
+  /* лента переездов — повторяет геометрию .vacc-list/.vacc-row (стр 1338) */
+  .loc-feed { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .loc-feed-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--card-outer);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  .loc-feed-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .loc-feed-city { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+  .loc-feed-city .ph-light { font-size: 13px; color: var(--mut); margin-right: 4px; }
+  .loc-feed-meta { font-size: 11px; color: var(--mut); }
+  .loc-feed-del {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--mut);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 4px;
+    border-radius: 8px;
+    transition: color 0.2s ease, background 0.2s ease;
+  }
+  .loc-feed-del:hover { color: var(--bad); background: var(--bad-glow); }
+  .loc-feed-del:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .loc-feed-empty { font-size: 12px; color: var(--mut); margin: 10px 0 0; }
+
+/* === Research badges (zone: research) ============================ */
+/* Самодостаточный инлайн-бейдж по образцу .prov-badge (dashboard.html:3205).
+   НЕ используем .segbar-pill — это абсолютно-позиционированный маркер-пин
+   для графиков (position:absolute + ::after-треугольник), он ломает поток. */
+.rsch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 9px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2.5px 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-glow);
+  border: none;
+  cursor: pointer;
+  vertical-align: 2px;
+  white-space: nowrap;
+  transition: filter .15s ease;
+}
+.rsch-badge i { font-size: 12px; line-height: 1; }
+.rsch-badge:hover { filter: brightness(1.12); }
+.rsch-badge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* список файлов research в модале */
+.rsch-file-list { display: flex; flex-direction: column; gap: 8px; }
+.rsch-file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: var(--card-inner);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-inner);
+  padding: 12px 14px;
+  cursor: pointer;
+  color: var(--ink);
+  font: inherit;
+  transition: border-color .15s ease, background .15s ease;
+}
+.rsch-file-item:hover { border-color: var(--accent); background: var(--card-outer); }
+.rsch-file-item .ph-light { color: var(--accent); font-size: 18px; flex: 0 0 auto; }
+.rsch-file-name { flex: 1 1 auto; font-weight: 600; overflow-wrap: anywhere; }
+.rsch-file-meta { color: var(--mut); font-size: 11px; font-family: var(--mono); flex: 0 0 auto; }
+.rsch-md { line-height: 1.55; }
+.rsch-back { margin-bottom: 14px; }
 </style>
 </head>
 <body>
@@ -3864,21 +4509,6 @@
     </nav>
   </div>
 
-  <div class="sidefoot">
-    <div class="docmini" id="pulseHome" title="Спросить Пульса о дне" role="button" tabindex="0"
-         onclick="onPulseHomeClick()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onPulseHomeClick();}">
-      <div class="face zone-yellow" id="docFace"><img src="assets/pulse-mascot.png" alt="Пульс" id="pulseImg"></div>
-      <div class="t">
-        <b>Пульс</b>
-        <div class="muted" id="docMini">Загрузка...</div>
-      </div>
-    </div>
-
-    <button class="nav-config-btn" id="navConfigBtn" onclick="go('settings')">
-      <i class="ph-light ph-gear-six"></i>
-      <span>Настройки</span>
-    </button>
-  </div>
 </aside>
 
 <div class="nav-backdrop" id="navBackdrop" onclick="toggleDrawer(false)"></div>
@@ -4070,9 +4700,9 @@
               </div>
               
               <div class="spark-container">
-                <div class="spark-label">
-                  <span>Демо-кривая суток (реальная ЧСС появится с интрадей-данными)</span>
-                  <span class="mono">52 - 168 уд/мин</span>
+                <div class="spark-label" id="pulseSparkLabel" style="display:none;">
+                  <span id="pulseSparkTitle">Поминутный пульс за сутки</span>
+                  <span class="mono" id="pulseSparkRange"></span>
                 </div>
                 <svg id="pulseChart" class="spark-svg" style="height: 220px;" viewBox="0 0 600 220" preserveAspectRatio="none">
                   <defs>
@@ -4180,10 +4810,6 @@
 
       <!-- SCREEN 3: BIOMARKERS -->
       <section class="zone" id="z-biomarkers">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
-          <span class="muted" style="font-size:12px;">Управление данными</span>
-          <button class="btn-secondary" id="toggleBiomarkerData">Симулировать пустые анализы</button>
-        </div>
 
         <div class="bento-grid" id="biomarkersContent">
           <!-- Table Panel -->
@@ -4226,8 +4852,8 @@
               <div class="empty-icon"><i class="ph-light ph-file-arrow-up"></i></div>
               <h4>Анализы не загружены</h4>
               <p class="muted">Загрузите PDF-файл результатов из клиник или подключите интеграцию Helix для отображения клинических оптимумов.</p>
-              <button class="btn-primary" onclick="simulateBiomarkerUpload()">
-                <i class="ph-light ph-upload-simple"></i> Загрузить PDF / Подключить анализы
+              <button class="btn-primary" onclick="go('sync')">
+                <i class="ph-light ph-upload-simple"></i> Импорт анализов → Источники
               </button>
             </div>
           </div>
@@ -4585,6 +5211,31 @@
 
       <!-- SCREEN 8: SYNC -->
       <section class="zone" id="z-sync">
+
+        <div class="sync-section">
+          <div class="sync-section-head">
+            <h2>Данные и bridge</h2>
+            <span class="hint">откуда берутся цифры и как их обновить</span>
+          </div>
+          <div class="card-outer">
+            <div class="card-inner">
+              <div class="settings-info-row" style="margin-bottom:14px;">
+                <i class="ph-light ph-info"></i>
+                <span><b>bridge</b> — это маленький локальный сервер на твоём компьютере (адрес 127.0.0.1, без интернета). Дашборд берёт у него твои данные из файла-снапшота, а по кнопкам он запускает агента (Claude/Codex) и пересборку данных. Снаружи к нему подключиться нельзя, ничего с устройства не уходит. Если внизу написано «bridge: офлайн» — запусти <b>OpenHealth.command</b>.</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;">
+                <div>
+                  <div style="font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:4px;">Снапшот данных</div>
+                  <div style="font-size:13px;color:var(--ink);" id="syncDataMeta">загрузка…</div>
+                </div>
+                <button class="btn-primary" onclick="rebuildSnapshot(this)" title="Пересобрать снапшот из движка (после чек-ина или нового синка)">
+                  <i class="ph-light ph-arrows-clockwise"></i> Пересобрать
+                </button>
+              </div>
+              <div style="font-size:11px;color:var(--warn-text);margin-top:12px;line-height:1.5;display:none;" id="syncDataHint"></div>
+            </div>
+          </div>
+        </div>
 
         <div class="sync-section">
           <div class="sync-section-head">
@@ -5588,11 +6239,15 @@ function updateTodayScreen() {
     </div>
   `; }).join('');
 
-  // Пульс: состояние персонажа = зона recovery сегодняшнего дня (маскот живёт в «сейчас»).
+  // Пульс-маскот убран из сайдбара (дубль навигации). Блок оставлен null-safe
+  // на случай, если #docFace/#docMini вернут на другую поверхность.
   const face = document.getElementById('docFace');
-  face.classList.remove('zone-green', 'zone-yellow', 'zone-red');
-  face.classList.add(DATA.recovery >= 67 ? 'zone-green' : DATA.recovery >= 34 ? 'zone-yellow' : 'zone-red');
-  document.getElementById('docMini').textContent = say(DATA.recovery);
+  if (face) {
+    face.classList.remove('zone-green', 'zone-yellow', 'zone-red');
+    face.classList.add(DATA.recovery >= 67 ? 'zone-green' : DATA.recovery >= 34 ? 'zone-yellow' : 'zone-red');
+  }
+  const docMiniEl = document.getElementById('docMini');
+  if (docMiniEl) docMiniEl.textContent = say(DATA.recovery);
 
   document.getElementById('readiness').textContent = DATA.readiness;
   document.getElementById('actTitle').textContent = DATA.action.title;
@@ -5768,9 +6423,16 @@ function habitItemHTML(h) {
       </div>
       <div class="habit-details">
         <span class="habit-label">${escapeHtml(h.label)}</span>
-        ${h.delta ? `<span class="habit-impact ${h.delta > 0 ? 'up' : 'down'}">
-          ${h.delta > 0 ? '+' : ''}${h.delta}% recovery
-        </span>` : ''}
+        ${(function () {
+          // Дель​та recovery — только из РЕАЛЬНО посчитанной корреляции движка.
+          // В реальном режиме без корреляции бейдж не показываем (не выдумываем число).
+          if (REAL_DATA_META.loaded) {
+            const c = (DATA.correlations || []).find(x => x.id === h.id || x.label === h.label);
+            return (c && typeof c.delta === 'number')
+              ? `<span class="habit-impact ${c.delta > 0 ? 'up' : 'down'}">${c.delta > 0 ? '+' : ''}${c.delta}% recovery</span>` : '';
+          }
+          return h.delta ? `<span class="habit-impact ${h.delta > 0 ? 'up' : 'down'}">${h.delta > 0 ? '+' : ''}${h.delta}% recovery</span>` : '';
+        })()}
       </div>
       <div class="habit-icon">
         <i class="ph-light ${safeIcon(h.icon)}"></i>
@@ -6365,81 +7027,91 @@ function maybeShowOverlayHint() {
 }
 
 function initPulseScreen() {
-  const count = 48;
-  const points = [];
-  let currentHR = 65;
-  
-  for (let i = 0; i < count; i++) {
-    const hour = (i / count) * 24;
-    let base = 70;
-    if (hour > 1 && hour < 6) base = 52;
-    else if (hour > 14 && hour < 16) base = 150;
-    else if (hour > 19 && hour < 21) base = 95;
-    
-    currentHR = base + Math.sin(i) * 8 + (Math.random() - 0.5) * 10;
-    currentHR = Math.max(50, Math.min(170, Math.round(currentHR)));
-    points.push(currentHR);
-  }
+  // Внутридневной (поминутный) пульс и время в зонах ЧСС: WHOOP-экспорт их НЕ
+  // содержит, поэтому показываем честный empty-state, а НЕ сгенерированную кривую.
+  // Реальные данные подхватятся из DATA.intradayHR / DATA.hrZones, когда появятся.
+  const points = Array.isArray(DATA.intradayHR) ? DATA.intradayHR.filter(v => typeof v === 'number') : [];
+  const count = points.length;
+  const svg = document.getElementById('pulseChart');
+  const cont = svg ? svg.closest('.spark-container') : null;
+  const axisEl = document.getElementById('pulseAxis');
+  const sub = document.getElementById('pulseDaySub');
+  if (cont) { const e = cont.querySelector('.pulse-empty'); if (e) e.remove(); }
 
-  const gPulse = renderAreaChart('pulseChart', 'pulseLine', 'pulseArea', points);
-
-  // Ось времени (24 часа) + crosshair по ЧСС.
-  const hourLabel = i => {
-    const h = (i / count) * 24;
-    const hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+  const hourLabel = (i, n) => {
+    const h = (i / n) * 24, hh = Math.floor(h), mm = Math.round((h - hh) * 60);
     return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
   };
-  if (gPulse) {
-    const hourItems = points.map((v, i) => ({ label: hourLabel(i), today: false }));
-    // Часы реже: каждые 6 точек (~3 часа) при 48 точках.
-    const axisEl = document.getElementById('pulseAxis');
-    if (axisEl) {
-      const spans = [];
-      for (let i = 0; i < count; i += 8) {
-        const x = (gPulse.padding + (i / (count - 1)) * (gPulse.w - 2 * gPulse.padding)) / gPulse.w * 100;
-        spans.push(`<span style="left:${x.toFixed(2)}%">${hourItems[i].label}</span>`);
-      }
-      axisEl.innerHTML = spans.join('');
+
+  if (!count) {
+    if (svg) svg.style.display = 'none';
+    if (axisEl) axisEl.innerHTML = '';
+    if (sub) sub.textContent = 'поминутного пульса нет в данных';
+    const lblE = document.getElementById('pulseSparkLabel'); if (lblE) lblE.style.display = 'none';
+    if (cont) {
+      const ph = document.createElement('div');
+      ph.className = 'pulse-empty';
+      ph.style.cssText = 'padding:36px 16px;text-align:center;color:var(--mut);font-size:13px;line-height:1.55;';
+      ph.innerHTML = '<i class="ph-light ph-heartbeat" style="font-size:26px;color:var(--dim);display:block;margin-bottom:8px;"></i>Поминутный пульс не загружен. WHOOP-экспорт не содержит внутридневной HR — появится при live-синке с устройства.';
+      cont.appendChild(ph);
     }
-    attachCrosshair('pulseChart', {
-      labels: points.map((v, i) => 'Сегодня · ' + hourLabel(i)),
-      series: [{ pts: gPulse.pts, values: points, color: 'var(--accent)', label: 'ЧСС', fmt: v => Math.round(v) + ' уд/мин' }]
-    });
+  } else {
+    if (svg) svg.style.display = '';
+    if (sub) sub.textContent = 'данные за последние 24 часа';
+    const lblR = document.getElementById('pulseSparkLabel'); if (lblR) lblR.style.display = '';
+    const rngR = document.getElementById('pulseSparkRange');
+    if (rngR) { const lo = Math.round(Math.min.apply(null, points)), hi = Math.round(Math.max.apply(null, points)); rngR.textContent = lo + ' - ' + hi + ' уд/мин'; }
+    const gPulse = renderAreaChart('pulseChart', 'pulseLine', 'pulseArea', points);
+    if (gPulse) {
+      if (axisEl) {
+        const spans = [];
+        const step = Math.max(1, Math.round(count / 6));
+        for (let i = 0; i < count; i += step) {
+          const x = (gPulse.padding + (i / (count - 1)) * (gPulse.w - 2 * gPulse.padding)) / gPulse.w * 100;
+          spans.push(`<span style="left:${x.toFixed(2)}%">${hourLabel(i, count)}</span>`);
+        }
+        axisEl.innerHTML = spans.join('');
+      }
+      attachCrosshair('pulseChart', {
+        labels: points.map((v, i) => hourLabel(i, count)),
+        series: [{ pts: gPulse.pts, values: points, color: 'var(--accent)', label: 'ЧСС', fmt: v => Math.round(v) + ' уд/мин' }]
+      });
+      animateSparkline('pulseLine', 'pulseArea');
+      const pt = document.getElementById('pulsePoint');
+      if (pt) gsap.fromTo(pt, { opacity: 0 }, { opacity: 1, duration: 0.3, delay: 1.1, ease: 'power1.out' });
+    }
   }
 
-  const zones = [
-    { num: 5, name: "Максимальная (Анаэробная)", range: "151-170 уд/мин", time: "18 мин", fill: "#f43f5e", pct: 15 },
-    { num: 4, name: "Пороговая (Кардиовыносливость)", range: "133-150 уд/мин", time: "42 мин", fill: "#f97316", pct: 30 },
-    { num: 3, name: "Аэробная (Аэробный фитнес)", range: "114-132 уд/мин", time: "1ч 15м", fill: "#eab308", pct: 55 },
-    { num: 2, name: "Жиросжигающая (Выносливость)", range: "95-113 уд/мин", time: "2ч 40м", fill: "#10b981", pct: 80 },
-    { num: 1, name: "Восстановительная (Активный покой)", range: "76-94", time: "4ч 10м", fill: "#3b82f6", pct: 90 }
-  ];
-
-  document.getElementById('zoneList').innerHTML = zones.map(z => `
+  // Время в зонах ЧСС — только из реальных данных (DATA.hrZones), иначе честно пусто.
+  const zoneListEl = document.getElementById('zoneList');
+  const realZones = Array.isArray(DATA.hrZones) ? DATA.hrZones : [];
+  if (zoneListEl) {
+    if (!realZones.length) {
+      zoneListEl.innerHTML = '<div style="padding:18px 4px;color:var(--mut);font-size:13px;line-height:1.55;">Время в зонах ЧСС не загружено — нужен источник с поминутным пульсом (live WHOOP / Apple Watch).</div>';
+    } else {
+      zoneListEl.innerHTML = realZones.map(z => `
     <div class="zone-item">
       <div class="zone-label-row">
-        <span><b>Зона ${z.num}</b> — ${z.name}</span>
-        <span class="mono">${z.time}</span>
+        <span><b>Зона ${escapeHtml(String(z.num))}</b> — ${escapeHtml(String(z.name))}</span>
+        <span class="mono">${escapeHtml(String(z.time))}</span>
       </div>
       <div class="zone-label-row">
-        <span class="zone-range">${z.range}</span>
+        <span class="zone-range">${escapeHtml(String(z.range))}</span>
       </div>
       <div class="zone-bar-bg">
-        <div class="zone-bar-fill" style="width: ${z.pct}%; background: ${z.fill};"></div>
+        <div class="zone-bar-fill" style="width: ${Number(z.pct) || 0}%; background: ${escapeHtml(String(z.fill || 'var(--accent)'))};"></div>
       </div>
     </div>
   `).join('');
-
-  // FRAMES: line-draw ЧСС 1.2 + бары зон растут 0.6/stagger 0.06.
-  animateSparkline('pulseLine', 'pulseArea');
-  const pt = document.getElementById('pulsePoint');
-  if (pt) gsap.fromTo(pt, { opacity: 0 }, { opacity: 1, duration: 0.3, delay: 1.1, ease: 'power1.out' });
-  gsap.from('#zoneList .zone-bar-fill', { width: 0, duration: 0.6, stagger: 0.06, ease: 'power3.out' });
+      gsap.from('#zoneList .zone-bar-fill', { width: 0, duration: 0.6, stagger: 0.06, ease: 'power3.out' });
+    }
+  }
 
   renderPulseCalendar();
   renderPulseEnergy();
   renderPulseWheel();
   renderPulseMoodRing();
+  renderWeather();
   updatePulseDayHeader();
 }
 
@@ -6828,8 +7500,8 @@ function toggleBiomarkerDetail(idx) {
         <p class="bio-discuss">${b.discuss}</p>
 
         <div style="margin-top: 16px; display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="btn-secondary" onclick="alert('Добавлено в вопросы для врача')">
-            <i class="ph-light ph-clipboard-text"></i> Зафиксировать для врача
+          <button class="btn-secondary" onclick="pinMarkerForDoctor(${idx})">
+            <i class="ph-light ph-clipboard-text"></i> Скопировать для врача
           </button>
           <button class="btn-secondary agent-btn" id="bioAgentBtn" onclick="runBioResearch(${idx})">
             <i class="ph-light ph-microscope"></i> Дип-ресёрч агентом
@@ -6840,6 +7512,10 @@ function toggleBiomarkerDetail(idx) {
     </div>
   `;
   panel.style.display = 'block';
+  // Research-бейджи: монтируем точку [data-rsch] в шапку панели маркера и инициализируем.
+  var _rschMount = panel.querySelector('.card-title-group');
+  if (_rschMount) { _rschMount.insertAdjacentHTML('beforeend', '<span data-rsch="'+escapeHtml(b.name)+'" style="display:block;margin-top:8px;"></span>'); }
+  initResearchBadges();
   gsap.to(panel.querySelector('.card-outer'), { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" });
   // Значение в панели — count-up 0.8 (FRAMES); суффикс единиц — отдельный элемент.
   const dec = Number.isInteger(b.value) ? 0 : 1;
@@ -6906,6 +7582,22 @@ function bioPeriodsHTML(b) {
     </table>`;
 }
 
+// Скопировать сводку маркера в буфер — для вопроса врачу (реально, а не alert-заглушка).
+function pinMarkerForDoctor(idx) {
+  const b = (DATA.biomarkers || [])[idx];
+  if (!b) { showToast('Маркер не найден', false); return; }
+  const ref = (b.refMin != null && b.refMax != null) ? `, реф ${b.refMin}–${b.refMax}` : '';
+  const txt = `${b.name}: ${b.value}${b.unit ? ' ' + b.unit : ''}${ref}, статус: ${b.status || '—'}${b.grade ? ', доверие ' + b.grade : ''}. Дата данных: ${DATA.date || '—'}.`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(
+      () => showToast('Скопировано для врача: ' + b.name, true),
+      () => showToast('Не удалось скопировать (нет доступа к буферу)', false)
+    );
+  } else {
+    showToast('Буфер недоступен в этом браузере', false);
+  }
+}
+
 function simulateBiomarkerUpload() {
   DATA.biomarkersConnected = true;
   updateBiomarkersScreen();
@@ -6962,7 +7654,19 @@ function animateWhoopRings() {
 
 function updateCorrelationsScreen() {
   const list = document.getElementById('corrList');
-  list.innerHTML = DATA.correlations.map(c => `
+  if (!list) return;
+  const corrs = Array.isArray(DATA.correlations) ? DATA.correlations : [];
+  // В реальном режиме без достаточных данных — честный empty-state, НЕ демо-числа.
+  if (REAL_DATA_META.loaded && !corrs.length) {
+    const note = REAL_DATA_META.correlationsStatus === 'insufficient_data'
+      ? 'Нужны дни журнала с отметками привычек, на которые есть recovery в те же даты (≈5 дней «делал» и ≈5 «нет»). Сейчас журнал и recovery не пересекаются по датам.'
+      : 'Появятся, когда журнал и recovery пересекутся по датам и наберётся порог наблюдений.';
+    list.innerHTML = '<div class="corr-empty" style="padding:22px 6px;color:var(--mut);font-size:13px;line-height:1.55;">'
+      + '<i class="ph-light ph-chart-scatter" style="font-size:26px;color:var(--dim);display:block;margin-bottom:8px;"></i>'
+      + '<b style="color:var(--ink);font-weight:600;">Пока нет персональных корреляций</b><br>' + note + '</div>';
+    return;
+  }
+  list.innerHTML = corrs.map(c => `
     <div class="corr-item">
       <div class="corr-item-label">
         <i class="${c.dir === 'up' ? 'ph-duotone' : 'ph-light'} ${safeIcon(c.icon)}"${c.dir === 'up' ? ' style="color: var(--ok);"' : ''}></i>
@@ -9277,13 +9981,26 @@ function scheduleJournalSync(key) {
 }
 
 function pushJournalDay(key) {
+  const collected = collectDayPayload(key);
+  // Мёрж с днём на диске: серверные поля (meds_taken и любые, что фронт не собирает)
+  // сохраняются, а собранные браузером (habits/mood/survey/notes) — перекрывают.
+  // Иначе слепой POST стирал бы meds_taken при следующем синке привычек (баг данных).
+  const send = (existing) => {
+    const merged = (existing && typeof existing === 'object') ? { ...existing, ...collected } : collected;
+    try {
+      fetch('/api/journal/day', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: key, payload: merged })
+      }).catch(() => { /* bridge офлайн — localStorage уже всё хранит */ });
+    } catch (e) { /* file:// без fetch — тоже молчим */ }
+  };
   try {
-    fetch('/api/journal/day', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: key, payload: collectDayPayload(key) })
-    }).catch(() => { /* bridge офлайн — localStorage уже всё хранит */ });
-  } catch (e) { /* file:// без fetch — тоже молчим */ }
+    fetch('/api/journal/day?date=' + key, { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => send(j && j.payload))
+      .catch(() => send(null));
+  } catch (e) { send(null); }
 }
 
 // При входе в день подтягиваем зеркало с диска. Диск выигрывает только там,
@@ -9842,6 +10559,10 @@ function go(z) {
         renderProtocolsScreen();
       } else if (z === 'workouts') {
         renderWorkoutsScreen();
+      } else if (z === 'medications') {
+        renderMedications();
+      } else if (z === 'methodology') {
+        renderMethodology();
       }
     }
   });
@@ -9912,13 +10633,7 @@ try {
   if (savedTheme) applyTheme(savedTheme, false);
 } catch (e) { /* ignore */ }
 
-document.getElementById('toggleBiomarkerData').addEventListener('click', () => {
-  DATA.biomarkersConnected = !DATA.biomarkersConnected;
-  updateBiomarkersScreen();
-  
-  const btn = document.getElementById('toggleBiomarkerData');
-  btn.textContent = DATA.biomarkersConnected ? "Симулировать пустые анализы" : "Восстановить анализы";
-});
+// (демо-тоггл «Симулировать пустые анализы» удалён — состояние теперь только по реальным данным)
 
 // --- Real-data bridge ---------------------------------------------------
 // Try to load locally-generated real data (data.local.json, git-ignored).
@@ -9941,12 +10656,65 @@ async function loadRealData() {
     // Ряды, которых нет в реальной выгрузке, обнуляем: отчёт не должен
     // смешивать реальные метрики с демо-рядами (честная пометка вместо графика).
     if (!('trend30Rhr' in real)) DATA.trend30Rhr = null;
+    // Честность корреляций: в реальном режиме демо НЕ должно протекать. Если движок
+    // дал ключ correlations (даже пустой) — он побеждает демо; статус берём из _meta.
+    REAL_DATA_META.correlationsStatus = (real._meta && real._meta.correlations_status) || null;
+    if ('correlations' in real) DATA.correlations = Array.isArray(real.correlations) ? real.correlations : [];
+    else DATA.correlations = []; // старый снапшот без ключа -> честно пусто, не демо
     const fs = document.getElementById('footerSync');
-    if (fs) fs.textContent = 'реальные данные · ' + (DATA.date || 'локально');
+    if (fs) fs.textContent = 'данные на ' + (DATA.date || 'локально');
     return true;
   } catch (e) {
     // No file / fetch blocked (e.g. opened via file://) → demo fallback.
     return false;
+  }
+}
+
+// Панель «Данные и bridge» в Источниках: свежесть снапшота + баннер устаревших данных.
+function updateDataPanel() {
+  const meta = document.getElementById('syncDataMeta');
+  if (meta) {
+    if (REAL_DATA_META.loaded) {
+      const gen = REAL_DATA_META.generatedAt ? String(REAL_DATA_META.generatedAt).slice(0, 16).replace('T', ' ') : '—';
+      meta.textContent = 'данные на ' + (DATA.date || 'локально') + ' · собрано ' + gen;
+    } else {
+      meta.textContent = 'демо-данные (файл data.local.json не найден)';
+    }
+  }
+  const hint = document.getElementById('syncDataHint');
+  if (hint) {
+    let stale = '';
+    try {
+      const dd = parseDataDate();
+      const t = realToday0();
+      const days = Math.round((t - new Date(dd.getFullYear(), dd.getMonth(), dd.getDate())) / 86400000);
+      if (REAL_DATA_META.loaded && days >= 2) {
+        stale = '⚠ Последние данные WHOOP — ' + (DATA.date || '') + ' (≈' + days + ' дн. назад). Recovery/HRV показаны на эту дату, не на сегодня. Обнови WHOOP-синхронизацию, затем нажми «Пересобрать».';
+      }
+    } catch (e) { /* ignore */ }
+    hint.textContent = stale;
+    hint.style.display = stale ? 'block' : 'none';
+  }
+}
+
+// Пересборка снапшота data.local.json из движка (POST /api/rebuild) — после чек-ина/синка.
+async function rebuildSnapshot(btn) {
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ph-light ph-circle-notch"></i> Пересобираю…'; }
+  try {
+    const r = await fetchWithTimeout('/api/rebuild', 65000, { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.status === 'ok') {
+      await loadRealData();
+      renderDashboard();
+      showToast('Снапшот пересобран · данные на ' + ((d.summary && d.summary.dataDate) || DATA.date || ''), true);
+    } else {
+      showToast('Пересборка: ' + (d.message || 'не удалось'), false);
+    }
+  } catch (e) {
+    showToast('Bridge недоступен — пересборка не выполнена', false);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
   }
 }
 
@@ -9962,6 +10730,7 @@ function renderDashboard() {
   exploreCorrelations();
   updateBiomarkersScreen();
   updateSyncScreen();
+  updateDataPanel();
   initJournalScreen();
   renderReport(false); // отчёт всегда дорендерен: печать (Cmd+P) работает из любой зоны
   updateSourceBadges();
@@ -10270,7 +11039,7 @@ function showToast(text, ok) {
 // НАСТРОЙКИ: профиль, оформление, агент, данные.
 // ============================================================
 
-const REAL_DATA_META = { loaded: false, generatedAt: null };
+const REAL_DATA_META = { loaded: false, generatedAt: null, correlationsStatus: null };
 const GOAL_KEY = 'openhealth.goal';
 const ABOUTME_KEY = 'openhealth.aboutme';
 
@@ -10578,6 +11347,9 @@ async function clearAgentMemory(btn) {
 // Вход в зону «Настройки»: статика уже в DOM, дозаполняем динамику.
 function renderSettingsScreen() {
   loadProfileFields();
+  renderParams();
+  renderBodyProfile();
+  renderLocations();
   renderThemeCards();
   renderFxToggles();
   refreshDataInfoRow();
@@ -11082,6 +11854,1545 @@ function toggleZoneBackgrounds() {
 }
 
 window.addEventListener('DOMContentLoaded', applyZoneBackgrounds);
+
+
+// ==================== RENDER ZONES — собранный JS (7 зон) ====================
+
+// ============================================================
+// ПУЛЬС ДНЯ: «Погода сегодня» (Open-Meteo через bridge).
+// Контекст дня, не диагноз. GET /api/weather/today.
+// init_call: renderWeather (звать из initPulseScreen).
+// ============================================================
+
+// Имена полей day различаются: реальный server отдаёт t_max/t_min/
+// precipitation_mm/daylight_h, документация — temp_max/precip_sum/daylight_hours.
+// Берём первое непустое из кандидатов, чтобы работать с обоими.
+function _wxPick(obj, keys) {
+  for (const k of keys) {
+    if (obj && obj[k] != null && obj[k] !== '') return obj[k];
+  }
+  return null;
+}
+
+// UV-зона: 0-2 низкий / 3-5 умеренный / 6-7 высокий / 8+ очень высокий.
+function _wxUvZone(uv) {
+  if (uv == null || isNaN(uv)) return null;
+  if (uv < 3) return { label: 'низкий', cls: 'uv-ok' };
+  if (uv < 6) return { label: 'умеренный', cls: 'uv-warn' };
+  if (uv < 8) return { label: 'высокий', cls: 'uv-bad' };
+  return { label: 'очень высокий', cls: 'uv-bad' };
+}
+
+// Человекочитаемые флаги. Поддерживаем две формы ответа:
+//  1) flags = [{flag,grade,personal,value,message_ru}, ...]  (реальный server)
+//  2) flags = {very_hot:true, rain_heavy:false, ...}          (документация)
+// Возвращаем [{icon,text,cls}] только для активных.
+function _wxFlagChips(flags) {
+  if (!flags) return [];
+  // Карта: ключ-флаг -> {icon, человекочитаемый текст, тяжесть chip}.
+  const META = {
+    // реальный server (weather_context -> список)
+    heat:          { icon: 'ph-thermometer-hot', text: 'жара', cls: 'st-bad' },
+    cold:          { icon: 'ph-thermometer-cold', text: 'холод', cls: 'st-warn' },
+    precipitation: { icon: 'ph-cloud-rain', text: 'осадки', cls: 'st-info' },
+    humidity:      { icon: 'ph-drop', text: 'высокая влажность', cls: 'st-info' },
+    pressure_drop: { icon: 'ph-trend-down', text: 'падение давления', cls: 'st-warn' },
+    // документированные булевы
+    very_hot:    { icon: 'ph-thermometer-hot', text: 'очень жарко', cls: 'st-bad' },
+    very_cold:   { icon: 'ph-thermometer-cold', text: 'очень холодно', cls: 'st-bad' },
+    rain_heavy:  { icon: 'ph-cloud-rain', text: 'сильный дождь', cls: 'st-warn' },
+    rain_likely: { icon: 'ph-umbrella', text: 'вероятен дождь', cls: 'st-info' },
+    wind_strong: { icon: 'ph-wind', text: 'сильный ветер', cls: 'st-warn' },
+    uv_high:     { icon: 'ph-sun', text: 'высокий UV', cls: 'st-bad' }
+  };
+  const out = [];
+  if (Array.isArray(flags)) {
+    flags.forEach(f => {
+      const m = META[f && f.flag];
+      if (m) out.push(m);
+    });
+  } else if (typeof flags === 'object') {
+    Object.keys(flags).forEach(key => {
+      if (flags[key] === true && META[key]) out.push(META[key]);
+    });
+  }
+  return out;
+}
+
+function _wxSetupHTML() {
+  return `
+    <div class="settings-info-row" style="margin-bottom:14px;">
+      <i class="ph-light ph-map-pin"></i>
+      <span>Город не указан — без него Open-Meteo не отдаст погоду. Укажи город в Профиле, данные считаются локально через bridge.</span>
+    </div>
+    <div style="display:flex; justify-content:flex-end;">
+      <button class="btn-primary" onclick="go('settings')">
+        <i class="ph-light ph-gear"></i> Указать город в Профиле
+      </button>
+    </div>`;
+}
+
+function _wxOfflineHTML() {
+  return `
+    <p class="cand-hint">
+      <i class="ph-light ph-plugs"></i>
+      <span>Bridge офлайн — погода оживёт после запуска OpenHealth.command.</span>
+    </p>`;
+}
+
+function renderWeather() {
+  const body = document.getElementById('pulseWeatherBody');
+  if (!body) return;
+
+  // Мгновенный фолбэк из выгрузки, если оркестратор добавил DATA.weather.
+  const seed = (typeof DATA !== 'undefined' && DATA && DATA.weather && DATA.weather.day) ? DATA.weather : null;
+  if (seed) { _wxPaint(body, seed); } else { body.innerHTML = settingsSkeletonHTML(); }
+
+  fetchWithTimeout('/api/weather/today', 4000).then(r =>
+    r.json().then(j => ({ code: r.status, j })).catch(() => ({ code: r.status, j: null }))
+  ).then(({ code, j }) => {
+    // 503 / configured:false -> CTA «Укажи город в Профиле».
+    if (code === 503 || (j && j.configured === false)) {
+      body.innerHTML = _wxSetupHTML();
+      return;
+    }
+    if (!j) { if (!seed) body.innerHTML = _wxOfflineHTML(); return; }
+    // status:"error" приходит с HTTP 200 — мягкая плашка с message.
+    if (j.status === 'error') {
+      body.innerHTML = `
+        <div class="settings-info-row">
+          <i class="ph-light ph-info"></i>
+          <span>Город указан, но погода не подтянулась: ${escapeHtml(j.message || 'ошибка')}.</span>
+        </div>`;
+      return;
+    }
+    _wxPaint(body, j);
+  }).catch(() => {
+    if (!seed) body.innerHTML = _wxOfflineHTML();
+  });
+}
+
+// Отрисовка успешного ответа (j.status === 'ok').
+function _wxPaint(body, j) {
+  const d = j.day || {};
+  const tMax = _wxPick(d, ['t_max', 'temp_max', 'temperature_c_max']);
+  const tMin = _wxPick(d, ['t_min', 'temp_min', 'temperature_c_min']);
+  const precip = _wxPick(d, ['precipitation_mm', 'precip_sum']);
+  const uv = _wxPick(d, ['uv_index_max']);
+  const sunrise = _wxPick(d, ['sunrise']);
+  const sunset = _wxPick(d, ['sunset']);
+  const daylight = _wxPick(d, ['daylight_h', 'daylight_hours']);
+  const label = j.label ? escapeHtml(j.label) : '';
+
+  const fmtT = v => (v == null || isNaN(v)) ? '—' : Math.round(v) + '°';
+  const tempLine = (tMax != null || tMin != null)
+    ? `<div class="wx-temp">${fmtT(tMax)}<small> макс · ${fmtT(tMin)} мин</small></div>`
+    : '';
+
+  const summary = j.summary_ru
+    ? `<p class="wx-summary">${escapeHtml(j.summary_ru)}</p>`
+    : '';
+
+  // Чипы по активным флагам.
+  const chips = _wxFlagChips(j.flags);
+  const chipsHTML = chips.length
+    ? `<div class="wx-flags">${chips.map(c =>
+        `<span class="wx-chip ${c.cls}"><i class="ph-light ${c.icon}"></i>${escapeHtml(c.text)}</span>`).join('')}</div>`
+    : '';
+
+  // Световой день: ☀ HH:MM → HH:MM · N.N ч.
+  const daylightHTML = (sunrise && sunset)
+    ? `<div class="wx-daylight">
+         <i class="ph-light ph-sun-horizon"></i>
+         <span><b>${escapeHtml(sunrise)}</b> → <b>${escapeHtml(sunset)}</b>${daylight != null ? ` · ${Number(daylight).toFixed(1)} ч света` : ''}</span>
+       </div>`
+    : '';
+
+  // UV с цвет-зоной по day.uv_index_max.
+  const uvZone = _wxUvZone(uv);
+  const uvHTML = uvZone
+    ? `<div class="cal-fact-row">
+         <span class="k">UV-индекс</span>
+         <span class="v"><span class="wx-uv-badge ${uvZone.cls}"><i class="ph-light ph-sun"></i>${Number(uv).toFixed(1)} · ${uvZone.label}</span></span>
+       </div>`
+    : '';
+
+  // Осадки.
+  const precipHTML = (precip != null && !isNaN(precip))
+    ? `<div class="cal-fact-row"><span class="k">Осадки</span><span class="v">${Number(precip).toFixed(1)} мм</span></div>`
+    : '';
+
+  const locHTML = label
+    ? `<div class="cal-fact-row"><span class="k">Локация</span><span class="v">${label}</span></div>`
+    : '';
+
+  const stale = j.fallback_yesterday
+    ? `<p class="wx-stale"><i class="ph-light ph-clock-counter-clockwise"></i>данных за сегодня ещё нет — показана погода за вчера</p>`
+    : '';
+
+  body.innerHTML =
+    tempLine + summary + chipsHTML + daylightHTML +
+    locHTML + uvHTML + precipHTML + stale;
+}
+
+// === MEDICATIONS: препараты и БАДы (локальный список в браузере) =============
+// openhealth.medications = [{id, name, kind:"med"|"supp", dose, schedule,
+//   start, source:"self"|"doctor", status:"active"|"paused"|"stopped"}].
+// localStorage — источник истины; «Принял» зеркалит отметку в журнал дня.
+
+const MEDS_KEY = 'openhealth.medications';
+
+const MED_KIND_LABEL = { med: 'лекарство', supp: 'БАД' };
+const MED_SCHEDULE_LABEL = {
+  morning: 'утро', evening: 'вечер', with_food: 'с едой', as_needed: 'по необходимости',
+};
+const MED_SOURCE_LABEL = { self: 'сам назначил', doctor: 'врач назначил' };
+// cls переиспользует существующие segbar-состояния (.st-optimal зелёный /
+// .st-normal жёлтый); med-st-stopped — единственный новый нейтральный вариант.
+const MED_STATUS_META = {
+  active:  { label: 'активен', cls: 'st-optimal',     next: 'paused' },
+  paused:  { label: 'пауза',   cls: 'st-normal',      next: 'active' },
+  stopped: { label: 'отменён', cls: 'med-st-stopped', next: 'active' },
+};
+
+function getMedications() {
+  try {
+    const v = JSON.parse(localStorage.getItem(MEDS_KEY) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+}
+
+function saveMedications(list) {
+  try { localStorage.setItem(MEDS_KEY, JSON.stringify(list)); } catch (e) { /* private mode */ }
+}
+
+// Препарат начат раньше, чем 6 мес назад? -> подсказка обсудить ревизию.
+function medStartedLongAgo(start) {
+  if (!start) return false;
+  const d = new Date(start + 'T00:00:00');
+  if (isNaN(d)) return false;
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  return d < sixMonthsAgo;
+}
+
+function medCardHTML(m) {
+  const st = MED_STATUS_META[m.status] || MED_STATUS_META.active;
+  const kindLabel = MED_KIND_LABEL[m.kind] || 'препарат';
+  const schedLabel = MED_SCHEDULE_LABEL[m.schedule] || '';
+  const srcLabel = MED_SOURCE_LABEL[m.source] || '';
+  const isOff = m.status === 'stopped';
+
+  const chips = [
+    `<span class="med-chip"><i class="ph-light ${m.kind === 'supp' ? 'ph-leaf' : 'ph-pill'}"></i>${escapeHtml(kindLabel)}</span>`,
+    m.dose ? `<span class="med-chip"><i class="ph-light ph-eyedropper"></i>${escapeHtml(m.dose)}</span>` : '',
+    schedLabel ? `<span class="med-chip"><i class="ph-light ph-clock"></i>${escapeHtml(schedLabel)}</span>` : '',
+    m.start ? `<span class="med-chip"><i class="ph-light ph-calendar-blank"></i>с <span class="mono">${escapeHtml(m.start)}</span></span>` : '',
+    srcLabel ? `<span class="med-chip"><i class="ph-light ${m.source === 'doctor' ? 'ph-first-aid' : 'ph-user'}"></i>${escapeHtml(srcLabel)}</span>` : '',
+  ].filter(Boolean).join('');
+
+  const reviseBadge = medStartedLongAgo(m.start)
+    ? `<div class="med-revise"><i class="ph-light ph-warning-circle"></i>принимается дольше 6 мес — обсуди ревизию с врачом</div>`
+    : '';
+
+  const takenBtn = isOff ? '' :
+    `<button type="button" class="btn-secondary" onclick="markMedTaken('${escapeHtml(m.id)}')"><i class="ph-light ph-check"></i> Принял</button>`;
+  const pauseBtn =
+    `<button type="button" class="btn-secondary" onclick="cycleMedStatus('${escapeHtml(m.id)}')">${
+      m.status === 'active'
+        ? '<i class="ph-light ph-pause"></i> Пауза'
+        : '<i class="ph-light ph-play"></i> Возобновить'
+    }</button>`;
+  const researchBtn =
+    `<button type="button" class="btn-secondary" onclick="runMedResearch('${escapeHtml(m.id)}')"><i class="ph-light ph-magnifying-glass"></i> Research</button>`;
+  const delBtn =
+    `<button type="button" class="med-del" aria-label="Удалить «${escapeHtml(m.name)}»" onclick="deleteMedication('${escapeHtml(m.id)}')"><i class="ph-light ph-trash"></i></button>`;
+
+  return `
+    <div class="med-card med-${escapeHtml(m.status)}">
+      <div class="med-card-top">
+        <span class="med-name">${escapeHtml(m.name)}</span>
+        <button type="button" class="segbar-pill med-status ${st.cls}"
+                title="Переключить статус" onclick="cycleMedStatus('${escapeHtml(m.id)}')">${st.label}</button>
+      </div>
+      <div class="med-chips">${chips}</div>
+      ${reviseBadge}
+      <div class="med-actions">${takenBtn}${pauseBtn}${researchBtn}${delBtn}</div>
+    </div>`;
+}
+
+function renderMedications() {
+  const host = document.getElementById('medicationsContent');
+  if (!host) return;
+  const list = getMedications();
+  const activeCount = list.filter(m => m.status === 'active').length;
+
+  const listCard = `
+    <div class="card-outer col-7">
+      <div class="card-inner">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>Препараты и БАДы</h3>
+            <div class="sub">${list.length
+              ? list.length + ' зап.' + (activeCount ? ' · ' + activeCount + ' активн.' : '')
+              : 'записей пока нет'}</div>
+          </div>
+          <i class="ph-light ph-pill card-header-icon"></i>
+        </div>
+        ${list.length
+          ? `<div class="med-list">${list.map(medCardHTML).join('')}</div>`
+          : `<div class="empty-state" style="padding: 28px 0;">
+               <div class="empty-icon-ring"><i class="ph-light ph-pill"></i></div>
+               <h4>Список пуст</h4>
+               <p class="what">Добавь препараты и добавки — отмечай приём и держи под рукой дату начала и источник назначения.</p>
+             </div>`}
+        <div class="settings-info-row med-note">
+          <i class="ph-light ph-info"></i>
+          <span>Взаимодействия и дозировки — только с врачом или фармацевтом.</span>
+        </div>
+      </div>
+    </div>`;
+
+  const formCard = `
+    <div class="card-outer col-5">
+      <div class="card-inner">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>Добавить</h3>
+            <div class="sub">название — обязательно</div>
+          </div>
+          <i class="ph-light ph-plus-circle card-header-icon"></i>
+        </div>
+        <div class="form-group">
+          <label for="medName">Название *</label>
+          <input type="text" id="medName" maxlength="80" placeholder="Например: Магний B6, Аторвастатин"
+                 onkeydown="if(event.key==='Enter'){addMedication();}">
+        </div>
+        <div class="form-group">
+          <label for="medKind">Тип</label>
+          <select class="med-select" id="medKind">
+            <option value="med">лекарство</option>
+            <option value="supp">БАД</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="medDose">Доза</label>
+          <input type="text" id="medDose" maxlength="40" placeholder="Например: 400 мг, 1 капсула">
+        </div>
+        <div class="form-group">
+          <label for="medSchedule">Расписание</label>
+          <select class="med-select" id="medSchedule">
+            <option value="morning">утро</option>
+            <option value="evening">вечер</option>
+            <option value="with_food">с едой</option>
+            <option value="as_needed">по необходимости</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="medStart">Дата начала</label>
+          <input type="date" id="medStart" max="${todayKey()}">
+        </div>
+        <div class="form-group">
+          <label for="medSource">Источник</label>
+          <select class="med-select" id="medSource">
+            <option value="self">сам назначил</option>
+            <option value="doctor">врач назначил</option>
+          </select>
+        </div>
+        <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+          <button class="btn-primary" onclick="addMedication()">
+            <i class="ph-light ph-plus"></i> Добавить
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  host.innerHTML = listCard + formCard;
+  initResearchBadges();
+}
+
+function addMedication() {
+  const nameEl = document.getElementById('medName');
+  const name = (nameEl ? nameEl.value : '').trim();
+  if (!name) {
+    showToast('Укажи название препарата', false);
+    if (nameEl) nameEl.focus();
+    return;
+  }
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const list = getMedications();
+  list.push({
+    id: 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name: name.slice(0, 80),
+    kind: val('medKind') || 'med',
+    dose: val('medDose').trim().slice(0, 40),
+    schedule: val('medSchedule') || 'morning',
+    start: val('medStart').trim(),
+    source: val('medSource') || 'self',
+    status: 'active',
+  });
+  saveMedications(list);
+  renderMedications();
+  showToast('Добавлено: ' + name, true);
+}
+
+function deleteMedication(id) {
+  const list = getMedications().filter(m => m.id !== id);
+  saveMedications(list);
+  renderMedications();
+  showToast('Запись удалена', true);
+}
+
+// active -> paused -> active; со «stopped» возврат в active (по next в мете).
+function cycleMedStatus(id) {
+  const list = getMedications();
+  const m = list.find(x => x.id === id);
+  if (!m) return;
+  const meta = MED_STATUS_META[m.status] || MED_STATUS_META.active;
+  m.status = meta.next;
+  saveMedications(list);
+  renderMedications();
+}
+
+// «Принял»: зеркалим отметку в журнал выбранного дня, не затирая остальной
+// payload дня (habits/mood/notes). Сначала тянем текущий день с диска, мёржим
+// meds_taken, потом POST полного payload — server.save_day переписывает файл
+// целиком, поэтому мёрж обязателен. ВНИМАНИЕ оркестратору: общий
+// collectDayPayload не знает про meds_taken — последующий sync habits/mood/notes
+// может перезаписать день без этого поля (см. issues).
+function markMedTaken(id) {
+  const m = getMedications().find(x => x.id === id);
+  if (!m) return;
+  const key = (typeof selectedDayKey === 'function') ? selectedDayKey() : todayKey();
+
+  const postMerged = (existing) => {
+    const payload = (existing && typeof existing === 'object') ? { ...existing } : {};
+    const taken = Array.isArray(payload.meds_taken) ? payload.meds_taken.slice() : [];
+    if (!taken.includes(m.name)) taken.push(m.name);
+    payload.meds_taken = taken;
+    try {
+      fetchWithTimeout('/api/journal/day', 2500, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: key, payload }),
+      }).catch(() => { /* bridge офлайн — отметка не критична */ });
+    } catch (e) { /* file:// без fetch — молчим */ }
+    showToast('Отмечено: принял', true);
+  };
+
+  // Подтягиваем текущий день, чтобы не стереть habits/mood/notes; при любой
+  // ошибке всё равно отправляем хотя бы meds_taken. GET возвращает 200 с
+  // {found, payload|null} — читаем j.payload.
+  try {
+    fetchWithTimeout('/api/journal/day?date=' + key, 2500)
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => postMerged(j && j.payload))
+      .catch(() => postMerged(null));
+  } catch (e) {
+    postMerged(null);
+  }
+}
+
+// «Research»: fire-and-forget запуск локального агента по названию препарата.
+// server валидирует task ∈ ALLOWED_TASKS и санитизирует param (кириллица ок).
+function runMedResearch(id) {
+  const m = getMedications().find(x => x.id === id);
+  if (!m) return;
+  try {
+    fetchWithTimeout('/api/agent', 2500, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task: 'research', param: m.name }),
+    }).catch(() => { /* агент работает в фоне; ответ не критичен */ });
+  } catch (e) { /* file:// без fetch */ }
+  showToast('Запустил research', true);
+}
+
+// ============================================================
+// ЗОНА METHODOLOGY: страницы docs/methodology/*.md.
+// Список слева, просмотр/редактор справа. Markdown -> ohRenderMarkdown.
+// ============================================================
+
+// Состояние зоны: загруженные страницы + id выбранной.
+const METH = { pages: null, activeId: null, editing: false };
+
+// --- Единственный markdown-рендерер проекта (зовёт и зона research) ----------
+// Поддержка: # / ## / ###, **bold**, `inline code`, таблицы |a|b| с |---|,
+// блоки тройных бэктиков, списки -/* и 1., > цитаты, --- разделитель, ссылки.
+window.ohRenderMarkdown = function ohRenderMarkdown(md) {
+  if (typeof md !== 'string' || !md.trim()) return '';
+  // Инлайновое форматирование внутри уже экранированного текста.
+  const inline = (s) => {
+    // код в одинарных бэктиках — раньше остального, чтобы внутри не трогать **/_
+    s = s.replace(/`([^`]+)`/g, (_, c) => '<code class="md-inline">' + c + '</code>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\b__([^_]+)__\b/g, '<strong>$1</strong>');
+    // [текст](url) — url уже экранирован; пускаем только http(s)/относительные
+    s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => {
+      if (/^(https?:|\/|#|mailto:)/i.test(u)) {
+        return '<a href="' + u + '" target="_blank" rel="noopener">' + t + '</a>';
+      }
+      return m;
+    });
+    return s;
+  };
+
+  const src = escapeHtml(md).replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  let i = 0;
+  let listType = null; // 'ul' | 'ol' | null
+
+  const closeList = () => { if (listType) { out.push('</' + listType + '>'); listType = null; } };
+
+  while (i < src.length) {
+    const line = src[i];
+
+    // блок тройных бэктиков ```
+    const fence = line.match(/^\s*```(.*)$/);
+    if (fence) {
+      closeList();
+      const buf = [];
+      i++;
+      while (i < src.length && !/^\s*```\s*$/.test(src[i])) { buf.push(src[i]); i++; }
+      i++; // закрывающий ```
+      out.push('<pre class="md-fence"><code>' + buf.join('\n') + '</code></pre>');
+      continue;
+    }
+
+    // таблица: строка с | и следующая строка-разделитель |---|
+    if (/\|/.test(line) && i + 1 < src.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(src[i + 1]) && /-/.test(src[i + 1])) {
+      closeList();
+      const splitRow = (r) => r.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(c => c.trim());
+      const headers = splitRow(line);
+      i += 2; // шапка + разделитель
+      const rows = [];
+      while (i < src.length && /\|/.test(src[i]) && src[i].trim() !== '') { rows.push(splitRow(src[i])); i++; }
+      let t = '<table class="md-table"><thead><tr>';
+      headers.forEach(h => { t += '<th>' + inline(h) + '</th>'; });
+      t += '</tr></thead><tbody>';
+      rows.forEach(r => {
+        t += '<tr>';
+        for (let c = 0; c < headers.length; c++) { t += '<td>' + inline(r[c] || '') + '</td>'; }
+        t += '</tr>';
+      });
+      t += '</tbody></table>';
+      out.push(t);
+      continue;
+    }
+
+    // заголовки ### / ## / #
+    const h = line.match(/^\s*(#{1,3})\s+(.*)$/);
+    if (h) { closeList(); const lvl = h[1].length; out.push('<h' + lvl + '>' + inline(h[2].trim()) + '</h' + lvl + '>'); i++; continue; }
+
+    // горизонтальная линия
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { closeList(); out.push('<hr>'); i++; continue; }
+
+    // цитата
+    if (/^\s*>\s?/.test(line)) {
+      closeList();
+      const buf = [];
+      while (i < src.length && /^\s*>\s?/.test(src[i])) { buf.push(src[i].replace(/^\s*>\s?/, '')); i++; }
+      out.push('<blockquote>' + inline(buf.join('<br>')) + '</blockquote>');
+      continue;
+    }
+
+    // нумерованный список
+    const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+    if (ol) {
+      if (listType !== 'ol') { closeList(); out.push('<ol>'); listType = 'ol'; }
+      out.push('<li>' + inline(ol[1]) + '</li>'); i++; continue;
+    }
+    // маркированный список
+    const ul = line.match(/^\s*[-*+]\s+(.*)$/);
+    if (ul) {
+      if (listType !== 'ul') { closeList(); out.push('<ul>'); listType = 'ul'; }
+      out.push('<li>' + inline(ul[1]) + '</li>'); i++; continue;
+    }
+
+    // пустая строка
+    if (line.trim() === '') { closeList(); i++; continue; }
+
+    // обычный абзац (склеиваем смежные непустые строки)
+    closeList();
+    const para = [line];
+    i++;
+    while (i < src.length && src[i].trim() !== '' &&
+           !/^\s*(#{1,3}\s|>\s?|[-*+]\s|\d+\.\s|```)/.test(src[i]) &&
+           !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(src[i])) {
+      para.push(src[i]); i++;
+    }
+    out.push('<p>' + inline(para.join('<br>')) + '</p>');
+  }
+  closeList();
+  return out.join('\n');
+};
+
+// --- Вход в зону: тянем /api/methodology, рисуем список ----------------------
+function renderMethodology() {
+  const list = document.getElementById('methList');
+  const view = document.getElementById('methView');
+  if (!list || !view) return;
+
+  list.innerHTML = '<p class="cand-hint"><i class="ph-light ph-circle-notch"></i><span>Загружаю методологии…</span></p>';
+  view.innerHTML = '';
+
+  fetchWithTimeout('/api/methodology', 4000)
+    .then(r => r.json().then(j => ({ ok: r.ok, j })))
+    .then(({ ok, j }) => {
+      if (!ok || !j || j.status !== 'ok' || !Array.isArray(j.pages)) {
+        methShowBridgeOff();
+        return;
+      }
+      METH.pages = j.pages;
+      if (!j.pages.length) {
+        list.innerHTML = '';
+        view.innerHTML = '<div class="empty-state"><i class="ph-light ph-function empty-icon"></i>'
+          + '<h4>Пока нет страниц методологии</h4>'
+          + '<p>Папка <span class="mono">docs/methodology/</span> пуста. Добавь .md-файлы — они появятся здесь.</p></div>';
+        return;
+      }
+      methRenderList();
+      // первая страница (README идёт первым с сервера) — открыта по умолчанию
+      methSelect(j.pages[0].id);
+    })
+    .catch(() => methShowBridgeOff());
+}
+
+// Список слева: кнопка на страницу + чип версии, если она есть.
+function methRenderList() {
+  const list = document.getElementById('methList');
+  if (!list || !METH.pages) return;
+  list.innerHTML = METH.pages.map(p => `
+    <button type="button" class="meth-list-btn${p.id === METH.activeId ? ' active' : ''}"
+            data-meth-id="${escapeHtml(p.id)}" onclick="methSelect('${escapeHtml(p.id)}')">
+      <i class="ph-light ph-file-text"></i>
+      <span class="meth-list-title">${escapeHtml(p.title || p.id)}</span>
+      ${p.version ? `<span class="meth-ver">${escapeHtml(p.version)}</span>` : ''}
+    </button>`).join('');
+}
+
+// Выбор страницы -> просмотр через markdown.
+function methSelect(id) {
+  if (!METH.pages) return;
+  const page = METH.pages.find(p => p.id === id);
+  if (!page) return;
+  METH.activeId = id;
+  METH.editing = false;
+  document.querySelectorAll('#methList .meth-list-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.methId === id);
+  });
+  methRenderView(page);
+}
+
+// Просмотр выбранной страницы: тулбар + отрендеренный markdown.
+function methRenderView(page) {
+  const view = document.getElementById('methView');
+  if (!view) return;
+  const ver = page.version
+    ? `<span class="meth-ver" style="margin-left:8px;">${escapeHtml(page.version)}</span>` : '';
+  view.innerHTML = `
+    <div class="meth-view-toolbar">
+      <div class="meth-view-meta">
+        <div style="display:flex;align-items:center;">
+          <strong style="font-size:13px;">${escapeHtml(page.title || page.id)}</strong>${ver}
+        </div>
+        <div class="path">${escapeHtml(page.path || ('docs/methodology/' + page.id + '.md'))}</div>
+      </div>
+      <div class="meth-view-actions">
+        <button type="button" class="btn-secondary" onclick="methEdit('${escapeHtml(page.id)}')">
+          <i class="ph-light ph-pencil-simple"></i> Редактировать
+        </button>
+      </div>
+    </div>
+    <div class="md-body">${window.ohRenderMarkdown(page.content || '')}</div>`;
+}
+
+// Режим редактирования: textarea + Сохранить / Отмена.
+function methEdit(id) {
+  const view = document.getElementById('methView');
+  if (!view || !METH.pages) return;
+  const page = METH.pages.find(p => p.id === id);
+  if (!page) return;
+  METH.editing = true;
+  view.innerHTML = `
+    <div class="meth-view-toolbar">
+      <div class="meth-view-meta">
+        <div style="display:flex;align-items:center;">
+          <strong style="font-size:13px;">${escapeHtml(page.title || page.id)}</strong>
+        </div>
+        <div class="path">${escapeHtml(page.path || ('docs/methodology/' + page.id + '.md'))} · правка md</div>
+      </div>
+      <div class="meth-view-actions">
+        <button type="button" class="btn-secondary" id="methCancelBtn" onclick="methSelect('${escapeHtml(id)}')">Отмена</button>
+        <button type="button" class="btn-primary" id="methSaveBtn" onclick="methSave('${escapeHtml(id)}')">
+          <i class="ph-light ph-floppy-disk"></i> Сохранить
+        </button>
+      </div>
+    </div>
+    <textarea class="meth-editor" id="methTextarea" spellcheck="false"></textarea>`;
+  // значение ставим через .value, чтобы не ломать спецсимволы экранированием
+  const ta = document.getElementById('methTextarea');
+  if (ta) { ta.value = page.content || ''; ta.focus(); }
+}
+
+// POST /api/methodology/save {id, content}.
+function methSave(id) {
+  const ta = document.getElementById('methTextarea');
+  const saveBtn = document.getElementById('methSaveBtn');
+  if (!ta) return;
+  const content = ta.value;
+  if (!content.trim()) { showToast('Пустую страницу не сохраняю', false); return; }
+  if (saveBtn) saveBtn.disabled = true;
+  fetchWithTimeout('/api/methodology/save', 6000, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, content })
+  })
+    .then(r => r.json().then(j => ({ ok: r.ok, j })))
+    .then(({ ok, j }) => {
+      if (ok && j && j.status === 'ok') {
+        // обновляем кэш страницы локально и перерисовываем
+        const page = METH.pages.find(p => p.id === id);
+        if (page) {
+          page.content = content;
+          // перечитать заголовок из первой строки `# ` — дёшево (как делает server.py)
+          const titleLine = content.split('\n').find(l => l.trim().startsWith('# '));
+          if (titleLine) page.title = titleLine.replace(/^\s*#\s+/, '').trim();
+        }
+        // showToast сам экранирует текст — backup НЕ оборачиваем повторно
+        showToast('Сохранено (бэкап: ' + (j.backup || 'нет') + ')', true);
+        methRenderList();
+        methSelect(id);
+      } else {
+        showToast((j && j.message) ? j.message : 'Не удалось сохранить', false);
+        if (saveBtn) saveBtn.disabled = false;
+      }
+    })
+    .catch(() => {
+      showToast('Bridge не отвечает — сохранение недоступно', false);
+      if (saveBtn) saveBtn.disabled = false;
+    });
+}
+
+// Плашка «нет bridge» (404 / сеть): методологии читаются только из репо.
+function methShowBridgeOff() {
+  const list = document.getElementById('methList');
+  const view = document.getElementById('methView');
+  if (list) list.innerHTML = '';
+  if (view) {
+    view.innerHTML = '<div class="empty-state"><i class="ph-light ph-plugs empty-icon"></i>'
+      + '<h4>Методологии доступны только при запущенном bridge</h4>'
+      + '<p>Эти страницы читаются из <span class="mono">docs/methodology/*.md</span> локального сервера. '
+      + 'Запусти bridge (<span class="mono">server.py</span>) и открой зону снова.</p></div>';
+  }
+}
+
+// ============================================================
+// ЗОНА params: параметры расчётов (Настройки → #paramsBox).
+// Реестр живёт в openhealth.params; UI читает /api/params,
+// пишет /api/params (debounce) и /api/params/reset.
+// ============================================================
+
+// Человекочитаемые заголовки групп (поле group из реестра).
+const PARAM_GROUP_META = {
+  recovery_weights: 'Веса recovery',
+  recovery: 'Recovery',
+  correlations: 'Корреляции',
+  insights: 'Сигналы и пороги',
+  day_load: 'Дневная нагрузка',
+  weather: 'Погода',
+};
+
+// Кэш строк + таймеры debounce по id.
+const PARAMS_UI = { rows: [], timers: {} };
+
+// Главный вход зоны. Тянем реестр и рисуем, либо плашку состояния.
+function renderParams() {
+  const box = document.getElementById('paramsBox');
+  if (!box) return;
+  box.innerHTML = paramStateHTML('ph-circle-notch', 'Загружаю параметры…');
+  fetchWithTimeout('/api/params', 3000)
+    .then(r => r.json())
+    .then(d => {
+      if (!d || d.status !== 'ok' || !Array.isArray(d.params)) {
+        box.innerHTML = paramBridgeHTML();
+        return;
+      }
+      PARAMS_UI.rows = d.params;
+      drawParams();
+    })
+    .catch(() => { box.innerHTML = paramBridgeHTML(); });
+}
+
+// Плашка состояния (загрузка / ошибка).
+function paramStateHTML(icon, text) {
+  return `<div class="param-state"><i class="ph-light ${icon}"></i><span>${escapeHtml(text)}</span></div>`;
+}
+
+// Сеть/404: нужен обновлённый bridge.
+function paramBridgeHTML() {
+  return paramStateHTML('ph-plug',
+    'Нужен обновлённый bridge — перезапусти OpenHealth.command, чтобы открыть параметры расчётов.');
+}
+
+// Перерисовать всё из PARAMS_UI.rows (после reset/refresh из ответа API).
+function drawParams() {
+  const box = document.getElementById('paramsBox');
+  if (!box) return;
+  const rows = PARAMS_UI.rows;
+  if (!rows.length) {
+    box.innerHTML = paramStateHTML('ph-info', 'В реестре пока нет параметров.');
+    return;
+  }
+  const changed = rows.filter(p => paramIsChanged(p)).length;
+
+  // Группируем: по полю group, иначе по префиксу id до первого "." / "_".
+  const groups = [];
+  const byKey = {};
+  rows.forEach(p => {
+    const key = p.group || String(p.id || '').split(/[._]/)[0] || 'прочее';
+    if (!byKey[key]) { byKey[key] = []; groups.push(key); }
+    byKey[key].push(p);
+  });
+
+  const toolbar = `
+    <div class="param-toolbar">
+      <span class="param-count">${changed ? changed + ' изменено из ' + rows.length : 'все по умолчанию · ' + rows.length}</span>
+      <button type="button" class="btn-secondary" onclick="resetAllParams()" ${changed ? '' : 'disabled'}>
+        Вернуть все по умолчанию
+      </button>
+    </div>`;
+
+  const body = groups.map(key => {
+    const label = PARAM_GROUP_META[key] || key;
+    const inner = byKey[key].map(paramRowHTML).join('');
+    return `<div class="param-group"><div class="param-group-head">${escapeHtml(label)}</div>${inner}</div>`;
+  }).join('');
+
+  box.innerHTML = toolbar + body;
+}
+
+// Значение отличается от дефолта? (поле overridden из API, иначе сравнение чисел).
+function paramIsChanged(p) {
+  if (typeof p.overridden === 'boolean') return p.overridden;
+  return Number(p.value) !== Number(p.default);
+}
+
+// Параметр зарегистрирован, но его модуль ещё не переключён на реестр.
+// Реестр (openhealth/params.py) предписывает показать "пока не подключено".
+function paramIsUnwired(p) {
+  return p.wired === false;
+}
+
+// Одна строка параметра.
+function paramRowHTML(p) {
+  const id = String(p.id);
+  const name = p.name || p.label_ru || id;
+  // description может не быть — собираем из where/affects/doc как fallback.
+  let desc = p.description || p.where || '';
+  if (!desc && Array.isArray(p.affects) && p.affects.length) desc = 'влияет на: ' + p.affects.join(', ');
+  const changed = paramIsChanged(p);
+  const unwired = paramIsUnwired(p);
+  const step = p.step != null ? p.step : paramGuessStep(p);
+  const minAttr = p.min != null ? `min="${p.min}"` : '';
+  const maxAttr = p.max != null ? `max="${p.max}"` : '';
+
+  // Бейджи: "пока не подключено" (wired:False) и/или "изменён" (value!==default).
+  const badges = [];
+  if (unwired) badges.push('<span class="segbar-pill param-pill param-wired">пока не подключено</span>');
+  if (changed) badges.push('<span class="segbar-pill param-pill st-changed">изменён</span>');
+  const badgeHTML = badges.length
+    ? `<span class="param-badge" data-param-badge="${escapeHtml(id)}">${badges.join('')}</span>`
+    : `<span class="param-badge param-hidden" data-param-badge="${escapeHtml(id)}"></span>`;
+
+  return `
+    <div class="param-row${unwired ? ' param-row-unwired' : ''}" data-param-row="${escapeHtml(id)}">
+      <div class="param-row-main">
+        <div class="param-row-name">
+          ${escapeHtml(name)}
+          ${badgeHTML}
+        </div>
+        ${desc ? `<div class="param-row-desc">${escapeHtml(desc)}</div>` : ''}
+      </div>
+      <div class="param-row-ctl">
+        <span class="param-input-wrap">
+          <input type="number" class="param-input" inputmode="decimal" step="${step}" ${minAttr} ${maxAttr}
+                 value="${p.value != null ? p.value : ''}"
+                 aria-label="${escapeHtml(name)}"
+                 oninput="onParamInput('${escapeHtml(id)}', this.value)"
+                 onkeydown="if(event.key==='Enter'){this.blur();}">
+        </span>
+        ${p.unit ? `<span class="param-unit">${escapeHtml(p.unit)}</span>` : '<span class="param-unit"></span>'}
+        <span class="param-default" title="значение по умолчанию">def ${p.default != null ? escapeHtml(String(p.default)) : '—'}</span>
+        <button type="button" class="param-reset-row" title="сбросить этот параметр"
+                aria-label="сбросить" onclick="resetOneParam('${escapeHtml(id)}')" ${changed ? '' : 'disabled'}>
+          <i class="ph-light ph-arrow-counter-clockwise"></i>
+        </button>
+      </div>
+    </div>`;
+}
+
+// Если step не задан — прикинуть разумный из диапазона.
+function paramGuessStep(p) {
+  const min = Number(p.min), max = Number(p.max);
+  if (!isFinite(min) || !isFinite(max)) return 'any';
+  const span = Math.abs(max - min);
+  if (span <= 1) return 0.01;
+  if (span <= 5) return 0.05;
+  if (span <= 20) return 0.25;
+  if (Number.isInteger(min) && Number.isInteger(max)) return 1;
+  return 0.5;
+}
+
+// Ввод в инпут: debounce ~400мс, затем POST /api/params.
+function onParamInput(id, raw) {
+  if (PARAMS_UI.timers[id]) clearTimeout(PARAMS_UI.timers[id]);
+  PARAMS_UI.timers[id] = setTimeout(() => {
+    delete PARAMS_UI.timers[id];
+    commitParam(id, raw);
+  }, 400);
+}
+
+// Отправка значения одного параметра.
+function commitParam(id, raw) {
+  const num = Number(raw);
+  if (raw === '' || !isFinite(num)) { showToast('Нужно число', false); return; }
+  const inp = paramInputEl(id);
+  if (inp) inp.classList.add('param-busy');
+  fetchWithTimeout('/api/params', 3500, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: id, value: num }),
+  })
+    .then(r => r.json().then(d => ({ ok: r.ok, d: d })))
+    .then(({ ok, d }) => {
+      if (inp) inp.classList.remove('param-busy');
+      if (!ok || !d || d.status !== 'ok') {
+        showToast((d && d.message) ? d.message : 'Не удалось сохранить', false);
+        return;
+      }
+      if (Array.isArray(d.params)) PARAMS_UI.rows = d.params;
+      showToast('Сохранено', true);
+      // Перерисовываем целиком: меняется значение, бейдж, счётчик, доступность сброса.
+      drawParams();
+    })
+    .catch(() => {
+      if (inp) inp.classList.remove('param-busy');
+      showToast('Нет связи с bridge — перезапусти OpenHealth.command', false);
+    });
+}
+
+// Сброс одного параметра.
+function resetOneParam(id) {
+  fetchWithTimeout('/api/params/reset', 3500, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: id }),
+  })
+    .then(r => r.json().then(d => ({ ok: r.ok, d: d })))
+    .then(({ ok, d }) => {
+      if (!ok || !d || d.status !== 'ok') { showToast((d && d.message) || 'Не удалось сбросить', false); return; }
+      if (Array.isArray(d.params)) PARAMS_UI.rows = d.params;
+      showToast(d.reset ? 'Сброшено к значению по умолчанию' : 'Уже по умолчанию', true);
+      drawParams();
+    })
+    .catch(() => showToast('Нет связи с bridge — перезапусти OpenHealth.command', false));
+}
+
+// Сброс всех параметров.
+function resetAllParams() {
+  fetchWithTimeout('/api/params/reset', 3500, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: 'all' }),
+  })
+    .then(r => r.json().then(d => ({ ok: r.ok, d: d })))
+    .then(({ ok, d }) => {
+      if (!ok || !d || d.status !== 'ok') { showToast((d && d.message) || 'Не удалось сбросить', false); return; }
+      if (Array.isArray(d.params)) PARAMS_UI.rows = d.params;
+      showToast(d.reset ? ('Сброшено: ' + d.reset) : 'Уже всё по умолчанию', true);
+      drawParams();
+    })
+    .catch(() => showToast('Нет связи с bridge — перезапусти OpenHealth.command', false));
+}
+
+function paramInputEl(id) {
+  const row = document.querySelector('[data-param-row="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+  return row ? row.querySelector('.param-input') : null;
+}
+
+// ============================================================
+// ПРОФИЛЬ ТЕЛА (zone profile): возраст / пол / рост / вес + история веса.
+// Контейнер #bodyProfileBox. Источник истины — GET/POST /api/profile.
+// Любое изменение -> debounce 600мс -> POST всего профиля -> showToast.
+// ============================================================
+
+// Текущее состояние профиля (в т.ч. weight_history, которую правит мини-форма).
+let _profState = { age: null, sex: null, height_cm: null, weight_kg: null, weight_history: [] };
+let _profSaveTimer = null;
+
+function _profToday() {
+  // Локальная дата в формате YYYY-MM-DD (без сдвига по UTC).
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+// Прочитать поля формы в число|null (пустое поле = null, не ошибка).
+function _profNum(id) {
+  const el = document.getElementById(id);
+  if (!el) return null;
+  const v = el.value.trim();
+  if (v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Вход в зону: тянем профиль с bridge и рисуем форму.
+function renderBodyProfile() {
+  const box = document.getElementById('bodyProfileBox');
+  if (!box) return;
+
+  fetchWithTimeout('/api/profile', 3000)
+    .then(r => r.json())
+    .then(d => {
+      const p = (d && d.found && d.profile) ? d.profile : {};
+      _profState = {
+        age: (typeof p.age === 'number') ? p.age : null,
+        sex: (p.sex === 'm' || p.sex === 'f' || p.sex === 'na') ? p.sex : null,
+        height_cm: (typeof p.height_cm === 'number') ? p.height_cm : null,
+        weight_kg: (typeof p.weight_kg === 'number') ? p.weight_kg : null,
+        weight_history: Array.isArray(p.weight_history) ? p.weight_history.filter(
+          e => e && typeof e.date === 'string' && typeof e.kg === 'number') : []
+      };
+      _profDrawForm(box);
+    })
+    .catch(() => {
+      // bridge недоступен / 404 / таймаут — рисуем пустую форму, без ошибки.
+      _profState = { age: null, sex: null, height_cm: null, weight_kg: null, weight_history: [] };
+      _profDrawForm(box);
+    });
+}
+
+function _profDrawForm(box) {
+  const s = _profState;
+  const today = _profToday();
+  const sexOpt = (val, ru) =>
+    `<option value="${val}"${s.sex === val ? ' selected' : ''}>${ru}</option>`;
+
+  box.innerHTML = `
+    <div class="prof-grid">
+      <div class="form-group">
+        <label for="profAge">Возраст</label>
+        <input type="number" id="profAge" inputmode="numeric" min="5" max="120" step="1"
+               placeholder="лет" value="${s.age != null ? s.age : ''}">
+        <span class="prof-err" id="profAgeErr"></span>
+      </div>
+      <div class="form-group">
+        <label for="profSex">Пол</label>
+        <select id="profSex">
+          <option value=""${s.sex == null ? ' selected' : ''}>не указан</option>
+          ${sexOpt('m', 'м')}
+          ${sexOpt('f', 'ж')}
+          ${sexOpt('na', '—')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="profHeight">Рост, см</label>
+        <input type="number" id="profHeight" inputmode="decimal" min="80" max="250" step="0.1"
+               placeholder="см" value="${s.height_cm != null ? s.height_cm : ''}">
+        <span class="prof-err" id="profHeightErr"></span>
+      </div>
+      <div class="form-group">
+        <label for="profWeight">Вес, кг</label>
+        <input type="number" id="profWeight" inputmode="decimal" min="20" max="350" step="0.1"
+               placeholder="кг" value="${s.weight_kg != null ? s.weight_kg : ''}">
+        <span class="prof-err" id="profWeightErr"></span>
+      </div>
+    </div>
+
+    <div class="prof-weight-head">Замеры веса</div>
+    <div class="prof-weight-list" id="profWeightList"></div>
+
+    <div class="prof-add">
+      <div class="prof-field">
+        <label for="profMeasDate">Дата</label>
+        <input type="date" id="profMeasDate" max="${today}" value="${today}">
+      </div>
+      <div class="prof-field">
+        <label for="profMeasKg">Вес, кг</label>
+        <input type="number" id="profMeasKg" inputmode="decimal" min="20" max="350" step="0.1" placeholder="кг">
+      </div>
+      <button class="btn-secondary" type="button" id="profMeasAdd" onclick="profileAddMeasurement()">
+        <i class="ph-light ph-plus"></i> Добавить замер
+      </button>
+    </div>
+
+    <div class="settings-info-row prof-hint" style="margin-top:16px;">
+      <i class="ph-light ph-info"></i>
+      <span>Весы по API (Withings и др.) — в разделе <a onclick="go('sync')">Источники</a>.</span>
+    </div>`;
+
+  _profRenderWeightList();
+
+  // Основные поля: input/change -> debounce-сохранение всего профиля.
+  ['profAge', 'profHeight', 'profWeight'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', _profScheduleSave);
+  });
+  const sexEl = document.getElementById('profSex');
+  if (sexEl) sexEl.addEventListener('change', _profScheduleSave);
+}
+
+// Последние 5 замеров, новые сверху.
+function _profRenderWeightList() {
+  const list = document.getElementById('profWeightList');
+  if (!list) return;
+  const hist = (_profState.weight_history || []).slice();
+  hist.sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0)); // новые сверху
+  if (!hist.length) {
+    list.innerHTML = '<div class="prof-weight-empty">Замеров пока нет — добавь первый ниже.</div>';
+    return;
+  }
+  list.innerHTML = hist.slice(0, 5).map((e, i) => `
+    <div class="prof-weight-row${i === 0 ? ' is-latest' : ''}">
+      <span class="d">${escapeHtml(e.date)}</span>
+      <span class="kg">${escapeHtml(String(e.kg))} кг</span>
+    </div>`).join('');
+}
+
+// Добавить замер из мини-формы -> в weight_history -> сразу сохранить.
+function profileAddMeasurement() {
+  const dateEl = document.getElementById('profMeasDate');
+  const kgEl = document.getElementById('profMeasKg');
+  if (!dateEl || !kgEl) return;
+  const date = (dateEl.value || '').trim();
+  const kgRaw = (kgEl.value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { showToast('Укажи дату замера', false); return; }
+  const kg = Number(kgRaw);
+  if (kgRaw === '' || !Number.isFinite(kg)) { showToast('Укажи вес в кг', false); return; }
+  if (kg < 20 || kg > 350) { showToast('Вес вне диапазона 20-350 кг', false); return; }
+
+  const kgR = Math.round(kg * 10) / 10;
+  // Один замер на дату: повтор перетирает предыдущее значение этого дня.
+  _profState.weight_history = (_profState.weight_history || []).filter(e => e.date !== date);
+  _profState.weight_history.push({ date: date, kg: kgR });
+  _profState.weight_history.sort((a, b) => a.date < b.date ? -1 : (a.date > b.date ? 1 : 0));
+
+  // Последний по дате замер подставляем в «текущий вес».
+  const last = _profState.weight_history[_profState.weight_history.length - 1];
+  if (last) {
+    _profState.weight_kg = last.kg;
+    const wEl = document.getElementById('profWeight');
+    if (wEl) wEl.value = last.kg;
+  }
+
+  kgEl.value = '';
+  _profRenderWeightList();
+  _profSaveNow(); // замер сохраняем без задержки
+}
+
+// Debounce 600мс для правок основных полей.
+function _profScheduleSave() {
+  clearTimeout(_profSaveTimer);
+  _profSaveTimer = setTimeout(_profSaveNow, 600);
+}
+
+function _profClearErrors() {
+  ['profAgeErr', 'profHeightErr', 'profWeightErr'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '';
+  });
+}
+
+// Собрать текущее состояние из полей и POST всего профиля.
+function _profSaveNow() {
+  clearTimeout(_profSaveTimer);
+  _profClearErrors();
+
+  const sexEl = document.getElementById('profSex');
+  const sexVal = sexEl ? sexEl.value : '';
+  _profState.age = _profNum('profAge');
+  _profState.height_cm = _profNum('profHeight');
+  _profState.weight_kg = _profNum('profWeight');
+  _profState.sex = (sexVal === 'm' || sexVal === 'f' || sexVal === 'na') ? sexVal : null;
+
+  const payload = {
+    age: _profState.age,
+    sex: _profState.sex,
+    height_cm: _profState.height_cm,
+    weight_kg: _profState.weight_kg,
+    weight_history: _profState.weight_history || []
+  };
+
+  fetchWithTimeout('/api/profile', 4000, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(async r => {
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d && d.status === 'ok') {
+        // Канон от сервера: подхватываем нормализованную историю (round 0.1 + сортировка).
+        if (d.profile && Array.isArray(d.profile.weight_history)) {
+          _profState.weight_history = d.profile.weight_history;
+          _profRenderWeightList();
+        }
+        showToast('Профиль сохранён', true);
+      } else {
+        // 400 -> {status:error,message} (валидация диапазонов на сервере).
+        const msg = (d && d.message) ? d.message : 'не удалось сохранить профиль';
+        _profShowFieldError(msg);
+        showToast('Профиль: ' + msg, false);
+      }
+    })
+    .catch(() => showToast('Bridge недоступен — профиль не сохранён', false));
+}
+
+// Подсветить ошибку у конкретного поля по тексту message от bridge.
+// Сервер отдаёт ровно одну ошибку вида "age out of range [...]",
+// "height_cm out of range [...]", "weight_kg out of range [...]".
+function _profShowFieldError(msg) {
+  const m = String(msg || '');
+  const put = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  if (/\bage\b/i.test(m)) put('profAgeErr', m);
+  else if (/height/i.test(m)) put('profHeightErr', m);
+  else if (/weight/i.test(m)) put('profWeightErr', m);
+}
+
+// ============================================================
+// ЗОНА locations (Настройки → «Город и локации»).
+// Домашний город -> POST /api/weather/location (геокод Open-Meteo).
+// Переезды (travel-контекст) -> localStorage openhealth.locations.
+// Контейнер #locationBox (стр 5057) уже внутри своей card-inner с заголовком.
+// ============================================================
+
+const LOC_TRAVEL_KEY = 'openhealth.locations';
+
+// Часовые пояса UTC-12 … UTC+14 для select переезда.
+function locTzOptions(selected) {
+  const out = [];
+  for (let off = -12; off <= 14; off++) {
+    const sign = off >= 0 ? '+' : '-';
+    const val = 'UTC' + sign + Math.abs(off);
+    out.push(`<option value="${val}"${val === selected ? ' selected' : ''}>${val}</option>`);
+  }
+  return out.join('');
+}
+
+function getTravelLog() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LOC_TRAVEL_KEY) || 'null');
+    return Array.isArray(raw) ? raw : [];
+  } catch (e) { return []; }
+}
+
+function saveTravelLog(list) {
+  try { localStorage.setItem(LOC_TRAVEL_KEY, JSON.stringify(list)); } catch (e) { /* private mode */ }
+}
+
+// Строка ленты переездов. i — исходный индекс в массиве (для удаления).
+function locFeedRowHTML(rec, i) {
+  const city = escapeHtml(rec.city || '—');
+  const date = escapeHtml(rec.date || '');
+  const tz = escapeHtml(rec.tz || '');
+  const meta = [date, tz].filter(Boolean).join(' · ');
+  return `
+    <div class="loc-feed-row">
+      <div class="loc-feed-main">
+        <span class="loc-feed-city"><i class="ph-light ph-airplane-tilt"></i>${city}</span>
+        ${meta ? `<span class="loc-feed-meta">${meta}</span>` : ''}
+      </div>
+      <button type="button" class="loc-feed-del" title="Удалить переезд"
+              onclick="deleteTravelEntry(${i})"><i class="ph-light ph-x"></i></button>
+    </div>`;
+}
+
+// Лента переездов: новые сверху (по дате убыв.).
+function renderTravelFeed() {
+  const box = document.getElementById('locTravelFeed');
+  if (!box) return;
+  const list = getTravelLog();
+  if (!list.length) {
+    box.innerHTML = '<p class="loc-feed-empty">Переездов пока нет — добавь первый выше.</p>';
+    return;
+  }
+  // храним исходный индекс, чтобы удалять верную запись после сортировки
+  const ordered = list.map((rec, i) => ({ rec, i }))
+    .sort((a, b) => String(b.rec.date || '').localeCompare(String(a.rec.date || '')));
+  box.innerHTML = '<div class="loc-feed">' +
+    ordered.map(o => locFeedRowHTML(o.rec, o.i)).join('') + '</div>';
+}
+
+// Главный рендер зоны. Тянет домашний город, рисует формы + ленту.
+function renderLocations() {
+  const box = document.getElementById('locationBox');
+  if (!box) return;
+
+  box.innerHTML = `
+    <div class="loc-current loc-empty" id="locCurrentLabel">
+      <i class="ph-light ph-dots-three"></i><span>загружаю домашний город…</span>
+    </div>
+
+    <div class="loc-row">
+      <div class="form-group">
+        <label for="locCityInput">Домашний город</label>
+        <input type="text" id="locCityInput" maxlength="80" placeholder="Например: Лиссабон, Тбилиси, Москва"
+               onkeydown="if(event.key==='Enter'){setHomeLocation();}">
+      </div>
+      <button class="btn-primary" id="locDetectBtn" onclick="setHomeLocation()">
+        <i class="ph-light ph-crosshair-simple"></i> Определить
+      </button>
+    </div>
+
+    <hr class="loc-divider">
+
+    <div class="loc-sec-head">Сменил локацию (travel-контекст)</div>
+    <div class="loc-hint">переезды идут как travel-контекст для агента и для recovery.</div>
+
+    <div class="loc-row">
+      <div class="form-group">
+        <label for="locTravelCity">Город</label>
+        <input type="text" id="locTravelCity" maxlength="80" placeholder="Куда переехал"
+               onkeydown="if(event.key==='Enter'){addTravelEntry();}">
+      </div>
+      <div class="form-group">
+        <label for="locTravelDate">Дата</label>
+        <input type="date" id="locTravelDate" value="${todayKey()}" max="${todayKey()}">
+      </div>
+      <div class="form-group">
+        <label for="locTravelTz">Часовой пояс</label>
+        <select id="locTravelTz" class="loc-select">${locTzOptions('UTC+0')}</select>
+      </div>
+      <button class="btn-secondary" onclick="addTravelEntry()">
+        <i class="ph-light ph-plus"></i> Отметить
+      </button>
+    </div>
+
+    <div id="locTravelFeed"></div>`;
+
+  loadHomeLocation();
+  renderTravelFeed();
+}
+
+// GET /api/weather/location -> показать текущий label (зелёным) если configured.
+function loadHomeLocation() {
+  const el = document.getElementById('locCurrentLabel');
+  if (!el) return;
+  fetchWithTimeout('/api/weather/location', 2500)
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.configured && d.label) {
+        el.className = 'loc-current';
+        el.innerHTML = `<i class="ph-light ph-map-pin"></i><span>Сейчас: <b>${escapeHtml(d.label)}</b></span>`;
+      } else {
+        el.className = 'loc-current loc-empty';
+        el.innerHTML = '<i class="ph-light ph-map-pin-line"></i><span>Домашний город не задан — погода и контекст дня появятся после выбора.</span>';
+      }
+    })
+    .catch(() => {
+      el.className = 'loc-current loc-empty';
+      el.innerHTML = '<i class="ph-light ph-plugs"></i><span>bridge офлайн — запусти OpenHealth.command, чтобы задать город.</span>';
+    });
+}
+
+// POST /api/weather/location {city}. 404 -> честное «город не найден», 400/500 -> message.
+function setHomeLocation() {
+  const inp = document.getElementById('locCityInput');
+  const btn = document.getElementById('locDetectBtn');
+  const city = (inp ? inp.value : '').trim();
+  if (!city) { showToast('Впиши город', false); if (inp) inp.focus(); return; }
+
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ph-light ph-circle-notch"></i> Ищу…'; }
+  const restore = () => {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ph-light ph-crosshair-simple"></i> Определить'; }
+  };
+
+  fetchWithTimeout('/api/weather/location', 6000, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ city: city })
+  })
+    .then(async r => {
+      let body = {};
+      try { body = await r.json(); } catch (e) { /* пустой/битый ответ */ }
+      if (r.status === 404) {
+        showToast('Город не найден — проверь написание', false);
+        return;
+      }
+      if (!r.ok || body.status === 'error') {
+        showToast(body.message || ('Не вышло (HTTP ' + r.status + ')'), false);
+        return;
+      }
+      const label = body.label || city;
+      const el = document.getElementById('locCurrentLabel');
+      if (el) {
+        el.className = 'loc-current';
+        el.innerHTML = `<i class="ph-light ph-map-pin"></i><span>Сейчас: <b>${escapeHtml(label)}</b></span>`;
+      }
+      if (inp) inp.value = '';
+      showToast('Домашний город: ' + label);
+    })
+    .catch(err => {
+      showToast('bridge офлайн — запусти OpenHealth.command' + (err && err.message ? ': ' + err.message : ''), false);
+    })
+    .finally(restore);
+}
+
+// Добавить переезд в localStorage и перерисовать ленту.
+function addTravelEntry() {
+  const cityEl = document.getElementById('locTravelCity');
+  const dateEl = document.getElementById('locTravelDate');
+  const tzEl = document.getElementById('locTravelTz');
+  const city = (cityEl ? cityEl.value : '').trim();
+  const date = (dateEl ? dateEl.value : '').trim();
+  const tz = (tzEl ? tzEl.value : '').trim();
+  if (!city) { showToast('Впиши город переезда', false); if (cityEl) cityEl.focus(); return; }
+  if (!date) { showToast('Укажи дату переезда', false); if (dateEl) dateEl.focus(); return; }
+
+  const list = getTravelLog();
+  list.push({ city: city.slice(0, 80), date, tz });
+  saveTravelLog(list);
+  renderTravelFeed();
+  if (cityEl) cityEl.value = '';
+  showToast('Переезд отмечен: ' + city);
+}
+
+function deleteTravelEntry(i) {
+  const list = getTravelLog();
+  const rec = list[i];
+  if (!rec) return;
+  list.splice(i, 1);
+  saveTravelLog(list);
+  renderTravelFeed();
+  showToast('Переезд удалён: ' + (rec.city || 'запись'));
+}
+
+// === Research badges (zone: research) =================================
+// Вешает кликабельный бейдж "research: N" на точки [data-rsch] (биомаркеры,
+// препараты). Slug маркера/препарата лежит в el.dataset.rsch и совпадает с
+// param из /api/agent task=research (server.py сам слугифицирует строку).
+// configured:false или count 0 -> ничего не вставляем (тихо).
+
+// Контекст текущего открытого набора research-файлов — для кнопки «К списку»
+// (без inline-onclick и без глобала window.*; стиль файла — addEventListener).
+var _rschCtx = { slug: '', files: [] };
+
+function renderResearchBadge(paramSlug, mountEl) {
+  if (!paramSlug || !mountEl) return;
+  // защита от двойной навески (initResearchBadges зовётся повторно)
+  if (mountEl.dataset.rschDone === '1') return;
+  mountEl.dataset.rschDone = '1';
+
+  fetchWithTimeout('/api/research/list?param=' + encodeURIComponent(paramSlug), 2500)
+    .then(r => r.json())
+    .then(j => {
+      // configured:false приходит БЕЗ поля count (server.py handle_research_list) —
+      // этот guard глушит такой случай до обращения к count.
+      if (!j || j.status !== 'ok' || !j.configured) return;          // тихо
+      const files = Array.isArray(j.files) ? j.files : [];
+      const count = j.count != null ? j.count : files.length;
+      if (!count) return;                                            // тихо
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'rsch-badge';
+      // setAttribute = DOM API (не innerHTML) -> XSS-safe без escape.
+      btn.setAttribute('aria-label', 'research: ' + count + ' для ' + paramSlug);
+      // в innerHTML только число count -> безопасно.
+      btn.innerHTML = '<i class="ph-light ph-microscope"></i>research: ' + count;
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();   // не схлопывать панель биомаркера кликом по строке
+        openResearchList(paramSlug, files);
+      });
+      mountEl.appendChild(btn);
+    })
+    .catch(() => { /* bridge offline / timeout — бейдж просто не появляется */ });
+}
+
+// Модал со списком прикреплённых файлов research.
+function openResearchList(paramSlug, files) {
+  files = Array.isArray(files) ? files : [];
+  _rschCtx = { slug: paramSlug, files: files };   // запомнить для «К списку»
+  const items = files.map(f => {
+    const nm = escapeHtml(f.name || '');
+    const meta = [f.modified ? escapeHtml(String(f.modified)) : '',
+                  f.size != null ? Math.max(1, Math.round(f.size / 1024)) + ' КБ' : '']
+                 .filter(Boolean).join(' · ');
+    // имя в data-атрибут идёт через escapeHtml (кавычки -> &quot;);
+    // читаем потом через dataset (DOM сам декодирует) — XSS-safe.
+    return '<button type="button" class="rsch-file-item" data-rsch-file="' + nm + '">' +
+             '<i class="ph-light ph-file-text"></i>' +
+             '<span class="rsch-file-name">' + nm + '</span>' +
+             (meta ? '<span class="rsch-file-meta">' + meta + '</span>' : '') +
+           '</button>';
+  }).join('');
+  const body = files.length
+    ? '<div class="rsch-file-list">' + items + '</div>'
+    : '<p class="cmd-hint">Файлов пока нет.</p>';
+  // openModal ставит title/sub через textContent -> передаём СЫРЫЕ строки (без escape,
+  // иначе двойной escape). HTML-тело собрано выше с escapeHtml на именах файлов.
+  openModal('Research: ' + paramSlug, 'прикреплённые материалы', body);
+
+  // делегирование клика по файлу внутри модала
+  const modalBody = document.getElementById('modalBody');
+  if (modalBody) {
+    modalBody.querySelectorAll('[data-rsch-file]').forEach(el => {
+      el.addEventListener('click', () => openResearchFile(el.dataset.rschFile, paramSlug, files));
+    });
+  }
+}
+
+// Открыть конкретный файл research: подтянуть содержимое и отрендерить markdown.
+function openResearchFile(name, paramSlug, files) {
+  if (!name) return;
+  files = Array.isArray(files) ? files : [];
+  // title/sub -> textContent в openModal, передаём сырыми (без escape).
+  openModal(name, 'research · ' + paramSlug,
+    '<p class="cmd-hint"><i class="ph-light ph-circle-notch"></i> Загрузка…</p>');
+  fetchWithTimeout('/api/research/file?name=' + encodeURIComponent(name), 4000)
+    .then(r => r.json())
+    .then(j => {
+      const body = document.getElementById('modalBody');
+      if (!body) return;
+      if (!j || j.status !== 'ok') {
+        // 400/404/500 -> {status:'error',message}
+        body.innerHTML = '<p class="cmd-hint"><i class="ph-light ph-warning-circle"></i> ' +
+          escapeHtml((j && j.message) || 'Не удалось открыть файл.') + '</p>';
+        return;
+      }
+      // markdown-рендерер определяет зона methodology; пока его нет — fallback на escape+pre.
+      const md = (typeof window.ohRenderMarkdown === 'function')
+        ? window.ohRenderMarkdown(j.content || '')
+        : '<pre style="white-space:pre-wrap;font-family:var(--mono);font-size:12px;">' +
+          escapeHtml(j.content || '') + '</pre>';
+      // back-кнопка через addEventListener (никаких inline-onclick со строковым
+      // экранированием — оно ломается на HTML-декодинге &#39;).
+      const showBack = (files && files.length > 1);
+      body.innerHTML =
+        (showBack ? '<button type="button" class="btn-secondary rsch-back" id="rschBackBtn">' +
+                      '<i class="ph-light ph-arrow-left"></i> К списку</button>' : '') +
+        '<div class="rsch-md">' + md + '</div>';
+      if (showBack) {
+        const back = document.getElementById('rschBackBtn');
+        if (back) back.addEventListener('click', () => openResearchList(_rschCtx.slug, _rschCtx.files));
+      }
+    })
+    .catch(() => {
+      const body = document.getElementById('modalBody');
+      if (body) body.innerHTML = '<p class="cmd-hint"><i class="ph-light ph-plugs"></i> ' +
+        'Bridge недоступен — файл не загрузился.</p>';
+    });
+}
+
+// Пройтись по всем mount-точкам [data-rsch] на странице и навесить бейджи.
+// Идемпотентно (флаг dataset.rschDone). Зовётся после рендеров биомаркеров/препаратов.
+function initResearchBadges() {
+  document.querySelectorAll('[data-rsch]').forEach(el => {
+    const slug = el.dataset.rsch;
+    if (slug) renderResearchBadge(slug, el);
+  });
+}
 </script>
 </body>
 </html>

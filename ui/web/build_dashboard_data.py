@@ -635,6 +635,199 @@ def _sleep_goal_h() -> float:
         return 8.0
 
 
+# --- correlations: реальные связи поведение -> recovery из журнала ----------
+
+# Иконки phosphor по категориям поведения (фронт подставит дефолт, если нет).
+_CORR_CATEGORY_ICON = {
+    "toxic": "ph-warning",
+    "nutrition": "ph-fork-knife",
+    "lifestyle": "ph-sun",
+    "recovery_activities": "ph-heart",
+    "mental_wellbeing": "ph-brain",
+    "activity": "ph-barbell",
+    "supps": "ph-pill",
+    "habit": "ph-leaf",
+    "health_symptoms": "ph-first-aid",
+    "hormonal_health": "ph-drop",
+    "custom": "ph-note-pencil",
+}
+
+# Порог пересечения: нужно >= MIN_YES и >= MIN_NO дней с recovery в те же дни.
+_CORR_INSUFFICIENT_NOTE = (
+    "нужно ≥{min_yes} дней с отметкой и ≥{min_no} без неё, при наличии recovery в те "
+    "же дни; сейчас пересечения журнала и recovery недостаточно"
+)
+
+
+def _journal_pairs(con: sqlite3.Connection):
+    """behavior_id -> {name, category, days: {date: bool}} из индекса.
+
+    Берём только boolean journal_entry (корреляции считаются по yes/no).
+    Числовые отметки (вода, mood) сюда не попадают — это отдельный расчёт.
+    """
+    rows = con.execute(
+        "SELECT payload_json FROM records WHERE record_type='Observation' "
+        "AND json_extract(payload_json,'$.observation_kind')='journal_entry'"
+    ).fetchall()
+    by_behavior: dict = {}
+    for (payload,) in rows:
+        p = json.loads(payload)
+        value = p.get("value")
+        if not isinstance(value, bool):
+            continue
+        day = p.get("date")
+        if not day:
+            continue
+        md = p.get("metadata") or {}
+        bid = md.get("behavior_id") or p.get("metric_name")
+        if not bid:
+            continue
+        slot = by_behavior.setdefault(bid, {
+            "name": md.get("behavior_name") or bid,
+            "category": md.get("category") or "unknown",
+            "days": {},
+        })
+        slot["days"][day] = value
+    return by_behavior
+
+
+def _recovery_by_day(con: sqlite3.Connection) -> dict:
+    """date -> recovery_score из реального индекса.
+
+    В индексе recovery лежит как metric_name='recovery_score' (observation_kind
+    здесь whoop_recovery_metric), поэтому фильтруем по metric_name — иначе пары
+    с recovery никогда не соберутся.
+    """
+    rows = con.execute(
+        "SELECT payload_json FROM records WHERE record_type='Observation' "
+        "AND json_extract(payload_json,'$.metric_name')='recovery_score'"
+    ).fetchall()
+    out: dict = {}
+    for (payload,) in rows:
+        p = json.loads(payload)
+        d = p.get("date")
+        v = p.get("value")
+        if d and v is not None:
+            try:
+                out[d] = float(v)
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def build_correlations_block(con: sqlite3.Connection) -> dict:
+    """Честные корреляции поведение↔recovery из журнала + recovery индекса.
+
+    Тот же расчёт, что и в openhealth.modules.correlations: для каждого
+    boolean-поведения сравниваем средний recovery в дни «да» против дней «нет»
+    (порог 5yes/5no, cap C2; C3 только при >=2 переключениях). Recovery берём из
+    индекса по совпадающим датам.
+
+    Возвращает {"correlations": [...], "allBehaviors": [...], "status": "ok"|
+    "insufficient_data", "note": "..."}. Если пересечения недостаточно (ни одна
+    пара не прошла порог) — correlations=[] и status=insufficient_data: фронт
+    отличает «нет данных» от реальных значений и не показывает демо.
+    """
+    behaviors_raw = _journal_pairs(con)
+    rec_by_day = _recovery_by_day(con)
+
+    # allBehaviors: реальный список логированных поведений из журнала.
+    all_behaviors = []
+    for bid, slot in sorted(behaviors_raw.items()):
+        all_behaviors.append({
+            "id": bid,
+            "label": slot["name"],
+            "category": slot["category"],
+            "icon": _CORR_CATEGORY_ICON.get(slot["category"]),
+            "selected": True,
+        })
+
+    # Движок корреляций (тот же расчёт). Без пакета — честный пустой результат.
+    try:
+        import sys
+        repo_root = str(Path(__file__).resolve().parents[2])
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
+        from openhealth.modules import correlations as _corr
+        from openhealth import params as _params
+    except Exception:
+        _corr = None
+        _params = None
+
+    min_yes = min_no = 5
+    if _params is not None:
+        try:
+            min_yes = int(_params.get("correlations.min_yes_days"))
+            min_no = int(_params.get("correlations.min_no_days"))
+        except Exception:
+            min_yes = min_no = 5
+
+    note_insufficient = _CORR_INSUFFICIENT_NOTE.format(min_yes=min_yes, min_no=min_no)
+
+    if _corr is None or not behaviors_raw or not rec_by_day:
+        return {
+            "correlations": [],
+            "allBehaviors": all_behaviors,
+            "status": "insufficient_data",
+            "note": note_insufficient,
+        }
+
+    # Собираем вход для analyze(): только пары, где есть recovery в тот же день.
+    engine_input = []
+    for bid, slot in behaviors_raw.items():
+        pairs = [
+            {"date": day, "yes": yes, "recovery": rec_by_day.get(day)}
+            for day, yes in slot["days"].items()
+            if day in rec_by_day
+        ]
+        engine_input.append({
+            "behavior_id": bid,
+            "behavior_name": slot["name"],
+            "category": slot["category"],
+            "pairs": pairs,
+        })
+
+    insights = _corr.analyze(engine_input)
+    if not insights:
+        return {
+            "correlations": [],
+            "allBehaviors": all_behaviors,
+            "status": "insufficient_data",
+            "note": note_insufficient,
+        }
+
+    # Insight движка -> компактная строка корреляции для фронта.
+    correlations = []
+    for ins in insights:
+        meta = ins.get("metadata") or {}
+        impact = meta.get("impact")
+        bid = meta.get("behavior_id")
+        title = ins.get("title") or ""
+        name = (title[len("Impact: "):] if title.startswith("Impact: ") else title) or bid
+        category = meta.get("category") or "unknown"
+        correlations.append({
+            "id": bid,
+            "label": name,
+            "delta": round(impact) if isinstance(impact, (int, float)) else None,
+            "dir": "up" if (impact or 0) >= 0 else "down",
+            "grade": meta.get("confidence_grade", "C2"),
+            "icon": _CORR_CATEGORY_ICON.get(category),
+            "yesDays": meta.get("n_yes"),
+            "noDays": meta.get("n_no"),
+            "meanYes": meta.get("mean_recovery_yes"),
+            "meanNo": meta.get("mean_recovery_no"),
+        })
+
+    return {
+        "correlations": correlations,
+        "allBehaviors": all_behaviors,
+        "status": "ok",
+        "note": "реальные связи поведение↔recovery из журнала (порог {}/{} дней).".format(
+            min_yes, min_no
+        ),
+    }
+
+
 def build_payload(db_path: Path) -> dict:
     con = sqlite3.connect(str(db_path))
     try:
@@ -646,6 +839,7 @@ def build_payload(db_path: Path) -> dict:
         circadian_block = build_circadian_block(con)
         lab_block = build_lab_block(con)
         quality_block = build_quality_block(con)
+        correlations_block = build_correlations_block(con)
     finally:
         con.close()
 
@@ -674,15 +868,24 @@ def build_payload(db_path: Path) -> dict:
     if weather_block:
         # Внешние факторы: погода/давление/световой день/UV для контекста и корреляций.
         payload["weather"] = weather_block
-    # Correlations require labeled daily behaviors (journal), which this dataset
-    # does not yet contain — so we intentionally omit them and let the dashboard
-    # keep its demo correlations. Same for habits / allBehaviors.
+
+    # Честные корреляции поведение->recovery из журнала. Всегда кладём ключи
+    # correlations и allBehaviors (даже пустые) + статус в _meta, чтобы фронт мог
+    # отличить «нет данных» от реальных значений и НЕ показывал демо.
+    payload["correlations"] = correlations_block.get("correlations", [])
+    payload["allBehaviors"] = correlations_block.get("allBehaviors", [])
+    corr_status = correlations_block.get("status", "insufficient_data")
+    corr_note = correlations_block.get("note", "")
+
     payload["_meta"] = {
         "source": "health_os SQLite index",
         "generatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "correlations_status": corr_status,
+        "correlations_note": corr_note,
         "note": "Real personal data. recovery/hrv/rhr/strain/sleep from WHOOP; "
                 "biomarkers from Atlas microbiota (2020 snapshot, low confidence); "
-                "correlations/habits left as demo (no labeled behavior journal yet).",
+                "correlations computed from the real behavior journal (see "
+                "correlations_status).",
     }
     return payload
 
@@ -739,6 +942,10 @@ def main() -> None:
               f"issues={len(q.get('issues', []))}  counts={q.get('counts')}")
     else:
         print("  quality: skipped")
+    meta = payload.get("_meta", {})
+    print(f"  correlations: {len(payload.get('correlations', []))} "
+          f"(status={meta.get('correlations_status')})  "
+          f"allBehaviors={len(payload.get('allBehaviors', []))}")
     print("  NOTE: data.local.json is real personal data — keep it local (git-ignored).")
 
 

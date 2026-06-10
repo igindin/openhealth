@@ -133,6 +133,9 @@ In practice you rarely type these by hand — you ask the agent ("log that I had
 two coffees and slept badly", "how's my recovery this week?") and it runs them
 for you. The CLI is the substrate; the agent is the interface.
 
+**Full command map** (slash commands, CLI, `make` targets, quick recipes,
+troubleshooting): [docs/COMMANDS.md](./docs/COMMANDS.md).
+
 ## Project structure
 
 ```
@@ -227,6 +230,10 @@ OpenHealth — это local-first система: все данные остаю
 3. Дальше просто говорите с агентом: «залогируй, что плохо спал», «как моё
    восстановление за неделю?». Он сам запускает нужный модуль. Под капотом —
    тот же цикл: журнал → recovery → корреляции → действие.
+
+Все команды, инструменты и быстрые рецепты — в [docs/COMMANDS.md](./docs/COMMANDS.md).
+Пошаговый гид для новичка — [docs/START-HERE.md](./docs/START-HERE.md).
+Памятка для спринта — [kit/HANDOUT.md](./kit/HANDOUT.md).
 
 Важно: это инструмент самонаблюдения, **не медицинский совет и не диагностика.**
 Любой вывод — гипотеза с оценкой уверенности (C1–C5), а не заключение. Красные
