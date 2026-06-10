@@ -1523,6 +1523,38 @@ def handle_research_file(base_dir: Path, name: "str | None") -> "tuple":
 # --- rebuild: пересборка data.local.json из индекса ---------------------------
 
 REBUILD_TIMEOUT_S = 60
+REBUILD_DEBOUNCE_S = 2.0  # rebuild-on-write: дождаться всплеска записей -> одна пересборка
+
+_rebuild_lock = threading.Lock()
+_rebuild_timer = None
+
+
+def _run_rebuild_subprocess(base_dir: Path) -> None:
+    """Best-effort фоновая пересборка снапшота (rebuild-on-write). Не роняет сервер."""
+    try:
+        db_path = find_journal_db(base_dir) or _DEFAULT_INDEX
+        if not db_path.is_file():
+            return
+        out_path = base_dir / DATA_FILE
+        cmd = [sys.executable, str(_BUILD_SCRIPT), "--db", str(db_path), "--out", str(out_path)]
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=REBUILD_TIMEOUT_S, cwd=str(_REPO_ROOT),
+                              stdin=subprocess.DEVNULL)
+        log("auto-rebuild -> {}".format("ok" if proc.returncode == 0 else "error"))
+    except Exception as exc:  # фоновый best-effort
+        log("auto-rebuild skipped: {}".format(exc.__class__.__name__))
+
+
+def schedule_background_rebuild(base_dir: Path) -> None:
+    """Debounced rebuild-on-write: после записи (чек-ин/профиль) пересобрать снапшот
+    в фоне, чтобы дашборд не показывал устаревшие числа. Всплеск правок -> одна сборка."""
+    global _rebuild_timer
+    with _rebuild_lock:
+        if _rebuild_timer is not None:
+            _rebuild_timer.cancel()
+        _rebuild_timer = threading.Timer(REBUILD_DEBOUNCE_S, _run_rebuild_subprocess, args=(base_dir,))
+        _rebuild_timer.daemon = True
+        _rebuild_timer.start()
 _DEFAULT_INDEX = Path("~/health-os/data/index/health_os.sqlite3").expanduser()
 _BUILD_SCRIPT = Path(__file__).resolve().with_name("build_dashboard_data.py")
 
@@ -1756,6 +1788,8 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             status, body = handle_profile_post(payload, self.base_dir)
             # only the outcome — profile contents are personal data
             log("POST /api/profile -> {}".format(body.get("status")))
+            if body.get("status") == "ok":
+                schedule_background_rebuild(self.base_dir)  # rebuild-on-write
             self._send_json(body, status=status)
             return
 
@@ -1770,6 +1804,8 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             # date + outcome only — journal contents are personal data
             log("POST /api/journal/day {} -> {} (indexed={})".format(
                 body.get("date", "?"), body.get("status"), body.get("indexed", "-")))
+            if body.get("status") == "ok":
+                schedule_background_rebuild(self.base_dir)  # rebuild-on-write
             self._send_json(body, status=status)
             return
 
