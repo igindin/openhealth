@@ -4390,6 +4390,49 @@
 .rsch-file-meta { color: var(--mut); font-size: 11px; font-family: var(--mono); flex: 0 0 auto; }
 .rsch-md { line-height: 1.55; }
 .rsch-back { margin-bottom: 14px; }
+
+/* --- Каскад целей (Mission Cascade) --- */
+.cascade-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.casc-card { display: flex; flex-direction: column; gap: 11px; }
+.casc-card-top { display: flex; align-items: flex-start; gap: 8px; }
+.casc-titles { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.casc-title { font-size: 17px; font-weight: 600; background: transparent; border: none; border-bottom: 1px solid var(--line); color: inherit; padding: 3px 0; width: 100%; outline: none; }
+.casc-dream { font-size: 13px; color: var(--mut); background: transparent; border: none; padding: 2px 0; width: 100%; outline: none; }
+.casc-title::placeholder, .casc-dream::placeholder, .casc-goal-label::placeholder, .casc-lever-in::placeholder { color: var(--mut); opacity: .6; }
+.casc-title:focus, .casc-dream:focus, .casc-goal-label:focus, .casc-lever-in:focus, .casc-num:focus { border-bottom-color: var(--accent); }
+.casc-del { background: transparent; border: none; color: var(--mut); cursor: pointer; padding: 4px; flex: none; }
+.casc-del:hover { color: var(--bad); }
+.casc-goal { display: flex; flex-direction: column; gap: 7px; }
+.casc-goal-label { font-size: 13px; font-weight: 500; background: transparent; border: none; border-bottom: 1px solid var(--line); color: inherit; padding: 3px 0; outline: none; }
+.casc-prog { display: flex; align-items: center; gap: 9px; }
+.casc-bar { flex: 1; height: 7px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.casc-bar span { display: block; height: 100%; border-radius: 99px; background: var(--ok); transition: width .3s ease; }
+.casc-num { width: 48px; text-align: center; background: transparent; border: 1px solid var(--line); border-radius: 7px; color: inherit; font-size: 13px; padding: 3px; outline: none; font-family: var(--mono); }
+.casc-slash { color: var(--mut); }
+.casc-lever { display: flex; align-items: center; gap: 7px; padding: 8px 11px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.casc-lever > i { color: var(--accent); flex: none; }
+.casc-lever-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--mut); flex: none; }
+.casc-lever-in { flex: 1; background: transparent; border: none; color: inherit; font-weight: 600; font-size: 14px; outline: none; min-width: 0; }
+.casc-sec { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--mut); margin-top: 3px; display: flex; justify-content: space-between; align-items: baseline; }
+.casc-hint { font-size: 10px; text-transform: none; letter-spacing: 0; opacity: .8; }
+.casc-list { display: flex; flex-direction: column; gap: 5px; }
+.casc-empty { font-size: 12px; color: var(--mut); opacity: .7; padding: 2px 0; }
+.casc-proto { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 9px; background: rgba(128,128,128,.07); border: 1px solid var(--line); cursor: pointer; transition: border-color .15s; }
+.casc-proto:hover { border-color: var(--accent); }
+.casc-dot { width: 9px; height: 9px; border-radius: 99px; flex: none; background: var(--mut); }
+.casc-dot.active { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); }
+.casc-dot.done { background: var(--ok); }
+.casc-pname { flex: 1; font-size: 13px; color: inherit; min-width: 0; }
+.casc-pname.done { text-decoration: line-through; color: var(--mut); }
+.casc-pst { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--mut); flex: none; }
+.casc-pst.active { color: var(--warn); }
+.casc-pst.done { color: var(--ok); }
+.casc-win { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 9px; background: rgba(128,128,128,.07); font-size: 13px; color: inherit; }
+.casc-win > i { color: var(--warn); flex: none; }
+.casc-x { margin-left: auto; background: transparent; border: none; color: var(--mut); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; flex: none; }
+.casc-x:hover { color: var(--bad); }
+.casc-add { align-self: flex-start; background: transparent; border: 1px dashed var(--line); border-radius: 8px; color: var(--mut); font-size: 12px; padding: 5px 11px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+.casc-add:hover { color: inherit; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -4466,6 +4509,10 @@
 
     <div class="navsec">Знание</div>
     <nav>
+      <a data-z="cascade" data-icon="ph-compass" onclick="go('cascade')">
+        <i class="ph-light ph-compass"></i>
+        <span>Каскад целей</span>
+      </a>
       <a data-z="protocols" data-icon="ph-book-open" onclick="go('protocols')">
         <i class="ph-light ph-book-open"></i>
         <span>Протоколы</span>
@@ -5460,6 +5507,11 @@
       </section>
 
       <!-- SCREEN 12: PROTOCOLS — n-of-1 карточки из движка (или empty-state) -->
+      <!-- SCREEN: CASCADE — каскад целей (мечта→цель→рычаг→протоколы→выигрыши) -->
+      <section class="zone" id="z-cascade">
+        <div class="bento-grid" id="cascadeContent"></div>
+      </section>
+
       <section class="zone" id="z-protocols">
         <div class="bento-grid" id="protocolsContent">
           <div class="card-outer col-12">
@@ -9607,6 +9659,182 @@ function protocolCheckpointHTML(p, act) {
     </div>`;
 }
 
+// ============================================================
+// КАСКАД ЦЕЛЕЙ (Mission Cascade): мечта → цель → главный рычаг →
+// протоколы → выигрыши. Источник правды — bridge GET/POST /api/missions
+// (missions.json + missions.md, который агент читает как контекст).
+// Локального fallback нет: пусто/офлайн показываем честно.
+// ============================================================
+let _missions = [];
+let _missionsSaveTimer = null;
+const PROTO_NEXT = { planned: 'active', active: 'done', done: 'planned' };
+const PROTO_RU = { planned: 'дальше', active: 'сейчас', done: 'сделано' };
+
+function renderCascade() {
+  const box = document.getElementById('cascadeContent');
+  if (!box) return;
+  fetchWithTimeout('/api/missions', 3000)
+    .then(r => r.json())
+    .then(d => { _missions = Array.isArray(d.missions) ? d.missions : []; _cascadeDraw(box); })
+    .catch(() => { box.innerHTML = _cascadeOfflineHTML(); });
+}
+
+function _cascadeRedraw() {
+  const box = document.getElementById('cascadeContent');
+  if (box) _cascadeDraw(box);
+}
+
+function _cascadeMissionsPlural(n) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return 'миссия';
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return 'миссии';
+  return 'миссий';
+}
+
+function _cascadeOfflineHTML() {
+  return '<div class="card-outer col-12"><div class="card-inner" style="min-height:300px;">' +
+    '<div class="empty-state"><div class="empty-icon-ring"><i class="ph-light ph-compass"></i></div>' +
+    '<h4>Каскад целей</h4><p class="need">bridge офлайн — запусти OpenHealth.command, чтобы миссии загрузились и сохранялись.</p></div></div></div>';
+}
+
+function _cascadeDraw(box) {
+  if (!_missions.length) {
+    box.innerHTML = `
+      <div class="card-outer col-12"><div class="card-inner" style="min-height:420px;">
+        <div class="empty-state">
+          <div class="empty-icon-ring"><i class="ph-light ph-compass"></i></div>
+          <h4>Каскад целей</h4>
+          <p class="what">Зачем каждый протокол: мечта → цель → главный рычаг (биомаркер) → протоколы → выигрыши. Без верхнего слоя протоколы — просто список таблеток.</p>
+          <p class="need">Добавь первую миссию — или собери её из своей цели.</p>
+          <div class="step-action" style="justify-content:center; gap:10px;">
+            <button class="btn-primary" onclick="cascadeAddMission()"><i class="ph-light ph-plus"></i> Добавить миссию</button>
+            <button class="btn-secondary" onclick="cascadeSeedFromGoal()"><i class="ph-light ph-target"></i> Собрать из цели</button>
+          </div>
+        </div>
+      </div></div>`;
+    return;
+  }
+  box.innerHTML = `
+    <div class="card-outer col-12">
+      <div class="cascade-head">
+        <div>
+          <h3 style="margin:0;">Каскад целей</h3>
+          <p class="sub" style="margin:4px 0 0;">зачем каждый протокол · ${_missions.length} ${_cascadeMissionsPlural(_missions.length)}</p>
+        </div>
+        <button class="btn-secondary" onclick="cascadeAddMission()"><i class="ph-light ph-plus"></i> Миссия</button>
+      </div>
+    </div>
+    ${_missions.map((m, i) => _missionCardHTML(m, i)).join('')}`;
+}
+
+function _missionCardHTML(m, i) {
+  const gc = (typeof m.goal_current === 'number') ? m.goal_current : null;
+  const gt = (typeof m.goal_target === 'number') ? m.goal_target : null;
+  const pct = (gc !== null && gt) ? Math.max(0, Math.min(100, Math.round(gc / gt * 100))) : 0;
+  const protos = (m.protocols || []).map((p, pi) => `
+    <div class="casc-proto" onclick="cascadeCycleProto(${i},${pi})" title="клик — сменить статус">
+      <span class="casc-dot ${p.status}"></span>
+      <span class="casc-pname ${p.status === 'done' ? 'done' : ''}">${escapeHtml(p.name)}</span>
+      <span class="casc-pst ${p.status}">${PROTO_RU[p.status] || ''}</span>
+      <button class="casc-x" onclick="event.stopPropagation();cascadeDelProto(${i},${pi})" title="убрать">×</button>
+    </div>`).join('') || '<div class="casc-empty">пока пусто — добавь первый шаг</div>';
+  const wins = (m.wins || []).map((w, wi) => `
+    <div class="casc-win"><i class="ph-fill ph-trophy"></i><span>${escapeHtml(w)}</span><button class="casc-x" onclick="cascadeDelWin(${i},${wi})" title="убрать">×</button></div>`).join('') || '<div class="casc-empty">отмечай маленькие победы</div>';
+  return `
+    <div class="card-outer col-6">
+      <div class="card-inner casc-card" data-mi="${i}">
+        <div class="casc-card-top">
+          <div class="casc-titles">
+            <input class="casc-title" value="${escapeHtml(m.title)}" placeholder="Название миссии" oninput="cascadeField(${i},'title',this.value)">
+            <input class="casc-dream" value="${escapeHtml(m.dream)}" placeholder="Мечта — зачем это тебе" oninput="cascadeField(${i},'dream',this.value)">
+          </div>
+          <button class="casc-del" onclick="cascadeDelMission(${i})" title="удалить миссию"><i class="ph-light ph-trash"></i></button>
+        </div>
+
+        <div class="casc-goal">
+          <input class="casc-goal-label" value="${escapeHtml(m.goal_label)}" placeholder="Цель (напр. Энергия и фокус)" oninput="cascadeField(${i},'goal_label',this.value)">
+          <div class="casc-prog">
+            <div class="casc-bar"><span style="width:${pct}%"></span></div>
+            <input class="casc-num" type="number" min="0" max="1000" value="${gc !== null ? gc : ''}" placeholder="—" oninput="cascadeNum(${i},'goal_current',this.value)">
+            <span class="casc-slash">/</span>
+            <input class="casc-num" type="number" min="0" max="1000" value="${gt !== null ? gt : ''}" placeholder="—" oninput="cascadeNum(${i},'goal_target',this.value)">
+          </div>
+        </div>
+
+        <div class="casc-lever">
+          <i class="ph-fill ph-arrow-fat-up"></i><span class="casc-lever-lbl">главный рычаг</span>
+          <input class="casc-lever-in" value="${escapeHtml(m.lever)}" placeholder="напр. Ферритин" oninput="cascadeField(${i},'lever',this.value)">
+        </div>
+
+        <div class="casc-sec">Протоколы <span class="casc-hint">клик по строке — статус</span></div>
+        <div class="casc-list">${protos}</div>
+        <button class="casc-add" onclick="cascadeAddProto(${i})"><i class="ph-light ph-plus"></i> протокол</button>
+
+        <div class="casc-sec">Выигрыши</div>
+        <div class="casc-list">${wins}</div>
+        <button class="casc-add" onclick="cascadeAddWin(${i})"><i class="ph-light ph-plus"></i> выигрыш</button>
+      </div>
+    </div>`;
+}
+
+// --- мутации: каждая пишет через bridge (реальная связь, не localStorage) ---
+function _missionsScheduleSave() {
+  clearTimeout(_missionsSaveTimer);
+  _missionsSaveTimer = setTimeout(_missionsSaveNow, 600);
+}
+function _missionsSaveNow() {
+  clearTimeout(_missionsSaveTimer);
+  fetchWithTimeout('/api/missions', 4000, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ missions: _missions })
+  }).then(r => r.json()).then(d => { if (!d || d.status !== 'ok') showToast('Каскад не сохранился', false); })
+    .catch(() => showToast('Не сохранилось — bridge офлайн?', false));
+}
+function cascadeField(i, key, val) { if (_missions[i]) { _missions[i][key] = val; _missionsScheduleSave(); } }
+function cascadeNum(i, key, val) {
+  if (!_missions[i]) return;
+  _missions[i][key] = val.trim() === '' ? null : Math.max(0, Math.min(1000, parseInt(val, 10) || 0));
+  _missionsScheduleSave();
+  const m = _missions[i], gc = m.goal_current, gt = m.goal_target;
+  const pct = (typeof gc === 'number' && gt) ? Math.max(0, Math.min(100, Math.round(gc / gt * 100))) : 0;
+  const bar = document.querySelector('.casc-card[data-mi="' + i + '"] .casc-bar span');
+  if (bar) bar.style.width = pct + '%';
+}
+function cascadeAddMission() {
+  _missions.push({ id: 'm-' + Date.now(), title: '', dream: '', domain: '', lever: '', goal_label: '', goal_current: null, goal_target: null, protocols: [], wins: [] });
+  _missionsSaveNow(); _cascadeRedraw();
+}
+function cascadeSeedFromGoal() {
+  const goal = (localStorage.getItem(GOAL_KEY) || '').trim();
+  _missions.push({ id: 'm-' + Date.now(), title: 'Моя цель по здоровью', dream: goal.slice(0, 240), domain: '', lever: '', goal_label: '', goal_current: null, goal_target: null, protocols: [], wins: [] });
+  _missionsSaveNow(); _cascadeRedraw();
+  if (!goal) showToast('Цель пустая — впиши её в Настройках → Профиль', false);
+}
+function cascadeDelMission(i) {
+  if (!_missions[i] || !confirm('Удалить миссию целиком?')) return;
+  _missions.splice(i, 1); _missionsSaveNow(); _cascadeRedraw();
+}
+function cascadeAddProto(i) {
+  const name = (prompt('Протокол — что конкретно делаешь:') || '').trim();
+  if (!name || !_missions[i]) return;
+  (_missions[i].protocols = _missions[i].protocols || []).push({ name, status: 'planned' });
+  _missionsSaveNow(); _cascadeRedraw();
+}
+function cascadeCycleProto(i, pi) {
+  const p = _missions[i] && _missions[i].protocols[pi];
+  if (!p) return;
+  p.status = PROTO_NEXT[p.status] || 'planned';
+  _missionsSaveNow(); _cascadeRedraw();
+}
+function cascadeDelProto(i, pi) { if (_missions[i]) { _missions[i].protocols.splice(pi, 1); _missionsSaveNow(); _cascadeRedraw(); } }
+function cascadeAddWin(i) {
+  const w = (prompt('Выигрыш — что уже получилось:') || '').trim();
+  if (!w || !_missions[i]) return;
+  (_missions[i].wins = _missions[i].wins || []).push(w);
+  _missionsSaveNow(); _cascadeRedraw();
+}
+function cascadeDelWin(i, wi) { if (_missions[i]) { _missions[i].wins.splice(wi, 1); _missionsSaveNow(); _cascadeRedraw(); } }
+
 function renderProtocolsScreen() {
   const wrap = document.getElementById('protocolsContent');
   if (!wrap) return;
@@ -9840,6 +10068,7 @@ const titles = {
   workouts: "Тренировки",
   dna: "ДНК",
   vaccination: "Вакцинация",
+  cascade: "Каскад целей",
   protocols: "Протоколы",
   research: "Research",
   reports: "Отчёты",
@@ -10419,6 +10648,7 @@ const NAV_HIDEABLE = [
   { z: 'workouts', label: 'Тренировки', icon: 'ph-barbell' },
   { z: 'dna', label: 'ДНК', icon: 'ph-dna' },
   { z: 'vaccination', label: 'Вакцинация', icon: 'ph-syringe' },
+  { z: 'cascade', label: 'Каскад целей', icon: 'ph-compass' },
   { z: 'protocols', label: 'Протоколы', icon: 'ph-book-open' },
   { z: 'research', label: 'Research', icon: 'ph-microscope' },
   { z: 'reports', label: 'Отчёты', icon: 'ph-file-text' },
@@ -10559,6 +10789,8 @@ function enterZone(z) {
     renderDnaScreen();
   } else if (z === 'vaccination') {
     renderVaccinationScreen();
+  } else if (z === 'cascade') {
+    renderCascade();
   } else if (z === 'protocols') {
     renderProtocolsScreen();
   } else if (z === 'workouts') {

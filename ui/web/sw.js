@@ -1,7 +1,7 @@
 // OpenHealth PWA service worker: офлайн-оболочка.
 // Статика — cache-first; данные (data.local.json, /api/) — network-first,
 // чтобы реальные значения не залипали в кэше.
-const CACHE = 'openhealth-shell-v4';
+const CACHE = 'openhealth-shell-v5';
 const SHELL = [
   './',
   './index.html',
