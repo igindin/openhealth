@@ -584,6 +584,12 @@ def build_user_context(base_dir: Path) -> str:
         if text:
             sections.append("Каскад целей пользователя ({}):\n{}".format(missions_file.name, text))
 
+    locations_file = _find_exact(base_dir, (LOCATIONS_MD,))
+    if locations_file is not None:
+        text = _read_head(locations_file, 500)  # переезды/смена часовых поясов как travel-контекст
+        if text:
+            sections.append("Переезды/часовые пояса пользователя ({}):\n{}".format(locations_file.name, text))
+
     research = _research_section(base_dir)
     if research:
         sections.append(research)
@@ -1465,6 +1471,73 @@ def handle_missions_post(payload, base_dir: Path) -> "tuple":
     return 200, {"status": "ok", "missions": missions, "md": MISSIONS_MD}
 
 
+# --- locations / travel log: <data-dir>/locations.json + locations.md ---------
+# Переезды и смена часовых поясов как travel-контекст для агента (фактор сна/recovery).
+
+LOCATIONS_FILE = "locations.json"
+LOCATIONS_MD = "locations.md"
+MAX_LOCATIONS = 300
+
+
+def _validate_locations(payload) -> list:
+    raw = payload.get("locations") if isinstance(payload, dict) else payload
+    if not isinstance(raw, list):
+        raise ValueError("locations must be a list")
+    out = []
+    for item in raw[:MAX_LOCATIONS]:
+        if not isinstance(item, dict):
+            continue
+        city = _clean_str(item.get("city"), 80)
+        date = item.get("date")
+        if not city or not isinstance(date, str) or not _JOURNAL_DATE_RE.match(date):
+            continue
+        out.append({"city": city, "date": date, "tz": _clean_str(item.get("tz"), 16)})
+    out.sort(key=lambda e: e["date"])
+    return out
+
+
+def _locations_md_text(locations: list) -> str:
+    lines = ["# Переезды и часовые пояса (travel-контекст)", ""]
+    if not locations:
+        lines.append("_Переезды не отмечены._")
+    for loc in locations:
+        tz = " · {}".format(loc["tz"]) if loc.get("tz") else ""
+        lines.append("- {}: {}{}".format(loc["date"], loc["city"], tz))
+    lines.append("")
+    lines.append("_Файл сгенерирован дашбордом OpenHealth (Настройки → Город и локации); агент учитывает смену поясов как фактор сна/recovery._")
+    return "\n".join(lines) + "\n"
+
+
+def handle_locations_get(base_dir: Path) -> "tuple":
+    path = base_dir / LOCATIONS_FILE
+    if not path.is_file():
+        return 200, {"status": "ok", "locations": []}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 200, {"status": "ok", "locations": []}
+    locs = raw.get("locations") if isinstance(raw, dict) else raw
+    return 200, {"status": "ok", "locations": locs if isinstance(locs, list) else []}
+
+
+def handle_locations_post(payload, base_dir: Path) -> "tuple":
+    if not isinstance(payload, (dict, list)):
+        return 400, {"status": "error", "message": "body must be a JSON object or array"}
+    try:
+        locations = _validate_locations(payload)
+    except ValueError as exc:
+        return 400, {"status": "error", "message": str(exc)}
+    try:
+        path = base_dir / LOCATIONS_FILE
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps({"locations": locations}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+        (base_dir / LOCATIONS_MD).write_text(_locations_md_text(locations), encoding="utf-8")
+    except OSError as exc:
+        return 500, {"status": "error", "message": "cannot write locations: {}".format(exc.__class__.__name__)}
+    return 200, {"status": "ok", "locations": locations, "md": LOCATIONS_MD}
+
+
 # --- weather: home location + today's context ---------------------------------
 
 WEATHER_CACHE_TTL_S = 600
@@ -1817,6 +1890,10 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             status, body = handle_missions_get(self.base_dir)
             self._send_json(body, status=status)
             return
+        if path == "/api/locations":
+            status, body = handle_locations_get(self.base_dir)
+            self._send_json(body, status=status)
+            return
         if path == "/api/weather/location":
             status, body = handle_weather_location_get()
             self._send_json(body, status=status)
@@ -1887,7 +1964,7 @@ class BridgeHandler(SimpleHTTPRequestHandler):
                         "/api/journal/day", "/api/journal/focus",
                         "/api/params", "/api/params/reset",
                         "/api/methodology/save", "/api/profile", "/api/missions",
-                        "/api/weather/location", "/api/rebuild"):
+                        "/api/locations", "/api/weather/location", "/api/rebuild"):
             self._send_json({"status": "error", "message": "not found"}, status=404)
             return
 
@@ -1937,6 +2014,15 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             status, body = handle_missions_post(payload, self.base_dir)
             n = len(body.get("missions", [])) if isinstance(body.get("missions"), list) else "-"
             log("POST /api/missions -> {} ({} missions)".format(body.get("status"), n))
+            if body.get("status") == "ok":
+                schedule_background_rebuild(self.base_dir)  # rebuild-on-write
+            self._send_json(body, status=status)
+            return
+
+        if path == "/api/locations":
+            status, body = handle_locations_post(payload, self.base_dir)
+            n = len(body.get("locations", [])) if isinstance(body.get("locations"), list) else "-"
+            log("POST /api/locations -> {} ({} entries)".format(body.get("status"), n))
             if body.get("status") == "ok":
                 schedule_background_rebuild(self.base_dir)  # rebuild-on-write
             self._send_json(body, status=status)

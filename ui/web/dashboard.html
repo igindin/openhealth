@@ -13335,6 +13335,34 @@ function getTravelLog() {
 
 function saveTravelLog(list) {
   try { localStorage.setItem(LOC_TRAVEL_KEY, JSON.stringify(list)); } catch (e) { /* private mode */ }
+  // Зеркалим на bridge -> locations.md -> контекст агента (учитывает смену поясов
+  // как фактор сна/recovery). Офлайн — запись остаётся локально, синкнется позже.
+  try {
+    fetchWithTimeout('/api/locations', 4000, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locations: list })
+    }).catch(() => {});
+  } catch (e) { /* bridge офлайн */ }
+}
+
+// Подтянуть переезды с bridge (источник правды). Если на bridge пусто, а локально
+// есть — поднимаем локальное наверх (миграция со старого localStorage-хранения).
+function _syncTravelFromBridge() {
+  fetchWithTimeout('/api/locations', 3000)
+    .then(r => r.json())
+    .then(d => {
+      const remote = Array.isArray(d.locations) ? d.locations : [];
+      const local = getTravelLog();
+      if (remote.length) {
+        if (JSON.stringify(remote) !== JSON.stringify(local)) {
+          try { localStorage.setItem(LOC_TRAVEL_KEY, JSON.stringify(remote)); } catch (e) { /* private */ }
+          renderTravelFeed();
+        }
+      } else if (local.length) {
+        saveTravelLog(local); // bridge пуст, локально есть — мигрируем наверх
+      }
+    })
+    .catch(() => {});
 }
 
 // Строка ленты переездов. i — исходный индекс в массиве (для удаления).
@@ -13419,6 +13447,7 @@ function renderLocations() {
 
   loadHomeLocation();
   renderTravelFeed();
+  _syncTravelFromBridge();
 }
 
 // GET /api/weather/location -> показать текущий label (зелёным) если configured.
