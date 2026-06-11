@@ -578,6 +578,18 @@ def build_user_context(base_dir: Path) -> str:
             if text:
                 sections.append("{} ({}):\n{}".format(label, doc.name, text))
 
+    missions_file = _find_exact(base_dir, (MISSIONS_MD,))
+    if missions_file is not None:
+        text = _read_head(missions_file, 900)  # каскад «зачем»: мечты/цели/рычаги/протоколы
+        if text:
+            sections.append("Каскад целей пользователя ({}):\n{}".format(missions_file.name, text))
+
+    locations_file = _find_exact(base_dir, (LOCATIONS_MD,))
+    if locations_file is not None:
+        text = _read_head(locations_file, 500)  # переезды/смена часовых поясов как travel-контекст
+        if text:
+            sections.append("Переезды/часовые пояса пользователя ({}):\n{}".format(locations_file.name, text))
+
     research = _research_section(base_dir)
     if research:
         sections.append(research)
@@ -1329,6 +1341,203 @@ def handle_profile_post(payload, base_dir: Path) -> "tuple":
     return 200, {"status": "ok", "profile": profile, "md": PROFILE_MD}
 
 
+# --- mission cascade: <data-dir>/missions.json + missions.md ------------------
+# Слой «зачем»: мечта -> цель (X/Y) -> главный рычаг (биомаркер) -> протоколы -> wins.
+# Источник правды для зоны «Каскад»; missions.md подмешивается в контекст агента.
+
+MISSIONS_FILE = "missions.json"
+MISSIONS_MD = "missions.md"
+MAX_MISSIONS = 24
+MAX_MISSION_PROTOCOLS = 40
+MAX_MISSION_WINS = 60
+PROTOCOL_STATUS = ("planned", "active", "done")
+
+
+def _clean_str(value, limit) -> str:
+    """Строка -> схлопнутые пробелы, обрезка по limit; не-строки/пустое -> ''."""
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.split())[:limit]
+
+
+def _mission_count(value, lo, hi):
+    """Целое в [lo, hi] или None (пустое поле прогресса — не ошибка)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    iv = int(value)
+    return iv if lo <= iv <= hi else None
+
+
+def _validate_missions(payload) -> list:
+    """payload: {"missions": [...]} или [...] -> очищенный список миссий."""
+    raw = payload.get("missions") if isinstance(payload, dict) else payload
+    if not isinstance(raw, list):
+        raise ValueError("missions must be a list")
+    out = []
+    for item in raw[:MAX_MISSIONS]:
+        if not isinstance(item, dict):
+            continue
+        title = _clean_str(item.get("title"), 120)
+        dream = _clean_str(item.get("dream"), 280)
+        if not title and not dream:
+            continue  # пустую миссию не храним
+        protocols = []
+        raw_p = item.get("protocols")
+        if isinstance(raw_p, list):
+            for p in raw_p[:MAX_MISSION_PROTOCOLS]:
+                if not isinstance(p, dict):
+                    continue
+                name = _clean_str(p.get("name"), 160)
+                if not name:
+                    continue
+                status = p.get("status")
+                protocols.append({"name": name, "status": status if status in PROTOCOL_STATUS else "planned"})
+        wins = []
+        raw_w = item.get("wins")
+        if isinstance(raw_w, list):
+            for w in raw_w[:MAX_MISSION_WINS]:
+                s = _clean_str(w, 200)
+                if s:
+                    wins.append(s)
+        out.append({
+            "id": _clean_str(item.get("id"), 64) or ("m-" + str(len(out) + 1)),
+            "title": title,
+            "dream": dream,
+            "domain": _clean_str(item.get("domain"), 80),
+            "lever": _clean_str(item.get("lever"), 120),
+            "goal_label": _clean_str(item.get("goal_label"), 120),
+            "goal_current": _mission_count(item.get("goal_current"), 0, 1000),
+            "goal_target": _mission_count(item.get("goal_target"), 0, 1000),
+            "protocols": protocols,
+            "wins": wins,
+        })
+    return out
+
+
+def _missions_md_text(missions: list) -> str:
+    lines = ["# Каскад целей (зачем) — мечты → цели → рычаги → протоколы", ""]
+    if not missions:
+        lines.append("_Миссии пока не заданы._")
+    for m in missions:
+        lines.append("## {}".format(m.get("title") or m.get("dream") or "Миссия"))
+        if m.get("dream"):
+            lines.append("Мечта: {}".format(m["dream"]))
+        if m.get("goal_label"):
+            prog = ""
+            if m.get("goal_current") is not None and m.get("goal_target"):
+                prog = " — {}/{}".format(m["goal_current"], m["goal_target"])
+            lines.append("Цель: {}{}".format(m["goal_label"], prog))
+        if m.get("lever"):
+            lines.append("Главный рычаг: {}".format(m["lever"]))
+        groups = (("active", "Сейчас делаю"), ("planned", "Дальше"), ("done", "Сделано"))
+        for status, label in groups:
+            names = [p["name"] for p in m.get("protocols", []) if p.get("status") == status]
+            if names:
+                lines.append("{}: {}".format(label, "; ".join(names)))
+        if m.get("wins"):
+            lines.append("Выигрыши: {}".format("; ".join(m["wins"][:5])))
+        lines.append("")
+    lines.append("_Файл сгенерирован дашбордом OpenHealth (Каскад); агент читает его автоматически._")
+    return "\n".join(lines) + "\n"
+
+
+def handle_missions_get(base_dir: Path) -> "tuple":
+    path = base_dir / MISSIONS_FILE
+    if not path.is_file():
+        return 200, {"status": "ok", "missions": []}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 200, {"status": "ok", "missions": []}
+    missions = raw.get("missions") if isinstance(raw, dict) else raw
+    return 200, {"status": "ok", "missions": missions if isinstance(missions, list) else []}
+
+
+def handle_missions_post(payload, base_dir: Path) -> "tuple":
+    if not isinstance(payload, (dict, list)):
+        return 400, {"status": "error", "message": "body must be a JSON object or array"}
+    try:
+        missions = _validate_missions(payload)
+    except ValueError as exc:
+        return 400, {"status": "error", "message": str(exc)}
+    try:
+        path = base_dir / MISSIONS_FILE
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps({"missions": missions}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+        (base_dir / MISSIONS_MD).write_text(_missions_md_text(missions), encoding="utf-8")
+    except OSError as exc:
+        return 500, {"status": "error", "message": "cannot write missions: {}".format(exc.__class__.__name__)}
+    return 200, {"status": "ok", "missions": missions, "md": MISSIONS_MD}
+
+
+# --- locations / travel log: <data-dir>/locations.json + locations.md ---------
+# Переезды и смена часовых поясов как travel-контекст для агента (фактор сна/recovery).
+
+LOCATIONS_FILE = "locations.json"
+LOCATIONS_MD = "locations.md"
+MAX_LOCATIONS = 300
+
+
+def _validate_locations(payload) -> list:
+    raw = payload.get("locations") if isinstance(payload, dict) else payload
+    if not isinstance(raw, list):
+        raise ValueError("locations must be a list")
+    out = []
+    for item in raw[:MAX_LOCATIONS]:
+        if not isinstance(item, dict):
+            continue
+        city = _clean_str(item.get("city"), 80)
+        date = item.get("date")
+        if not city or not isinstance(date, str) or not _JOURNAL_DATE_RE.match(date):
+            continue
+        out.append({"city": city, "date": date, "tz": _clean_str(item.get("tz"), 16)})
+    out.sort(key=lambda e: e["date"])
+    return out
+
+
+def _locations_md_text(locations: list) -> str:
+    lines = ["# Переезды и часовые пояса (travel-контекст)", ""]
+    if not locations:
+        lines.append("_Переезды не отмечены._")
+    for loc in locations:
+        tz = " · {}".format(loc["tz"]) if loc.get("tz") else ""
+        lines.append("- {}: {}{}".format(loc["date"], loc["city"], tz))
+    lines.append("")
+    lines.append("_Файл сгенерирован дашбордом OpenHealth (Настройки → Город и локации); агент учитывает смену поясов как фактор сна/recovery._")
+    return "\n".join(lines) + "\n"
+
+
+def handle_locations_get(base_dir: Path) -> "tuple":
+    path = base_dir / LOCATIONS_FILE
+    if not path.is_file():
+        return 200, {"status": "ok", "locations": []}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 200, {"status": "ok", "locations": []}
+    locs = raw.get("locations") if isinstance(raw, dict) else raw
+    return 200, {"status": "ok", "locations": locs if isinstance(locs, list) else []}
+
+
+def handle_locations_post(payload, base_dir: Path) -> "tuple":
+    if not isinstance(payload, (dict, list)):
+        return 400, {"status": "error", "message": "body must be a JSON object or array"}
+    try:
+        locations = _validate_locations(payload)
+    except ValueError as exc:
+        return 400, {"status": "error", "message": str(exc)}
+    try:
+        path = base_dir / LOCATIONS_FILE
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps({"locations": locations}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+        (base_dir / LOCATIONS_MD).write_text(_locations_md_text(locations), encoding="utf-8")
+    except OSError as exc:
+        return 500, {"status": "error", "message": "cannot write locations: {}".format(exc.__class__.__name__)}
+    return 200, {"status": "ok", "locations": locations, "md": LOCATIONS_MD}
+
+
 # --- weather: home location + today's context ---------------------------------
 
 WEATHER_CACHE_TTL_S = 600
@@ -1523,6 +1732,38 @@ def handle_research_file(base_dir: Path, name: "str | None") -> "tuple":
 # --- rebuild: пересборка data.local.json из индекса ---------------------------
 
 REBUILD_TIMEOUT_S = 60
+REBUILD_DEBOUNCE_S = 2.0  # rebuild-on-write: дождаться всплеска записей -> одна пересборка
+
+_rebuild_lock = threading.Lock()
+_rebuild_timer = None
+
+
+def _run_rebuild_subprocess(base_dir: Path) -> None:
+    """Best-effort фоновая пересборка снапшота (rebuild-on-write). Не роняет сервер."""
+    try:
+        db_path = find_journal_db(base_dir) or _DEFAULT_INDEX
+        if not db_path.is_file():
+            return
+        out_path = base_dir / DATA_FILE
+        cmd = [sys.executable, str(_BUILD_SCRIPT), "--db", str(db_path), "--out", str(out_path)]
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=REBUILD_TIMEOUT_S, cwd=str(_REPO_ROOT),
+                              stdin=subprocess.DEVNULL)
+        log("auto-rebuild -> {}".format("ok" if proc.returncode == 0 else "error"))
+    except Exception as exc:  # фоновый best-effort
+        log("auto-rebuild skipped: {}".format(exc.__class__.__name__))
+
+
+def schedule_background_rebuild(base_dir: Path) -> None:
+    """Debounced rebuild-on-write: после записи (чек-ин/профиль) пересобрать снапшот
+    в фоне, чтобы дашборд не показывал устаревшие числа. Всплеск правок -> одна сборка."""
+    global _rebuild_timer
+    with _rebuild_lock:
+        if _rebuild_timer is not None:
+            _rebuild_timer.cancel()
+        _rebuild_timer = threading.Timer(REBUILD_DEBOUNCE_S, _run_rebuild_subprocess, args=(base_dir,))
+        _rebuild_timer.daemon = True
+        _rebuild_timer.start()
 _DEFAULT_INDEX = Path("~/health-os/data/index/health_os.sqlite3").expanduser()
 _BUILD_SCRIPT = Path(__file__).resolve().with_name("build_dashboard_data.py")
 
@@ -1645,6 +1886,14 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             status, body = handle_profile_get(self.base_dir)
             self._send_json(body, status=status)
             return
+        if path == "/api/missions":
+            status, body = handle_missions_get(self.base_dir)
+            self._send_json(body, status=status)
+            return
+        if path == "/api/locations":
+            status, body = handle_locations_get(self.base_dir)
+            self._send_json(body, status=status)
+            return
         if path == "/api/weather/location":
             status, body = handle_weather_location_get()
             self._send_json(body, status=status)
@@ -1714,8 +1963,8 @@ class BridgeHandler(SimpleHTTPRequestHandler):
         if path not in ("/api/agent", "/api/config", "/api/calendar",
                         "/api/journal/day", "/api/journal/focus",
                         "/api/params", "/api/params/reset",
-                        "/api/methodology/save", "/api/profile",
-                        "/api/weather/location", "/api/rebuild"):
+                        "/api/methodology/save", "/api/profile", "/api/missions",
+                        "/api/locations", "/api/weather/location", "/api/rebuild"):
             self._send_json({"status": "error", "message": "not found"}, status=404)
             return
 
@@ -1756,6 +2005,26 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             status, body = handle_profile_post(payload, self.base_dir)
             # only the outcome — profile contents are personal data
             log("POST /api/profile -> {}".format(body.get("status")))
+            if body.get("status") == "ok":
+                schedule_background_rebuild(self.base_dir)  # rebuild-on-write
+            self._send_json(body, status=status)
+            return
+
+        if path == "/api/missions":
+            status, body = handle_missions_post(payload, self.base_dir)
+            n = len(body.get("missions", [])) if isinstance(body.get("missions"), list) else "-"
+            log("POST /api/missions -> {} ({} missions)".format(body.get("status"), n))
+            if body.get("status") == "ok":
+                schedule_background_rebuild(self.base_dir)  # rebuild-on-write
+            self._send_json(body, status=status)
+            return
+
+        if path == "/api/locations":
+            status, body = handle_locations_post(payload, self.base_dir)
+            n = len(body.get("locations", [])) if isinstance(body.get("locations"), list) else "-"
+            log("POST /api/locations -> {} ({} entries)".format(body.get("status"), n))
+            if body.get("status") == "ok":
+                schedule_background_rebuild(self.base_dir)  # rebuild-on-write
             self._send_json(body, status=status)
             return
 
@@ -1770,6 +2039,8 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             # date + outcome only — journal contents are personal data
             log("POST /api/journal/day {} -> {} (indexed={})".format(
                 body.get("date", "?"), body.get("status"), body.get("indexed", "-")))
+            if body.get("status") == "ok":
+                schedule_background_rebuild(self.base_dir)  # rebuild-on-write
             self._send_json(body, status=status)
             return
 
@@ -1830,6 +2101,15 @@ class BridgeHandler(SimpleHTTPRequestHandler):
 
 
 def main(argv=None) -> None:
+    # macOS python.org-сборки часто без CA-бандла для ssl → исходящий HTTPS
+    # (погода/Open-Meteo, WHOOP token-exchange) падал бы на CERTIFICATE_VERIFY_FAILED
+    # и коннекторы молча возвращали бы None. Подставляем рабочий бандл до старта.
+    try:
+        from openhealth._certs import ensure_ca_certs
+        ensure_ca_certs()
+    except Exception:
+        pass
+
     parser = argparse.ArgumentParser(
         description="OpenHealth dashboard bridge: static files + local agent runner (127.0.0.1 only)."
     )

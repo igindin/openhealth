@@ -77,7 +77,7 @@ def build_paths(root: Path) -> RepoPaths:
         timeline_context=contexts / "timeline",
         interventions_context=contexts / "interventions",
         data_index=data_index,
-        db_path=data_index / "openhealth.sqlite3",
+        db_path=data_index / "health_os.sqlite3",
         weather_cache_path=data_index / "weather_cache.json",
         environment_cache_path=data_index / "environment_cache.json",
         whoop_tokens_path=data_index / "whoop_tokens.json",
