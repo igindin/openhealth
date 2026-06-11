@@ -578,6 +578,12 @@ def build_user_context(base_dir: Path) -> str:
             if text:
                 sections.append("{} ({}):\n{}".format(label, doc.name, text))
 
+    missions_file = _find_exact(base_dir, (MISSIONS_MD,))
+    if missions_file is not None:
+        text = _read_head(missions_file, 900)  # каскад «зачем»: мечты/цели/рычаги/протоколы
+        if text:
+            sections.append("Каскад целей пользователя ({}):\n{}".format(missions_file.name, text))
+
     research = _research_section(base_dir)
     if research:
         sections.append(research)
@@ -1329,6 +1335,136 @@ def handle_profile_post(payload, base_dir: Path) -> "tuple":
     return 200, {"status": "ok", "profile": profile, "md": PROFILE_MD}
 
 
+# --- mission cascade: <data-dir>/missions.json + missions.md ------------------
+# Слой «зачем»: мечта -> цель (X/Y) -> главный рычаг (биомаркер) -> протоколы -> wins.
+# Источник правды для зоны «Каскад»; missions.md подмешивается в контекст агента.
+
+MISSIONS_FILE = "missions.json"
+MISSIONS_MD = "missions.md"
+MAX_MISSIONS = 24
+MAX_MISSION_PROTOCOLS = 40
+MAX_MISSION_WINS = 60
+PROTOCOL_STATUS = ("planned", "active", "done")
+
+
+def _clean_str(value, limit) -> str:
+    """Строка -> схлопнутые пробелы, обрезка по limit; не-строки/пустое -> ''."""
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.split())[:limit]
+
+
+def _mission_count(value, lo, hi):
+    """Целое в [lo, hi] или None (пустое поле прогресса — не ошибка)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    iv = int(value)
+    return iv if lo <= iv <= hi else None
+
+
+def _validate_missions(payload) -> list:
+    """payload: {"missions": [...]} или [...] -> очищенный список миссий."""
+    raw = payload.get("missions") if isinstance(payload, dict) else payload
+    if not isinstance(raw, list):
+        raise ValueError("missions must be a list")
+    out = []
+    for item in raw[:MAX_MISSIONS]:
+        if not isinstance(item, dict):
+            continue
+        title = _clean_str(item.get("title"), 120)
+        dream = _clean_str(item.get("dream"), 280)
+        if not title and not dream:
+            continue  # пустую миссию не храним
+        protocols = []
+        raw_p = item.get("protocols")
+        if isinstance(raw_p, list):
+            for p in raw_p[:MAX_MISSION_PROTOCOLS]:
+                if not isinstance(p, dict):
+                    continue
+                name = _clean_str(p.get("name"), 160)
+                if not name:
+                    continue
+                status = p.get("status")
+                protocols.append({"name": name, "status": status if status in PROTOCOL_STATUS else "planned"})
+        wins = []
+        raw_w = item.get("wins")
+        if isinstance(raw_w, list):
+            for w in raw_w[:MAX_MISSION_WINS]:
+                s = _clean_str(w, 200)
+                if s:
+                    wins.append(s)
+        out.append({
+            "id": _clean_str(item.get("id"), 64) or ("m-" + str(len(out) + 1)),
+            "title": title,
+            "dream": dream,
+            "domain": _clean_str(item.get("domain"), 80),
+            "lever": _clean_str(item.get("lever"), 120),
+            "goal_label": _clean_str(item.get("goal_label"), 120),
+            "goal_current": _mission_count(item.get("goal_current"), 0, 1000),
+            "goal_target": _mission_count(item.get("goal_target"), 0, 1000),
+            "protocols": protocols,
+            "wins": wins,
+        })
+    return out
+
+
+def _missions_md_text(missions: list) -> str:
+    lines = ["# Каскад целей (зачем) — мечты → цели → рычаги → протоколы", ""]
+    if not missions:
+        lines.append("_Миссии пока не заданы._")
+    for m in missions:
+        lines.append("## {}".format(m.get("title") or m.get("dream") or "Миссия"))
+        if m.get("dream"):
+            lines.append("Мечта: {}".format(m["dream"]))
+        if m.get("goal_label"):
+            prog = ""
+            if m.get("goal_current") is not None and m.get("goal_target"):
+                prog = " — {}/{}".format(m["goal_current"], m["goal_target"])
+            lines.append("Цель: {}{}".format(m["goal_label"], prog))
+        if m.get("lever"):
+            lines.append("Главный рычаг: {}".format(m["lever"]))
+        groups = (("active", "Сейчас делаю"), ("planned", "Дальше"), ("done", "Сделано"))
+        for status, label in groups:
+            names = [p["name"] for p in m.get("protocols", []) if p.get("status") == status]
+            if names:
+                lines.append("{}: {}".format(label, "; ".join(names)))
+        if m.get("wins"):
+            lines.append("Выигрыши: {}".format("; ".join(m["wins"][:5])))
+        lines.append("")
+    lines.append("_Файл сгенерирован дашбордом OpenHealth (Каскад); агент читает его автоматически._")
+    return "\n".join(lines) + "\n"
+
+
+def handle_missions_get(base_dir: Path) -> "tuple":
+    path = base_dir / MISSIONS_FILE
+    if not path.is_file():
+        return 200, {"status": "ok", "missions": []}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 200, {"status": "ok", "missions": []}
+    missions = raw.get("missions") if isinstance(raw, dict) else raw
+    return 200, {"status": "ok", "missions": missions if isinstance(missions, list) else []}
+
+
+def handle_missions_post(payload, base_dir: Path) -> "tuple":
+    if not isinstance(payload, (dict, list)):
+        return 400, {"status": "error", "message": "body must be a JSON object or array"}
+    try:
+        missions = _validate_missions(payload)
+    except ValueError as exc:
+        return 400, {"status": "error", "message": str(exc)}
+    try:
+        path = base_dir / MISSIONS_FILE
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps({"missions": missions}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+        (base_dir / MISSIONS_MD).write_text(_missions_md_text(missions), encoding="utf-8")
+    except OSError as exc:
+        return 500, {"status": "error", "message": "cannot write missions: {}".format(exc.__class__.__name__)}
+    return 200, {"status": "ok", "missions": missions, "md": MISSIONS_MD}
+
+
 # --- weather: home location + today's context ---------------------------------
 
 WEATHER_CACHE_TTL_S = 600
@@ -1677,6 +1813,10 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             status, body = handle_profile_get(self.base_dir)
             self._send_json(body, status=status)
             return
+        if path == "/api/missions":
+            status, body = handle_missions_get(self.base_dir)
+            self._send_json(body, status=status)
+            return
         if path == "/api/weather/location":
             status, body = handle_weather_location_get()
             self._send_json(body, status=status)
@@ -1746,7 +1886,7 @@ class BridgeHandler(SimpleHTTPRequestHandler):
         if path not in ("/api/agent", "/api/config", "/api/calendar",
                         "/api/journal/day", "/api/journal/focus",
                         "/api/params", "/api/params/reset",
-                        "/api/methodology/save", "/api/profile",
+                        "/api/methodology/save", "/api/profile", "/api/missions",
                         "/api/weather/location", "/api/rebuild"):
             self._send_json({"status": "error", "message": "not found"}, status=404)
             return
@@ -1788,6 +1928,15 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             status, body = handle_profile_post(payload, self.base_dir)
             # only the outcome — profile contents are personal data
             log("POST /api/profile -> {}".format(body.get("status")))
+            if body.get("status") == "ok":
+                schedule_background_rebuild(self.base_dir)  # rebuild-on-write
+            self._send_json(body, status=status)
+            return
+
+        if path == "/api/missions":
+            status, body = handle_missions_post(payload, self.base_dir)
+            n = len(body.get("missions", [])) if isinstance(body.get("missions"), list) else "-"
+            log("POST /api/missions -> {} ({} missions)".format(body.get("status"), n))
             if body.get("status") == "ok":
                 schedule_background_rebuild(self.base_dir)  # rebuild-on-write
             self._send_json(body, status=status)
