@@ -13739,23 +13739,31 @@ function initResearchBadges() {
   }
   function injectToggle(){
     if(document.getElementById('oh-lang-toggle')) return;
-    const b = document.createElement('button');
-    b.id = 'oh-lang-toggle';
-    b.textContent = lang()==='en' ? 'RU' : 'EN';
-    b.title = 'Switch language';
-    b.style.cssText = 'position:fixed;top:10px;right:14px;z-index:99999;font:600 11px/1 ui-monospace,monospace;'
-      + 'letter-spacing:.12em;padding:6px 9px;border:1px solid currentColor;border-radius:4px;'
-      + 'background:rgba(127,127,127,.08);color:inherit;cursor:pointer;opacity:.55;';
-    b.onmouseenter = () => b.style.opacity = '1';
-    b.onmouseleave = () => b.style.opacity = '.55';
-    b.onclick = () => { localStorage.setItem('oh_lang', lang()==='en' ? 'ru' : 'en'); location.reload(); };
-    document.body.appendChild(b);
+    const footer = document.querySelector('footer');
+    if(!footer) return; // footer not ready yet — start()'s timers retry
+    const right = footer.querySelector('span:nth-child(2)') || footer;
+    const cur = lang();
+    const seg = document.createElement('span');
+    seg.id = 'oh-lang-toggle';
+    seg.title = 'Interface language';
+    seg.style.cssText = 'display:inline-flex;align-items:center;border:1px solid var(--line,rgba(0,0,0,.14));'
+      + 'border-radius:5px;overflow:hidden;font:600 10px/1 var(--font-mono,ui-monospace,monospace);letter-spacing:.1em;';
+    [['EN','en'],['RU','ru']].forEach(([txt,code]) => {
+      const b = document.createElement('button');
+      b.textContent = txt;
+      const active = code === cur;
+      b.style.cssText = 'padding:4px 7px;border:0;cursor:pointer;font:inherit;letter-spacing:inherit;'
+        + (active ? 'background:var(--accent,#1f7d57);color:#fff;' : 'background:transparent;color:var(--muted,#8a8a8a);');
+      if(!active) b.onclick = () => { localStorage.setItem('oh_lang', code); location.reload(); };
+      seg.appendChild(b);
+    });
+    right.insertBefore(seg, right.firstChild);
   }
   function start(){
     injectToggle();
     if(lang() === 'en'){
       trEl(document.body);
-      [400, 1000, 2200].forEach(ms => setTimeout(() => trEl(document.body), ms)); // catch animation-deferred renders
+      [400, 1000, 2200].forEach(ms => setTimeout(() => { trEl(document.body); injectToggle(); }, ms)); // catch animation-deferred renders
       new MutationObserver(muts => {
         for(const m of muts){ m.addedNodes && m.addedNodes.forEach(node => {
           if(node.nodeType===1 || node.nodeType===3) trEl(node);
