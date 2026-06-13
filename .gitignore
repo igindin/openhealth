@@ -9,6 +9,13 @@ dist/
 .env.local
 .env.*.local
 
+# deep-research skill: API keys + filled personal context stay local-only
+.research_db_keys.json
+*api*key*.json
+*secret*.json
+*.token
+.claude/commands/research/context.md
+
 # OS files
 .DS_Store
 Thumbs.db
