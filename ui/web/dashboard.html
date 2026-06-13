@@ -13669,5 +13669,103 @@ function initResearchBadges() {
   });
 }
 </script>
+<script>
+/* i18n: runtime RU->EN translation + language toggle (default EN).
+   Dashboard is authored in Russian; we translate the rendered DOM to English at
+   runtime via a RU->EN dictionary + a MutationObserver (catches every render
+   without editing render functions). RU mode = native source (no-op).
+   Dictionary is progressive — expand OH_I18N to cover more strings. */
+(function(){
+  const OH_I18N = {
+    "Сегодня":"Today","Пульс дня":"Day Pulse","Препараты и БАДы":"Meds & Supplements",
+    "Методологии":"Methodologies","Отчёты":"Reports","Дайджесты":"Digests",
+    "Источники данных":"Data Sources","Диагностика":"Diagnostics","Настройки":"Settings",
+    "ДАННЫЕ":"DATA","ЗНАНИЕ":"KNOWLEDGE","СИСТЕМА":"SYSTEM","Данные":"Data","Знание":"Knowledge","Система":"System",
+    "Журнал":"Journal","Тренды":"Trends","Состав тела":"Body Composition","Timeline":"Timeline",
+    "Тренировки":"Workouts","ДНК":"DNA","Вакцинация":"Vaccination","Протоколы":"Protocols",
+    "Корреляции":"Correlations","Обзор показателей":"Vitals Overview","Лента дней":"Day Feed",
+    "Каскад целей":"Goal Cascade","Biomarkers (Анализы)":"Biomarkers","Research":"Research",
+    "Что сделано сегодня":"What you did today","набор целевых привычек":"your target habits",
+    "Прогресс":"Progress","Лечь до 23:30":"Lights out by 23:30","Свет утром 15 мин":"Morning light, 15 min",
+    "Прогулка 10к шагов":"Walk 10k steps","Вода 2.5л":"Water, 2.5 L","Без кофе после 15:00":"No coffee after 15:00",
+    "Настроение / энергия":"Mood / energy","Усталость":"Fatigue","Энергия":"Energy",
+    "Физиологическое восстановление":"Physiological recovery","ИЗ ЧЕГО СЛОЖИЛСЯ":"HOW IT'S BUILT",
+    "Редактировать":"Edit","Жёлтая зона — умеренный режим":"Yellow zone — moderate mode",
+    "ПУЛЬС ПОКОЯ":"RESTING HR","СОН":"SLEEP","мс":"ms","уд/мин":"bpm","ч":"h",
+    "Локально · твои данные не уходят с устройства":"Local · your data never leaves your device",
+    "Данные и bridge":"Data & bridge","Пересобрать":"Rebuild","Обнови WHOOP":"Update WHOOP",
+    "Снапшот данных":"Data snapshot","онлайн":"online","офлайн":"offline","данные на":"data as of",
+    "recovery сегодня из твоих данных tracker":"today's recovery from your tracker data",
+    "Биохимическая панель":"Biochemistry panel","НАЗВАНИЕ":"NAME","РЕЗУЛЬТАТ":"RESULT",
+    "РЕФЕРЕНС":"REFERENCE","ОПТИМУМ":"OPTIMUM","СТАТУС":"STATUS","ДОВЕРИЕ":"CONFIDENCE",
+    "Оптимально":"Optimal","Повышен":"High","Понижен":"Low","В норме":"Normal","Анализы не загружены":"No labs loaded",
+    "записей пока нет":"no records yet","Список пуст":"List is empty","Добавить":"Add",
+    "Принял":"Taken","Удалить":"Delete","Название":"Name","Тип":"Type","Доза":"Dose","Пауза":"Pause",
+    "Расписание":"Schedule","Дата начала":"Start date","Источник":"Source","лекарство":"medication","БАД":"supplement",
+    "Профиль":"Profile","Профиль тела":"Body profile","Возраст":"Age","Пол":"Sex",
+    "Рост, см":"Height, cm","Вес, кг":"Weight, kg","Город и локации":"City & locations",
+    "Параметры расчётов":"Calculation parameters","Цель по здоровью":"Health goal","Обо мне":"About me",
+    "Скачать как файлы":"Download as files","Определить":"Detect","Отметить":"Mark",
+    "Замеры веса":"Weight measurements","Добавить замер":"Add measurement","не указан":"not set",
+    "Тема":"Theme","Тёмная":"Dark","Светлая":"Light","Брутал":"Brutalist","Оформление":"Appearance",
+    "Дип-ресёрч агентом":"Deep research by agent","Сгенерировать инсайт":"Generate insight",
+    "Анализ трендов агентом":"Trend analysis by agent","Пересчитать корреляции агентом":"Recompute correlations by agent",
+    "Подключить источник":"Connect a source","Запусти анализ":"Run analysis","К биомаркерам":"To biomarkers",
+    "Погода сегодня":"Weather today","Календарь сегодня":"Calendar today","Циркадное колесо":"Circadian wheel",
+    "Энергия дня":"Energy of the day","Эмоции":"Emotions","Загрузка…":"Loading…","Готово":"Done","Ошибка":"Error"
+  };
+  const SKIP = {SCRIPT:1,STYLE:1,TEXTAREA:1,NOSCRIPT:1};
+  function lang(){ return localStorage.getItem('oh_lang') || 'en'; }
+  function trNode(node){
+    const v = node.nodeValue; if(!v) return;
+    const k = v.trim(); if(!k) return;
+    const en = OH_I18N[k];
+    if(en && en !== k) node.nodeValue = v.replace(k, en);
+  }
+  function trEl(root){
+    if(lang() !== 'en' || !root) return;
+    if(root.nodeType === 3){ trNode(root); return; }
+    if(root.nodeType !== 1) return;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: n => (n.parentNode && SKIP[n.parentNode.nodeName]) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+    });
+    const nodes=[]; let n; while(n=w.nextNode()) nodes.push(n);
+    nodes.forEach(trNode);
+    root.querySelectorAll && root.querySelectorAll('[placeholder],[title],[aria-label]').forEach(el=>{
+      ['placeholder','title','aria-label'].forEach(a=>{
+        const val = el.getAttribute(a); if(val && OH_I18N[val.trim()]) el.setAttribute(a, OH_I18N[val.trim()]);
+      });
+    });
+  }
+  function injectToggle(){
+    if(document.getElementById('oh-lang-toggle')) return;
+    const b = document.createElement('button');
+    b.id = 'oh-lang-toggle';
+    b.textContent = lang()==='en' ? 'RU' : 'EN';
+    b.title = 'Switch language';
+    b.style.cssText = 'position:fixed;top:10px;right:14px;z-index:99999;font:600 11px/1 ui-monospace,monospace;'
+      + 'letter-spacing:.12em;padding:6px 9px;border:1px solid currentColor;border-radius:4px;'
+      + 'background:rgba(127,127,127,.08);color:inherit;cursor:pointer;opacity:.55;';
+    b.onmouseenter = () => b.style.opacity = '1';
+    b.onmouseleave = () => b.style.opacity = '.55';
+    b.onclick = () => { localStorage.setItem('oh_lang', lang()==='en' ? 'ru' : 'en'); location.reload(); };
+    document.body.appendChild(b);
+  }
+  function start(){
+    injectToggle();
+    if(lang() === 'en'){
+      trEl(document.body);
+      [400, 1000, 2200].forEach(ms => setTimeout(() => trEl(document.body), ms)); // catch animation-deferred renders
+      new MutationObserver(muts => {
+        for(const m of muts){ m.addedNodes && m.addedNodes.forEach(node => {
+          if(node.nodeType===1 || node.nodeType===3) trEl(node);
+        }); }
+      }).observe(document.body, {childList:true, subtree:true});
+    }
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
+})();
+</script>
 </body>
 </html>
