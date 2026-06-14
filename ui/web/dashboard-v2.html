@@ -1333,8 +1333,8 @@
       </div>
     </header>
 
-    <!-- Bento Grid Container -->
-    <div class="bento-grid">
+    <!-- Bento Grid Container (padding-bottom clears the fixed bottom stats strip) -->
+    <div class="bento-grid" style="padding-bottom:140px;">
       
       <!-- LEFT COLUMN -->
       <div class="grid-column" id="sec-today">
@@ -1383,57 +1383,9 @@
       <!-- RIGHT COLUMN -->
       <div class="grid-column">
         
-        <!-- Metrics 2x2 Bento Grid -->
-        <div class="metrics-bento-grid">
-          
-          <!-- HRV Card -->
-          <div class="metric-card metric-pink">
-            <div class="card-top">
-              <span class="metric-label">ВАРЬИРУЕМОСТЬ (HRV)</span>
-              <div class="metric-icon-circle"><i class="ph ph-waveform"></i></div>
-            </div>
-            <div class="metric-val-wrapper">
-              <span class="metric-value"><span id="metricHrvValue">0</span> <span style="font-size:1.2rem; font-weight:500;">мс</span></span>
-              <span class="metric-subtitle">Среднее за 7д: 41 мс</span>
-            </div>
-          </div>
-
-          <!-- RHR Card -->
-          <div class="metric-card metric-orange">
-            <div class="card-top">
-              <span class="metric-label">ПУЛЬС ПОКОЯ (RHR)</span>
-              <div class="metric-icon-circle"><i class="ph ph-heart"></i></div>
-            </div>
-            <div class="metric-val-wrapper">
-              <span class="metric-value"><span id="metricRhrValue">0</span> <span style="font-size:1.2rem; font-weight:500;">уд/м</span></span>
-              <span class="metric-subtitle">Ниже нормы на 2 уд/мин</span>
-            </div>
-          </div>
-
-          <!-- Sleep Card -->
-          <div class="metric-card metric-blue">
-            <div class="card-top">
-              <span class="metric-label">СОН СЕГОДНЯ</span>
-              <div class="metric-icon-circle"><i class="ph ph-moon"></i></div>
-            </div>
-            <div class="metric-val-wrapper">
-              <span class="metric-value"><span id="metricSleepValue">0</span> <span style="font-size:1.2rem; font-weight:500;">ч</span></span>
-              <span class="metric-subtitle" id="metricSleepSubtitle">Цель: 8.5 ч</span>
-            </div>
-          </div>
-
-          <!-- Strain Card -->
-          <div class="metric-card metric-purple">
-            <div class="card-top">
-              <span class="metric-label">НАГРУЗКА (STRAIN)</span>
-              <div class="metric-icon-circle"><i class="ph ph-lightning"></i></div>
-            </div>
-            <div class="metric-val-wrapper">
-              <span class="metric-value" id="metricStrainValue">0.0</span>
-              <span class="metric-subtitle" id="metricStrainSubtitle">Целевой лимит: 15.5</span>
-            </div>
-          </div>
-
+        <!-- Metrics 2x2 Bento Grid: tiles rendered from the registry, not hardcoded -->
+        <div class="metrics-bento-grid" id="metricsBentoGrid">
+          <!-- Built by updateMetricCards() from OH.sectionMetrics('today') -->
         </div>
 
         <!-- Habits Checklist -->
@@ -1701,20 +1653,40 @@
       document.getElementById('recoveryReadinessText').textContent = DATA.readiness || '';
     }
 
+    // Metric tiles are built from the registry (OH.sectionMetrics) - a new tile
+    // metric in registry.json appears here automatically, no markup edit needed.
     function updateMetricCards() {
-      // HRV (Heart Rate Variability)
-      document.getElementById('metricHrvValue').textContent = DATA.hrv;
-      
-      // RHR (Resting Heart Rate)
-      document.getElementById('metricRhrValue').textContent = DATA.rhr;
-
-      // Sleep Card
-      document.getElementById('metricSleepValue').textContent = DATA.sleep.toFixed(1);
-      document.getElementById('metricSleepSubtitle').textContent = `Цель: ${DATA.sleepNeeded} ч`;
-
-      // Strain Card
-      document.getElementById('metricStrainValue').textContent = DATA.strain.toFixed(1);
-      document.getElementById('metricStrainSubtitle').textContent = `Целевой лимит: ${DATA.strainTarget}`;
+      const host = document.getElementById('metricsBentoGrid');
+      if (!host) return;
+      const defs = (window.OH && OH.registry)
+        ? OH.sectionMetrics('today').filter(x => x.chart === 'tile')
+        : [];
+      if (!defs.length) return;
+      const colors = ['metric-pink', 'metric-orange', 'metric-blue', 'metric-purple'];
+      const subtitleFor = (id) => {
+        if (id === 'sleep') return 'Цель: ' + OH.target('sleep') + ' ч';
+        if (id === 'strain') return 'Целевой лимит: ' + OH.target('strain');
+        if (id === 'hrv') return 'Вариабельность ритма';
+        if (id === 'rhr') return 'Пульс покоя ночью';
+        return '';
+      };
+      const fmt = (v) => (typeof v === 'number' && !Number.isInteger(v)) ? v.toFixed(1) : v;
+      host.innerHTML = defs.map((def, i) => {
+        const val = OH.value(def.id);
+        const unit = def.unit || '';
+        const sub = subtitleFor(def.id);
+        return `
+          <div class="metric-card ${colors[i % colors.length]}">
+            <div class="card-top">
+              <span class="metric-label">${(def.label_ru || def.id).toUpperCase()}</span>
+              <div class="metric-icon-circle"><i class="ph ${def.icon || 'ph-circle'}"></i></div>
+            </div>
+            <div class="metric-val-wrapper">
+              <span class="metric-value">${fmt(val)}${unit ? ' <span style="font-size:1.2rem; font-weight:500;">' + unit + '</span>' : ''}</span>
+              ${sub ? `<span class="metric-subtitle">${sub}</span>` : ''}
+            </div>
+          </div>`;
+      }).join('');
     }
 
     function updateUrgentTodayBlock() {

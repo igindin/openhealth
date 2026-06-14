@@ -6276,12 +6276,22 @@ function updateTodayScreen() {
     ? blurbParts.join('  ·  ')
     : 'За этот день в выгрузке нет метрик tracker.';
 
-  document.getElementById('board').innerHTML = [
-    ["HRV", m.hrv, "мс"],
-    ["Пульс покоя", m.rhr, "уд/мин"],
-    ["Сон", m.sleep, "ч"],
-    ["Strain", m.strain, "/21"]
-  ].map(([k, val, u]) => {
+  // Плитки Today берутся из реестра (assets/registry.json): какие метрики и их
+  // подписи/единицы. Значение - из метрик выбранного дня, иначе из OH (демо/реальное).
+  // Новая метрика-плитка в реестре появляется здесь автоматически, без правок скина.
+  const tileDefs = (window.OH && OH.registry)
+    ? OH.sectionMetrics('today').filter(x => x.chart === 'tile')
+    : [
+        { id: 'hrv', label_ru: 'HRV', unit: 'мс' },
+        { id: 'rhr', label_ru: 'Пульс покоя', unit: 'уд/мин' },
+        { id: 'sleep', label_ru: 'Сон', unit: 'ч' },
+        { id: 'strain', label_ru: 'Strain', unit: '/21' }
+      ];
+  document.getElementById('board').innerHTML = tileDefs.map(def => {
+    const k = def.label_ru || def.id;
+    const u = def.unit || '';
+    const val = (m[def.id] !== undefined && m[def.id] !== null) ? m[def.id]
+              : (window.OH ? OH.value(def.id) : undefined);
     if (!has(val)) {
       return `
     <div class="metric-tile">

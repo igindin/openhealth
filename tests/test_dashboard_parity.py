@@ -98,6 +98,14 @@ class SkinsLoadSharedEngineTests(unittest.TestCase):
         self.assertIn("ohSeedToday", _read(V1))
         self.assertIn("seedTodayFromRegistry", _read(V2))
 
+    def test_both_skins_render_today_tiles_from_registry(self):
+        # Tiles are built dynamically from OH.sectionMetrics('today'), not hardcoded
+        # markup, so a new tile metric in registry.json shows up in BOTH skins with
+        # no skin edits.
+        for path in (V1, V2):
+            with self.subTest(skin=path.name):
+                self.assertIn("OH.sectionMetrics('today')", _read(path))
+
     def test_v2_no_longer_hardcodes_today_scalars(self):
         text = _read(V2)
         self.assertNotIn("recovery: 64", text, "V2 still hardcodes recovery; must come from registry")
