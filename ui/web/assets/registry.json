@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "note": "Single source of truth for OpenHealth skins. Skins (V1 classic, V2 bento) render FROM this file; they never hardcode metric definitions or demo values. Real values arrive via data.local.json keyed by metric id (or data_key). See EXTENDING.md.",
+  "skins": [
+    { "id": "v1", "label_ru": "Классический (тёмный)", "label_en": "Classic (dark)", "file": "dashboard.html", "themes": ["dark", "light", "brutalist"] },
+    { "id": "v2", "label_ru": "Bento (светлый)", "label_en": "Bento (light)", "file": "dashboard-v2.html", "themes": ["bento"] }
+  ],
+  "sections": [
+    { "id": "today", "label_ru": "Сегодня", "label_en": "Today", "icon": "ph-house", "order": 1, "metric_ids": ["recovery", "hrv", "rhr", "sleep", "strain", "recovery_trend_30"] },
+    { "id": "settings", "label_ru": "Настройки", "label_en": "Settings", "icon": "ph-gear", "order": 99, "metric_ids": [] }
+  ],
+  "metrics": [
+    {
+      "id": "recovery", "label_ru": "Восстановление", "label_en": "Recovery", "unit": "%",
+      "source": "whoop", "chart": "ring", "section": "today", "icon": "ph-heartbeat",
+      "protocol_ref": "recovery@v3", "ref": { "green": 67, "yellow": 34 }, "demo": 64,
+      "provenance": {
+        "what": "Готовность организма к нагрузке, 0-100%.",
+        "how": "recovery@v3 из HRV (rMSSD, ln-SD), пульса покоя, частоты дыхания и качества сна относительно личной базы.",
+        "why": "Высокий recovery - можно грузиться; низкий - приоритет восстановлению."
+      }
+    },
+    {
+      "id": "hrv", "label_ru": "Вариабельность (HRV)", "label_en": "HRV", "unit": "мс",
+      "source": "whoop", "chart": "tile", "section": "today", "icon": "ph-waveform",
+      "protocol_ref": "hrv_rmssd", "demo": 39,
+      "provenance": {
+        "what": "Вариабельность сердечного ритма, rMSSD, мс.",
+        "how": "rMSSD из ночных межударных интервалов WHOOP. Не смешивается с SDNN от Apple Health.",
+        "why": "Главный маркер баланса вегетативной нервной системы и восстановления."
+      }
+    },
+    {
+      "id": "rhr", "label_ru": "Пульс покоя (RHR)", "label_en": "Resting HR", "unit": "уд/м",
+      "source": "whoop", "chart": "tile", "section": "today", "icon": "ph-heart",
+      "protocol_ref": "rhr", "demo": 56,
+      "provenance": {
+        "what": "Пульс покоя, уд/мин.",
+        "how": "Минимальный устойчивый ночной пульс по данным WHOOP.",
+        "why": "Рост RHR относительно базы - частый ранний признак нагрузки или болезни."
+      }
+    },
+    {
+      "id": "sleep", "label_ru": "Сон сегодня", "label_en": "Sleep", "unit": "ч",
+      "source": "whoop", "chart": "tile", "section": "today", "icon": "ph-moon",
+      "protocol_ref": "sleep_hours", "demo": 7.2, "target_key": "sleepNeeded", "target_default": 8.5,
+      "provenance": {
+        "what": "Длительность сна за ночь, часы.",
+        "how": "Из сессий сна WHOOP; цель сравнивается с расчётной потребностью.",
+        "why": "Сон - самый сильный рычаг восстановления."
+      }
+    },
+    {
+      "id": "strain", "label_ru": "Нагрузка (Strain)", "label_en": "Strain", "unit": "",
+      "source": "whoop", "chart": "tile", "section": "today", "icon": "ph-lightning",
+      "protocol_ref": "strain", "demo": 14.2, "target_key": "strainTarget", "target_default": 15.5,
+      "provenance": {
+        "what": "Кардионагрузка за день, шкала 0-21.",
+        "how": "По времени в пульсовых зонах за сутки (модель WHOOP).",
+        "why": "Баланс нагрузки и восстановления ведёт к адаптации без перегруза."
+      }
+    },
+    {
+      "id": "recovery_trend_30", "label_ru": "Тренд восстановления (30 дней)", "label_en": "Recovery trend (30d)", "unit": "%",
+      "source": "whoop", "chart": "sparkline", "section": "today", "icon": "ph-chart-line",
+      "data_key": "trend30Rec", "protocol_ref": "recovery@v3",
+      "demo": [55, 57, 52, 50, 58, 60, 62, 59, 56, 61, 64, 67, 60, 62, 59, 64, 66, 61, 63, 68, 70, 65, 63, 60, 58, 61, 55, 49, 63, 64],
+      "provenance": {
+        "what": "Recovery за последние 30 дней.",
+        "how": "Серия дневных recovery@v3, с переносом последнего известного значения через пропуски.",
+        "why": "Тренд важнее одного дня: видно динамику восстановления."
+      }
+    }
+  ]
+}
