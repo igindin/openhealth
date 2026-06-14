@@ -50,11 +50,44 @@ struct TrendsView: View {
                     } else {
                         Text("No trends yet.").foregroundStyle(Theme.inkSoft)
                     }
+
+                    if !store.snapshot.correlations.isEmpty {
+                        correlationsCard
+                    }
                 }
                 .padding(Theme.s4)
             }
             .background(Theme.background)
             .navigationTitle("Trends")
+        }
+    }
+
+    private var correlationsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: Theme.s3) {
+                Text("WHAT AFFECTS YOU")
+                    .font(.system(size: 11, weight: .semibold)).tracking(1.0)
+                    .foregroundStyle(Theme.inkSoft)
+                ForEach(store.snapshot.correlations) { c in
+                    HStack(spacing: Theme.s2) {
+                        Text(c.dir == "up" ? "▲" : "▼")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(c.dir == "up" ? Theme.accent : Theme.warn)
+                        Text(c.label).font(.system(size: 14)).foregroundStyle(Theme.ink)
+                        Spacer()
+                        if let d = c.delta {
+                            Text("\(d > 0 ? "+" : "")\(d)")
+                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(Theme.inkSoft)
+                        }
+                        Text(c.grade)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Theme.inkDim)
+                    }
+                }
+                Text("Связи поведение↔recovery из журнала. Не причинность.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.inkDim)
+            }
         }
     }
 

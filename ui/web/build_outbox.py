@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from build_dashboard_data import (
+    build_correlations_block,
     build_insights_block,
     build_recovery_block,
     _load_whoop_by_date,
@@ -178,6 +179,24 @@ def _apple_insights(daily: dict):
         return [], []
 
 
+# --- correlations ("what affects HRV") ---------------------------------------
+
+def _correlations(con: sqlite3.Connection) -> list[dict]:
+    block = build_correlations_block(con)
+    if block.get("status") != "ok":
+        return []
+    out = []
+    for c in block.get("correlations", []):
+        out.append({
+            "id": c.get("id") or "",
+            "label": c.get("label") or "",
+            "delta": c.get("delta"),
+            "dir": c.get("dir") or "up",
+            "grade": c.get("grade") or "C2",
+        })
+    return out
+
+
 # --- snapshot assembly -------------------------------------------------------
 
 def build_ios_snapshot(con: sqlite3.Connection) -> dict:
@@ -204,6 +223,7 @@ def build_ios_snapshot(con: sqlite3.Connection) -> dict:
         "trends": trends,
         "insights": insights,
         "alerts": alerts,
+        "correlations": _correlations(con),
     }
 
 

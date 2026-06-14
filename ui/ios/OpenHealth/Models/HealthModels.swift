@@ -141,6 +141,16 @@ struct Measurement: Codable, Identifiable, Hashable {
     let caption: String?
 }
 
+/// A "what affects HRV" correlation chip from the Mac engine (journal behaviour
+/// vs recovery). `delta` is the recovery-point swing; `grade` is the C1-C5 evidence.
+struct Correlation: Codable, Identifiable, Hashable {
+    let id: String
+    let label: String
+    let delta: Int?
+    let dir: String      // "up" | "down"
+    let grade: String    // "C1".."C5"
+}
+
 /// Top-level bundle the app loads (mirrors the engine's exported JSON).
 struct HealthSnapshot: Codable {
     let greetingName: String
@@ -149,9 +159,26 @@ struct HealthSnapshot: Codable {
     let trends: [Trend]
     let insights: [Insight]
     let alerts: [SafetyAlert]
+    var correlations: [Correlation] = []
 
     enum CodingKeys: String, CodingKey {
         case greetingName = "greeting_name"
-        case measurements, panels, trends, insights, alerts
+        case measurements, panels, trends, insights, alerts, correlations
+    }
+}
+
+extension HealthSnapshot {
+    // Custom decode so older payloads (sample.json, pre-correlations snapshots)
+    // still load: synthesized Codable does NOT apply property defaults for a
+    // missing key, so `correlations` must be decoded with decodeIfPresent.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        greetingName = try c.decode(String.self, forKey: .greetingName)
+        measurements = try c.decode([Measurement].self, forKey: .measurements)
+        panels = try c.decode([LabPanel].self, forKey: .panels)
+        trends = try c.decode([Trend].self, forKey: .trends)
+        insights = try c.decode([Insight].self, forKey: .insights)
+        alerts = try c.decode([SafetyAlert].self, forKey: .alerts)
+        correlations = try c.decodeIfPresent([Correlation].self, forKey: .correlations) ?? []
     }
 }

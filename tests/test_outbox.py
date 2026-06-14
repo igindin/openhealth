@@ -41,8 +41,9 @@ def test_outbox_matches_ios_snapshot_shape_from_whoop(tmp_path):
 
     snap = _read(build_outbox.write_ios_outbox(db, tmp_path / "outbox"))
 
-    for key in ("greeting_name", "measurements", "panels", "trends", "insights", "alerts"):
+    for key in ("greeting_name", "measurements", "panels", "trends", "insights", "alerts", "correlations"):
         assert key in snap
+    assert isinstance(snap["correlations"], list)
     assert snap["source"] == "whoop"
 
     recovery = next(m for m in snap["measurements"] if m["metric"] == "recovery")

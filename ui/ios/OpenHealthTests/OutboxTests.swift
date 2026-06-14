@@ -47,4 +47,22 @@ final class OutboxTests: XCTestCase {
         let transport = FileSyncTransport(root: root)
         XCTAssertNil(try transport.readOutbox())
     }
+
+    func testReadOutboxDecodesCorrelations() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("corr-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let outbox = root.appendingPathComponent("outbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: outbox, withIntermediateDirectories: true)
+        let json = """
+        {"greeting_name":"there","measurements":[],"panels":[],"trends":[],
+         "insights":[],"alerts":[],
+         "correlations":[{"id":"alcohol","label":"alcohol","delta":-8,"dir":"down","grade":"C2"}]}
+        """
+        try json.data(using: .utf8)!.write(to: outbox.appendingPathComponent("snapshot.json"))
+        let snapshot = try FileSyncTransport(root: root).readOutbox()
+        XCTAssertEqual(snapshot?.correlations.first?.id, "alcohol")
+        XCTAssertEqual(snapshot?.correlations.first?.dir, "down")
+        XCTAssertEqual(snapshot?.correlations.first?.delta, -8)
+    }
 }
