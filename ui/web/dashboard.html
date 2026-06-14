@@ -4476,6 +4476,22 @@
         <i class="ph-light ph-scales"></i>
         <span>Корреляции</span>
       </a>
+      <a data-z="r-sleep" data-icon="ph-moon" onclick="go('r-sleep')">
+        <i class="ph-light ph-moon"></i>
+        <span>Сон</span>
+      </a>
+      <a data-z="r-strain" data-icon="ph-lightning" onclick="go('r-strain')">
+        <i class="ph-light ph-lightning"></i>
+        <span>Нагрузка</span>
+      </a>
+      <a data-z="r-stress" data-icon="ph-gauge" onclick="go('r-stress')">
+        <i class="ph-light ph-gauge"></i>
+        <span>Стресс</span>
+      </a>
+      <a data-z="r-body" data-icon="ph-person" onclick="go('r-body')">
+        <i class="ph-light ph-person"></i>
+        <span>Тело</span>
+      </a>
       <a data-z="journal" data-icon="ph-notebook" onclick="go('journal')">
         <i class="ph-light ph-notebook"></i>
         <span>Журнал</span>
@@ -5698,6 +5714,31 @@
       </section>
 
       <!-- SCREEN 16: SETTINGS — хаб настроек (паттерн Linear Settings) -->
+      <!-- Registry-driven WHOOP sections (sleep/strain/stress/body) - same source as V2 -->
+      <style>
+        #z-r-sleep .oh-section, #z-r-strain .oh-section, #z-r-stress .oh-section, #z-r-body .oh-section { background: var(--card-outer); border:1px solid var(--line); border-radius:18px; padding:20px 22px; margin-bottom:16px; }
+        .oh-section__head { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+        .oh-section__icon { font-size:20px; }
+        .oh-section__title { font-size:17px; font-weight:600; margin:0; color:var(--ink); }
+        .oh-section__grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap:14px; align-items:start; }
+        .oh-tile { background: var(--card-inner); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
+        .oh-tile__top { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+        .oh-tile__label { font-size:11px; font-weight:600; letter-spacing:.5px; color:var(--mut); text-transform:uppercase; }
+        .oh-tile__icon { color:var(--mut); font-size:16px; }
+        .oh-tile__val { font-size:26px; font-weight:700; color:var(--ink); }
+        .oh-tile__unit { font-size:13px; font-weight:500; color:var(--mut); }
+        .oh-chart-card { grid-column: span 2; background: var(--card-inner); border:1px solid var(--line); border-radius:14px; padding:14px 16px; min-width:0; }
+        .oh-chart-card__head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+        .oh-chart-card__label { font-size:13px; font-weight:600; color:var(--ink); }
+        .oh-chip { font-size:10px; font-weight:500; color:var(--mut); background: rgba(255,255,255,.06); padding:3px 8px; border-radius:999px; display:inline-flex; align-items:center; gap:4px; margin-top:8px; }
+        .oh--demo { opacity:.7; }
+        @media (max-width:760px){ .oh-chart-card{ grid-column:1 / -1; } }
+      </style>
+      <section class="zone" id="z-r-sleep"><div id="oh-mount-r-sleep"></div></section>
+      <section class="zone" id="z-r-strain"><div id="oh-mount-r-strain"></div></section>
+      <section class="zone" id="z-r-stress"><div id="oh-mount-r-stress"></div></section>
+      <section class="zone" id="z-r-body"><div id="oh-mount-r-body"></div></section>
+
       <section class="zone" id="z-settings">
         <div class="settings-col">
 
@@ -10989,6 +11030,20 @@ async function rebuildSnapshot(btn) {
   }
 }
 
+// WHOOP sections (sleep/strain/stress/body) rendered from the registry via the shared
+// OH.sectionView - identical source to V2, only the dark .oh-* theming differs.
+function renderRegistrySectionsV1() {
+  if (!window.OH || !OH.registry) return;
+  try { if (typeof titles === 'object') Object.assign(titles, { 'r-sleep': 'Сон', 'r-strain': 'Нагрузка', 'r-stress': 'Стресс', 'r-body': 'Тело' }); } catch (e) { /* ignore */ }
+  var accents = { sleep: '#34d399', strain: '#a78bfa', stress: '#fb923c', body: '#38bdf8' };
+  var zmap = { 'r-sleep': 'sleep', 'r-strain': 'strain', 'r-stress': 'stress', 'r-body': 'body' };
+  var text = (getComputedStyle(document.body).getPropertyValue('--ink') || '#f3f4f6').trim();
+  Object.keys(zmap).forEach(function (zid) {
+    var host = document.getElementById('oh-mount-' + zid);
+    if (host) host.innerHTML = OH.sectionView(zmap[zid], { accent: accents[zmap[zid]], textColor: text, bg: '#14171d' });
+  });
+}
+
 function renderDashboard() {
   // Жёстко фиксируем стартовый экран = Сегодня (детерминированно, без зависимости от залипшего состояния).
   document.querySelectorAll('.zone').forEach(s => s.classList.toggle('on', s.id === 'z-today'));
@@ -10999,6 +11054,7 @@ function renderDashboard() {
   initHabitsState();
   updateTodayScreen();
   exploreCorrelations();
+  renderRegistrySectionsV1();
   updateBiomarkersScreen();
   updateSyncScreen();
   updateDataPanel();
