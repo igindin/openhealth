@@ -181,7 +181,7 @@ Create file: _macro_review.md
 
 ### 1. Scenario Completeness
 - [ ] Bull case defined with probability
-- [ ] Base case defined with probability  
+- [ ] Base case defined with probability
 - [ ] Bear case defined with probability (NOT a strawman)
 - [ ] Probabilities sum to ~100%
 - [ ] Each scenario has specific triggers and timeline
@@ -292,7 +292,7 @@ confidence: 0.XX
 ### Established consensus
 What does the field collectively agree on? (≥2 sources per claim)
 
-### Active debates  
+### Active debates
 What do experts meaningfully disagree about?
 
 ### Strongest evidence
@@ -345,7 +345,7 @@ Single most important unanswered question.
 - Key assumptions
 
 ### Bear Case (probability: XX%)
-- Triggers, timeline, key metrics  
+- Triggers, timeline, key metrics
 - What must go WRONG
 - Demand destruction / technology disruption / regulatory reversal
 

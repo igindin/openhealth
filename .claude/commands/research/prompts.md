@@ -434,27 +434,27 @@ Hypothesis predictions: [ORCHESTRATOR: what must be true if H is correct]
 
 | Data type | Confidence | Example | Action |
 |---|---|---|---|
-| **MEASUREMENT** (lab value, WHOOP record, biomarker reading, dated event) | HIGH | "Cu 77.6 µg/dL (Apr 28 PDF 636731)" | Use directly as fact |
+| **MEASUREMENT** (lab value, wearable record, biomarker reading, dated event) | HIGH | "Lab marker X = value Y (dated lab report)" | Use directly as fact |
 | **DOCUMENTED ASSUMPTION** (working hypothesis in vault file, planned protocol, file classification without validating data) | MEDIUM | "acne_protocol.md classifies as hormonal — but androgen panel pending" | **Check: is validating data pending? If yes, DOWNGRADE verdict to CONDITIONAL** |
-| **USER-STATED PREFERENCE** (Plaud transcript, vision file decision, stated goal) | MEDIUM | "User said in therapy 2026-02-17: prefer not isotretinoin" | Check freshness; preferences change |
+| **USER-STATED PREFERENCE** (private note, decision file, stated goal) | MEDIUM | "User stated in a dated note: prefers option A" | Check freshness; preferences change |
 | **DERIVED INFERENCE** (calculation, model output, projection) | MEDIUM-LOW | "HOMA-IR ~1.06 from glucose 88 + insulin 4.87" | Note calculation method |
 
 **For each personal-context claim in the hypothesis:**
 1. **Identify** which data source could test it:
-   - Biomarker trend → `05_personal/health/data/labs/` + PDFs (check newer PDFs not yet ingested!) + `profile/biomarkers/*_historical_tracking.md`
-   - Training load, recovery, sleep, HRV → `05_personal/health/data/whoop/mcp_sync/full/*.json` (WHOOP MCP)
-   - Life events, decisions, sessions → `04_therapy/`, `05_personal/calls/`, `06_projects/_meetings/` (Plaud)
-   - Genetics → `05_personal/health/profile/genetics/`
-   - Active interventions → `05_personal/health/profile/regimen/supplements.md`, `protocols/`
+   - Biomarker trend -> `<private_health_root>/data/labs/` + local reports (check newer reports not yet ingested!) + `profile/biomarkers/*_historical_tracking.md`
+   - Training load, recovery, sleep, HRV -> `<private_health_root>/data/wearables/*.json`
+   - Life events, decisions, sessions -> `<private_life_context_root>/`
+   - Genetics -> `<private_health_root>/profile/genetics/`
+   - Active interventions -> `<private_health_root>/profile/regimen/supplements.md`, `protocols/`
    - Goals/temporal → `00_vision/goals/`, `log.md`
 
 2. **Query** the data with concrete tools:
    ```bash
    # Labs
-   grep -nE "(biomarker)" 05_personal/health/data/labs/*.md
-   ls -lt 05_personal/health/data/labs/**/*.PDF  # check PDF freshness
-   # WHOOP MCP JSON
-   ./tools/venv/bin/python3 -c "import json; d=json.load(open('05_personal/health/data/whoop/mcp_sync/full/Strain.json'))['data']; ..."
+   grep -nE "(biomarker)" <private_health_root>/data/labs/*.md
+   ls -lt <private_health_root>/data/labs/**/*  # check report freshness
+   # Wearable JSON
+   ./tools/venv/bin/python3 -c "import json; d=json.load(open('<private_health_root>/data/wearables/metrics.json'))['data']; ..."
    # SQL on CSV
    python3 tools/numguard.py sql --path FILE.csv --infer --query "SELECT ..."
    ```
@@ -470,7 +470,7 @@ Hypothesis predictions: [ORCHESTRATOR: what must be true if H is correct]
 
 **Bad pattern ❌:** "Could exercise have contributed to ferritin drop? Maybe check WHOOP."
 
-**Good pattern ✅:** "Pulled WHOOP MCP Strain.json для Mar 4-Apr 28 vs Jan-Feb baseline: avg strain +13%, days strain>15 +64%, Z4-5 min/week +22%, padel +25% sessions. Hepcidin-spiking load was elevated. Estimated contribution: -1.5 to -3 ng/mL ferritin (15-30% of -9.37 regression). [MEASUREMENT-grade]"
+**Good pattern ✅:** "Pulled wearable activity JSON for target window vs baseline: average load increased, high-load days were more frequent, and the biomarker changed in the expected direction. Estimated contribution: bounded range with method noted. [MEASUREMENT-grade]"
 
 **v3.10 Bad pattern ❌:** Treating documented assumption as measurement-grade fact:
 > "acne_protocol.md classifies as hormonal acne → therefore Thakker 2015 PCOS meta NULL applies → REJECT NAC for skin (verdict 0.82)"
@@ -557,16 +557,16 @@ and/or consensus_reference.md (for consensus/full mode)
 
 ### MANDATORY pre-reading (v3.10, added 2026-05-14)
 
-Before writing, READ these memory feedback files for style + cross-protocol guardrails:
-- `/Users/zhuuki/.claude/projects/-Users-zhuuki-Cursor-Second-Brain/memory/feedback_research_readability.md` — inline-explain every medical/statistical term on first use (CP, NNT, HIF, ferroxidase paradox etc.). Don't write jargon-on-jargon. Reader is data-literate but NOT clinical specialist.
-- `/Users/zhuuki/.claude/projects/-Users-zhuuki-Cursor-Second-Brain/memory/feedback_decisions_ledger.md` — when synthesis recommends decisions that the user can implement, frame them so they could be logged to a Decisions Ledger (decision + status + rationale + re-eval trigger).
-- `/Users/zhuuki/.claude/projects/-Users-zhuuki-Cursor-Second-Brain/memory/feedback_cross_protocol_consistency.md` — **CRITICAL:** before recommending ANY food/supplement, cross-check against ALL active protocols. List EVERY food/supplement in a conflict matrix: Cu/Fe content × saturated fat × omega-6 × retinol × pregnancy × iron antagonism. Flag the cross-check VISIBLY in synthesis so user knows it was done.
+Before writing, read local memory feedback files when they exist in the user's private workspace:
+- research readability feedback: explain every medical/statistical term on first use. Do not stack jargon on jargon.
+- decisions-ledger feedback: when synthesis recommends implementable decisions, frame them as decision + status + rationale + re-evaluation trigger.
+- cross-protocol feedback: before recommending food or supplements, cross-check against all active protocols and surface conflicts visibly.
 
 If those files do not exist, write in the same spirit anyway.
 
 ### MANDATORY active-protocol pull for dietary/supplement recommendations (v3.10)
 
-Read ALL files in `05_personal/health/protocols/` before recommending any food or supplement. Each protocol has constraints that interact with new recommendations. Read `05_personal/health/data/labs/last_results.md` for current biomarker constraints (W6/W3 ratio, ApoB, ferritin, Cu/Zn etc.). If a recommendation conflicts with an existing protocol, EXPLICITLY surface it and propose alternatives.
+Read all files in `<private_health_root>/protocols/` before recommending any food or supplement. Each protocol has constraints that interact with new recommendations. Read `<private_health_root>/data/labs/last_results.md` for current biomarker constraints. If a recommendation conflicts with an existing protocol, explicitly surface it and propose alternatives.
 
 ### synthesis.md — 12 mandatory sections (UPDATED v3.10, was 10):
 
@@ -577,7 +577,7 @@ Read ALL files in `05_personal/health/protocols/` before recommending any food o
    - **Active debates** (~100 words): where researchers disagree
    - **Frontier gaps** (~100 words): what science STILL doesn't know (universal, not user-specific)
    - **Bottom line in general** (~50 words): if a stranger asked "what's the deal with X?", this is the answer
-   
+
    ⚠️ This section MUST NOT mention the user. It's the universal foundation.
 
 **2. TL;DR — Actions for THIS user** — 3-6 specific actions ranked by impact. After section 1 reader has universal context → now apply.
@@ -606,19 +606,19 @@ Read ALL files in `05_personal/health/protocols/` before recommending any food o
 
 **4. Key Findings — ranked by value to user. UPDATED v3.10 + v4.3 cards:** Each finding MUST follow the **Bridge Rule**:
    > "In the general field: [universal claim with confidence] [card_X_NN, card_Y_MM]. → For YOU specifically: [personal application]. → Why this applies to you: [your specific parameter / condition / data]."
-   
+
    NOT two separate paragraphs (universal then personal). The link must be EXPLICIT.
-   
+
    **v4.3:** the universal claim MUST cite ≥1 supporting card_id from `stream_*_study_cards.md`. Multiple cards = stronger. Zero cards = either mechanistic-only (mark `[mechanism, no card]`) or remove the claim.
-   
+
    At the END of Section 4, add MANDATORY **Universal vs Personal Map** table:
-   
+
    | Claim | General knowledge? | Applies to you? | Why specifically |
    |---|---|---|---|
    | [claim 1] | ✅ all humans | ✅ active for you | [your parameter] |
    | [claim 2] | ✅ all humans | ❌ NOT applicable | [why filtered out] |
    | [claim 3] | ⚠️ debated | ⚠️ conditional | [trigger] |
-   
+
    This makes the universal↔personal bridge explicit at-a-glance.
 
 **5. Protocol/Strategy Assessment — current protocols: correct / needs adjustment / missing**
@@ -810,13 +810,13 @@ IMPORTANT:
 
 ## Personal Data Verification (MANDATORY for personalized research, v3.9)
 
-> Rule added 2026-05-11. Source: `/Users/zhuuki/Cursor/Second Brain/90_meta/personal_data_sources_map.md`
+> Rule added 2026-05-11. Source: user's private personal-data source map.
 
 For EACH interaction that maps to user's profile (user-specific Active Interactions section):
 1. **Verify activation condition** against actual user data:
-   - Genotype claim → check `05_personal/health/profile/genetics/`
-   - Biomarker threshold → check `05_personal/health/data/labs/last_results.md` + latest PDFs + `profile/biomarkers/`
-   - Behavioral claim (training load, sleep, adherence) → query WHOOP MCP JSON or Plaud
+   - Genotype claim -> check `<private_health_root>/profile/genetics/`
+   - Biomarker threshold -> check `<private_health_root>/data/labs/last_results.md` + latest reports + `profile/biomarkers/`
+   - Behavioral claim (training load, sleep, adherence) -> query local wearable data or private notes
    - Active supplement/protocol → check `profile/regimen/supplements.md` + `protocols/`
 2. **Cite source path** in each user-relevant interaction entry (Mechanism table line: "Activation verified via [path]: [value]")
 3. **Quantify** the personal magnitude where possible (not "if biomarker is high" but "your value X = active/inactive")
@@ -1546,12 +1546,12 @@ TODO block format (SMART goals):
 > **Rule:** Before writing TODOs that reference user's current biomarker values, training state, supplement adherence — PULL the actual current value from data sources, не использовать стейл данные из synthesis.
 
 **Verification checklist before writing each TODO:**
-- Latest biomarker value → check `05_personal/health/data/labs/last_results.md` + latest PDFs in `data/labs/**/*.PDF`
-- Current training state → query `05_personal/health/data/whoop/mcp_sync/full/Strain.json` for last 4 weeks
-- Current supplement state → check `05_personal/health/profile/regimen/supplements.md` headers
-- Active protocols → list `05_personal/health/protocols/*.md`
+- Latest biomarker value -> check `<private_health_root>/data/labs/last_results.md` + latest reports in `data/labs/`
+- Current training state -> query local wearable data for the relevant window
+- Current supplement state -> check `<private_health_root>/profile/regimen/supplements.md` headers
+- Active protocols -> list `<private_health_root>/protocols/*.md`
 
-**Source map:** `/Users/zhuuki/Cursor/Second Brain/90_meta/personal_data_sources_map.md`
+**Source map:** user's private personal-data source map.
 
 If TODO threshold (e.g., "if ferritin <10 → action X") differs from current state, mark the TODO with whether it currently TRIGGERS or NOT based on actual data.
 

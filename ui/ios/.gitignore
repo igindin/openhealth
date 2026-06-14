@@ -9,5 +9,16 @@ build/
 DerivedData/
 *.xcresult
 
+# Apple signing artifacts stay local-only
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.ipa
+*.xcarchive
+*.keychain
+*.keychain-db
+ExportOptions.plist
+
 # macOS
 .DS_Store

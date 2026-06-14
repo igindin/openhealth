@@ -6,7 +6,7 @@
 
 1. Based on Reflection 1 + CRITIC, choose 2-3 directions with maximum information value
 2. Launch DEEP DIVER agents (prompt from `research/prompts.md` section "## DEEP DIVER")
-3. **Personal data verification rule (v3.9, mandatory for personalized/N=1 research):** Each DD prompt MUST include the user's `personal_data_sources_map.md` reference + instruction to query relevant data BEFORE searching literature. Orchestrator: pass explicit data-source paths most relevant to the hypothesis (e.g., WHOOP MCP Strain.json for training hypothesis, latest lab PDFs for biomarker hypothesis, Plaud transcripts for behavior hypothesis). See `prompts.md` DEEP DIVER §0 for the canonical instruction text.
+3. **Personal data verification rule (v3.9, mandatory for personalized/N=1 research):** Each DD prompt MUST include the user's private data source map reference + instruction to query relevant data BEFORE searching literature. Orchestrator: pass explicit data-source paths most relevant to the hypothesis, for example wearable activity data for training hypotheses or latest lab reports for biomarker hypotheses. See `prompts.md` DEEP DIVER §0 for the canonical instruction text.
 4. Output: `deep_dive_[x]_[topic].md` (5-15K words) + CSV — each DD's output MUST include `## Personal Data Verification` section if hypothesis touched personal context
 
 ## Reflection 2 + Convergence + Hypothesis Verdict (MANDATORY)
@@ -36,16 +36,16 @@ When `agreement_rate` is 0.50-0.70, OR when any CONTESTED claim has confidence <
 1. For each CONTESTED claim, spawn **1 targeted DD** with this mandate:
    ```
    Your task is to RESOLVE a specific contested claim.
-   
+
    CONTESTED CLAIM: [statement]
    SUPPORTING evidence: [streams/sources]
    CONTRADICTING evidence: [streams/sources]
-   
+
    Find the TIEBREAKER evidence. Ask:
    - What is the strongest version of EACH side?
    - Where does the stronger argument still break?
    - Is there a synthesis that reconciles both? (claim is true UNDER conditions X, false under Y)
-   
+
    Output: deep_dive_resolve_[claim_id].md
    Verdict: RESOLVED_FOR / RESOLVED_AGAINST / GENUINELY_UNCERTAIN (with specific unknowns)
    ```
