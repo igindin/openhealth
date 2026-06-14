@@ -54,7 +54,7 @@
     s.textContent =
       '#oh-corr-overlay{position:fixed;inset:0;z-index:100001;display:none}' +
       '#oh-corr-overlay .oh-corr-back{position:absolute;inset:0;background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}' +
-      '#oh-corr-overlay .oh-corr-card{position:relative;max-width:600px;margin:8vh auto 0;background:var(--card-inner,var(--bg-card,#fff));color:var(--ink,var(--text-primary,#111));border-radius:18px;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.4);font-family:inherit}' +
+      '#oh-corr-overlay .oh-corr-card{position:relative;max-width:min(600px,calc(100vw - 24px));margin:8vh auto 0;background:var(--card-inner,var(--bg-card,#fff));color:var(--ink,var(--text-primary,#111));border-radius:18px;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.4);font-family:inherit}' +
       '.oh-corr-head{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:16px;margin-bottom:14px}' +
       '.oh-corr-x{background:none;border:none;color:inherit;font-size:18px;cursor:pointer;opacity:.6;line-height:1}' +
       '.oh-corr-r{font-size:34px;font-weight:800;line-height:1}' +

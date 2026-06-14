@@ -5738,7 +5738,10 @@
         .oh-chart-card__label { font-size:13px; font-weight:600; color:var(--ink); }
         .oh-chip { font-size:10px; font-weight:500; color:var(--mut); background: rgba(255,255,255,.06); padding:3px 8px; border-radius:999px; display:inline-flex; align-items:center; gap:4px; margin-top:8px; }
         .oh--demo { opacity:.7; }
+        @keyframes oh-rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+        #z-r-sleep .oh-section, #z-r-strain .oh-section, #z-r-stress .oh-section, #z-r-body .oh-section, #z-r-algos .oh-section { animation: oh-rise .5s cubic-bezier(.16,1,.3,1) both; }
         @media (max-width:760px){ .oh-chart-card{ grid-column:1 / -1; } }
+        @media (max-width:640px){ .oh-section__grid{ grid-template-columns:1fr; } .oh-section{ padding:16px; } }
       </style>
       <section class="zone" id="z-r-sleep"><div id="oh-mount-r-sleep"></div></section>
       <section class="zone" id="z-r-strain"><div id="oh-mount-r-strain"></div></section>
