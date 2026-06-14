@@ -1458,6 +1458,29 @@
         </div>
       </div>
 
+      <!-- Registry-driven WHOOP sections (sleep/strain/stress/body) - same source as V1 -->
+      <style>
+        #registrySections { display:flex; flex-direction:column; gap:18px; grid-column: 1 / -1; }
+        .oh-section { background: var(--bg-card); border-radius: var(--radius-lg); padding: 20px 22px; box-shadow: 0 8px 28px rgba(0,0,0,.05); }
+        .oh-section__head { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+        .oh-section__icon { font-size:20px; }
+        .oh-section__title { font:600 17px var(--font-sans); margin:0; }
+        .oh-section__grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap:14px; align-items:start; }
+        .oh-tile { background: var(--bg-main); border-radius: var(--radius-md); padding:14px 16px; }
+        .oh-tile__top { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+        .oh-tile__label { font:600 11px var(--font-sans); letter-spacing:.5px; color: var(--text-muted); text-transform:uppercase; }
+        .oh-tile__icon { color: var(--text-muted); font-size:16px; }
+        .oh-tile__val { font:700 26px var(--font-sans); }
+        .oh-tile__unit { font-size:13px; font-weight:500; color: var(--text-muted); }
+        .oh-chart-card { grid-column: span 2; background: var(--bg-main); border-radius: var(--radius-md); padding:14px 16px; min-width:0; }
+        .oh-chart-card__head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+        .oh-chart-card__label { font:600 13px var(--font-sans); }
+        .oh-chip { font:500 10px var(--font-sans); color: var(--text-muted); background: rgba(0,0,0,.05); padding:3px 8px; border-radius:999px; display:inline-flex; align-items:center; gap:4px; margin-top:8px; }
+        .oh--demo { opacity:.72; }
+        @media (max-width:760px){ .oh-chart-card{ grid-column:1 / -1; } }
+      </style>
+      <div id="registrySections"></div>
+
       <!-- Settings Bento Card (registry section `settings` - present in both skins) -->
       <div class="bento-card" id="sec-settings">
         <div class="bento-card-header">
@@ -1492,6 +1515,10 @@
       <button class="rail-btn" data-target="sec-trends" data-tooltip="Тренды"><i class="ph ph-chart-line-up"></i></button>
       <button class="rail-btn" data-target="sec-biomarkers" data-tooltip="Анализы"><i class="ph ph-flask"></i></button>
       <button class="rail-btn" data-target="sec-correlations" data-tooltip="Влияние"><i class="ph ph-scales"></i></button>
+      <button class="rail-btn" data-target="oh-sec-sleep" data-tooltip="Сон"><i class="ph ph-moon"></i></button>
+      <button class="rail-btn" data-target="oh-sec-strain" data-tooltip="Нагрузка"><i class="ph ph-lightning"></i></button>
+      <button class="rail-btn" data-target="oh-sec-stress" data-tooltip="Стресс"><i class="ph ph-gauge"></i></button>
+      <button class="rail-btn" data-target="oh-sec-body" data-tooltip="Тело"><i class="ph ph-person"></i></button>
       <button class="rail-btn" data-target="sec-settings" data-tooltip="Настройки"><i class="ph ph-gear"></i></button>
     </div>
     <button class="rail-btn" id="scrollTopBtn" data-tooltip="Наверх" style="opacity:0.6;"><i class="ph ph-arrow-up"></i></button>
@@ -2031,6 +2058,19 @@
       updateBiomarkersBlock();
       updateCorrelationsBlock();
       updateBottomStrip();
+      renderRegistrySections();
+    }
+
+    // WHOOP sections (sleep/strain/stress/body) rendered from the registry via the
+    // shared OH.sectionView - identical source to V1, only the .oh-* theming differs.
+    function renderRegistrySections() {
+      const host = document.getElementById('registrySections');
+      if (!host || !window.OH || !OH.registry) return;
+      const accents = { sleep: '#3FA9F5', strain: '#8B6CF0', stress: '#FF7A59', body: '#27C28A' };
+      const text = (getComputedStyle(document.body).getPropertyValue('--text-primary') || '#121316').trim();
+      host.innerHTML = ['sleep', 'strain', 'stress', 'body']
+        .map(id => OH.sectionView(id, { accent: accents[id], textColor: text, bg: '#ffffff' }))
+        .join('');
     }
 
     // ----------------------------------------------------

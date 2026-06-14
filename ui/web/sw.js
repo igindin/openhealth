@@ -1,7 +1,8 @@
 // OpenHealth PWA service worker: офлайн-оболочка.
-// Статика — cache-first; данные (data.local.json, /api/) и реестр (registry.json) —
-// network-first, чтобы реальные значения и определения метрик не залипали в кэше.
-const CACHE = 'openhealth-shell-v8';
+// Статика — cache-first; данные (data.local.json, /api/), реестр (registry.json) и
+// движковые скрипты (assets/oh-*.js) — network-first, чтобы значения, определения
+// метрик и код движка не залипали в кэше.
+const CACHE = 'openhealth-shell-v9';
 const SHELL = [
   './',
   './index.html',
@@ -32,9 +33,9 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Реестр — источник правды определений метрик/разделов: всегда свежий, но с
-  // офлайн-фолбэком на кэш (оба скина должны иметь определения и без сети).
-  if (url.pathname.endsWith('/registry.json')) {
+  // Реестр и движковые скрипты (oh-registry.js / oh-charts.js) — источник правды
+  // определений и кода: всегда свежие, но с офлайн-фолбэком на кэш.
+  if (url.pathname.endsWith('/registry.json') || /\/oh-[\w-]+\.js$/.test(url.pathname)) {
     e.respondWith(
       fetch(e.request)
         .then((res) => {

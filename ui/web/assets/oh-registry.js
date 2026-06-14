@@ -107,6 +107,48 @@
       }
     },
 
+    // Source-connect copy for empty states.
+    sourceInfo: function (src) {
+      var map = {
+        whoop: { label: 'WHOOP', icon: 'ph-watch' },
+        apple: { label: 'Apple Health', icon: 'ph-heart' },
+        withings: { label: 'Withings', icon: 'ph-scales' },
+        labs: { label: 'Лаборатория', icon: 'ph-flask' },
+        derived: { label: 'Расчёт', icon: 'ph-function' },
+      };
+      return map[src] || { label: src || '', icon: 'ph-database' };
+    },
+
+    // Render a whole registry section as neutral HTML (skins theme the .oh-* classes).
+    // Tile metrics -> value cards; chart metrics -> renderChart. Demo metrics (no real
+    // data yet) are dimmed with a "демо · <source>" chip = the empty-state preview.
+    // opts: accent (chart line color), textColor (labels), bg (dot fill).
+    sectionView: function (sectionId, opts) {
+      opts = opts || {};
+      var s = OH.section(sectionId); if (!s) return '';
+      var accent = opts.accent || 'currentColor', textColor = opts.textColor || 'currentColor';
+      var cards = OH.sectionMetrics(sectionId).map(function (m) {
+        var demo = OH.state(m.id) === 'demo', si = OH.sourceInfo(m.source);
+        var chip = demo ? '<span class="oh-chip" title="Нет данных - показан пример"><i class="ph ' + si.icon + '"></i> демо · ' + si.label + '</span>' : '';
+        if (m.chart === 'tile') {
+          var val = OH.value(m.id);
+          var v = (typeof val === 'number' && !Number.isInteger(val)) ? val.toFixed(1) : val;
+          return '<div class="oh-tile' + (demo ? ' oh--demo' : '') + '" data-metric="' + m.id + '">' +
+            '<div class="oh-tile__top"><span class="oh-tile__label">' + (m.label_ru || m.id) + '</span>' +
+            '<span class="oh-tile__icon"><i class="ph ' + (m.icon || 'ph-circle') + '"></i></span></div>' +
+            '<div class="oh-tile__val">' + v + (m.unit ? ' <span class="oh-tile__unit">' + m.unit + '</span>' : '') + '</div>' + chip + '</div>';
+        }
+        var svg = OH.renderChart(m.id, { color: accent, labelColor: textColor, colorHours: accent, colorNeed: 'rgba(127,127,127,0.45)', highlightColor: accent, bg: opts.bg });
+        return '<div class="oh-chart-card' + (demo ? ' oh--demo' : '') + '" data-metric="' + m.id + '">' +
+          '<div class="oh-chart-card__head"><span class="oh-chart-card__label">' + (m.label_ru || m.id) + '</span>' + chip + '</div>' +
+          '<div class="oh-chart-card__svg">' + svg + '</div></div>';
+      }).join('');
+      return '<section class="oh-section" id="oh-sec-' + sectionId + '" data-section="' + sectionId + '">' +
+        '<div class="oh-section__head"><span class="oh-section__icon" style="color:' + accent + '"><i class="ph ' + (s.icon || 'ph-circle') + '"></i></span>' +
+        '<h2 class="oh-section__title">' + (s.label_ru || sectionId) + '</h2></div>' +
+        '<div class="oh-section__grid">' + cards + '</div></section>';
+    },
+
     load: function (opts) {
       opts = opts || {};
       var base = opts.base || './assets/';
