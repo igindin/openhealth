@@ -104,8 +104,8 @@ Generated in the research folder. SCOUTs read it as additional context.
 
 **Generated:** 2026-06-10T15:30:00Z
 **Source files:**
-- /Users/zhuuki/Cursor/Second Brain/05_personal/health/profile/genetics/genetics_profile.md (modified: 2026-06-04)
-- /Users/zhuuki/Cursor/Second Brain/05_personal/health/profile/genetics/vitamin_d_genetics.md (modified: 2026-05-12)
+- <private_health_root>/profile/genetics/genetics_profile.md (modified: 2026-06-04)
+- <private_health_root>/profile/genetics/vitamin_d_genetics.md (modified: 2026-05-12)
 
 **Topic filter applied:** neuroprotection_cognitive
 **Total variants extracted:** 47 — filtered to 12 topic-relevant

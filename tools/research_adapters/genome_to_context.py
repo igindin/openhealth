@@ -11,7 +11,7 @@ Two input modes (auto-detected from path):
 Usage:
   python3 tools/research_adapters/genome_to_context.py \\
       --topic "lithium orotate neuroprotection cognitive longevity" \\
-      --source 05_personal/health/profile/genetics/ \\
+      --source private/health/profile/genetics/ \\
       --out _patient_data_context.md
 
   python3 tools/research_adapters/genome_to_context.py \\
@@ -465,9 +465,9 @@ def run(topic: str, source: str, output: str, no_db_enrichment: bool = False) ->
 # ---------------------------------------------------------------------------
 
 def self_test() -> int:
-    """Smoke test using Tonya's actual genetics folder if present, else synthetic."""
+    """Smoke test using a private genetics folder if present, else synthetic."""
     repo_root = Path(__file__).resolve().parents[2]
-    candidate = repo_root / "05_personal" / "health" / "profile" / "genetics"
+    candidate = repo_root / "private" / "health" / "profile" / "genetics"
     topic = "lithium orotate neuroprotection cognitive longevity"
 
     if not candidate.exists():

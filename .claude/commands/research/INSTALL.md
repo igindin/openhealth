@@ -88,7 +88,7 @@ If your genetic test came as a PDF or HTML report, convert key findings into mar
 
 ```bash
 # Recommended location
-mkdir -p 05_personal/health/profile/genetics/
+mkdir -p private/health/profile/genetics/
 ```
 
 Inside, create files like `genetics_profile.md` with rsID + genotype + notes:
@@ -121,7 +121,7 @@ In `.claude/commands/research/context.md` add:
 patient_data:
   genome:
     markdown_paths:
-      - 05_personal/health/profile/genetics/
+      - private/health/profile/genetics/
     vcf_path: ""  # leave empty if no raw WGS
 ```
 

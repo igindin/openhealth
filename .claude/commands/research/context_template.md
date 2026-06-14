@@ -151,13 +151,13 @@ Save responses here for next runs.
 
 | Target | Path | What goes here |
 |--------|------|----------------|
-| Health protocols | `05_personal/health/protocols/` | Dosage changes, timing, new supplements, gates |
-| Lab checklist | `05_personal/health/checklists/` | New biomarkers, monitoring schedules |
-| Fitness profile | `05_personal/health/profile/fitness_health_profile.md` | Training modifications, screening recommendations |
+| Health protocols | `<private_health_root>/protocols/` | Dosage changes, timing, new supplements, gates |
+| Lab checklist | `<private_health_root>/checklists/` | New biomarkers, monitoring schedules |
+| Fitness profile | `<private_health_root>/profile/fitness_health_profile.md` | Training modifications, screening recommendations |
 | Monthly goals | `00_vision/goals/2026/` | ONE-LINE references with links (never full recs) |
 | Research queue | `90_meta/research_queue.md` | New research ideas spawned by findings |
 | Blog drafts | `03_blog/drafts/` | Post ideas from research (if you blog) |
-| Investment tracking | `05_personal/finance/` | Portfolio actions, DCA schedule, signals (if you invest) |
+| Investment tracking | `<private_finance_root>/` | Portfolio actions, DCA schedule, signals (if you invest) |
 
 ### Onboarding (first-time setup)
 
@@ -166,7 +166,7 @@ Save responses here for next runs.
      2. Do you want blog post ideas generated from research? (personal, not universal)
      3. Do you want investment/portfolio actions? (personal, not universal)
      4. Any other files that should receive TODO blocks?
-     
+
      After the first run, the mapper remembers your config. -->
 
 ```

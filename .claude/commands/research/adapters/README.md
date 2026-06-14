@@ -23,7 +23,7 @@ Format: topic-filtered structured tables + plain-language summary + explicit lim
 |---------|--------------|--------|--------|
 | **genome** | Markdown genetic reports (Tonya's current format) + future VCF / 23andMe / Nebula / Dante Labs WGS | ACTIVE v4.3 | `genome.md` |
 | **imaging** | DICOM metadata + PDF radiology reports | PLANNED v4.4 — DICOM parsing only, no pixel interpretation | `imaging.md` (TODO) |
-| **labs** | Already covered via `personal_data_sources_map.md` | EXISTING via context.md | n/a |
+| **labs** | Already covered via the private data source map | EXISTING via context.md | n/a |
 
 ## Key principle: honest limitations
 
