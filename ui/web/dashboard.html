@@ -15,6 +15,11 @@
 <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css">
 <!-- Подключение GSAP -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+<!-- OpenHealth shared engine: single-source registry + chart kit (see EXTENDING.md).
+     V1 is a SKIN over this engine; Today metrics come from the registry, not a local copy. -->
+<script src="assets/oh-registry.js"></script>
+<script src="assets/oh-charts.js"></script>
 <style>
   :root {
     --font: "Geist", "Geist Fallback", system-ui, -apple-system, sans-serif;
@@ -10897,6 +10902,25 @@ async function loadRealData() {
   }
 }
 
+// OpenHealth shared registry: Today metrics (recovery/hrv/rhr/sleep/strain + 30d trend)
+// come from assets/registry.json via OH, so V1 and V2 stay in parity. Real values from
+// data.local.json win over the registry demo (same as loadRealData). Override DATA so the
+// existing V1 renderers use the single source.
+function ohSeedToday() {
+  if (!window.OH || !OH.registry) return;
+  if (OH.metric('recovery')) DATA.recovery = OH.value('recovery');
+  if (OH.metric('hrv')) DATA.hrv = OH.value('hrv');
+  if (OH.metric('rhr')) DATA.rhr = OH.value('rhr');
+  if (OH.metric('sleep')) { DATA.sleep = OH.value('sleep'); DATA.sleepNeeded = OH.target('sleep'); }
+  if (OH.metric('strain')) { DATA.strain = OH.value('strain'); DATA.strainTarget = OH.target('strain'); }
+  if (OH.metric('recovery_trend_30')) DATA.trend30Rec = OH.value('recovery_trend_30');
+}
+
+// Parity manifest: what this skin renders from the registry (+ skin id). Symmetric to V2.
+window.__renderManifest = function () {
+  return Object.assign({ skin: 'v1' }, (window.OH ? OH.manifest() : { sections: [] }));
+};
+
 // Панель «Данные и bridge» в Источниках: свежесть снапшота + баннер устаревших данных.
 function updateDataPanel() {
   const meta = document.getElementById('syncDataMeta');
@@ -10981,9 +11005,12 @@ window.addEventListener('DOMContentLoaded', () => {
   bindTodayDrag();
   bindDaySwipe();
   updateSurveyReminder();
-  // Render immediately with whatever DATA we have, then re-render if real
-  // local data loads (keeps demo instant and avoids a blank first paint).
-  loadRealData().then(loaded => { if (loaded) renderDashboard(); });
+  // OpenHealth shared registry: Today metrics come from assets/registry.json (one source
+  // for both skins). Load registry + real data, seed Today, then re-render. The
+  // renderDashboard() below keeps the demo first paint instant.
+  (window.OH ? OH.load() : Promise.reject()).catch(() => {})
+    .then(() => loadRealData())
+    .then(() => { ohSeedToday(); renderDashboard(); });
   renderDashboard();
   // Один тихий запрос к /api/health с таймаутом 1.5 с — без спама.
   checkBridge();
