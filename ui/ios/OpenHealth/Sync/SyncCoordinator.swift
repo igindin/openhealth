@@ -1,9 +1,11 @@
 import Foundation
 import Observation
 
-/// Orchestrates one sync pass: read HealthKit deltas (per persisted anchor),
-/// write them as an NDJSON batch to the iCloud bridge `inbox/`, and persist the
-/// updated anchors in the manifest (locally + in the bridge `meta/`).
+/// Orchestrates one sync pass: drain HealthKit deltas page by page (per persisted
+/// anchor) and write each page as its own NDJSON batch to the iCloud bridge
+/// `inbox/`. The anchor is persisted after every page, so a sync interrupted by a
+/// crash or backgrounding resumes where it left off — and never holds more than
+/// one page in memory.
 ///
 /// Result 1 is one-directional (phone → bridge). Reading the Mac's `outbox/`
 /// arrives in Result 2.
@@ -22,12 +24,39 @@ final class SyncCoordinator {
     private(set) var status: Status = .idle
     private(set) var authorized = false
 
-    private let ingest = HealthKitIngest()
+    private let reader: HealthReader
+    private let transportProvider: () async -> SyncTransport?
+    private let pageSize: Int
+    private let initialHistoryDays: Int
+    private let maxPagesPerType: Int
+
     private let defaults = UserDefaults.standard
     private let deviceKey = "openhealth.device_id"
     private let manifestKey = "openhealth.manifest"
+    private var manifest: SyncManifest
 
-    var healthAvailable: Bool { HealthKitIngest.isAvailable }
+    init(
+        reader: HealthReader = HealthKitIngest(),
+        transportProvider: @escaping () async -> SyncTransport? = { await Task.detached { ICloudDriveTransport() }.value },
+        pageSize: Int = 2000,
+        initialHistoryDays: Int = 365,
+        maxPagesPerType: Int = 1000
+    ) {
+        self.reader = reader
+        self.transportProvider = transportProvider
+        self.pageSize = pageSize
+        self.initialHistoryDays = initialHistoryDays
+        self.maxPagesPerType = maxPagesPerType
+        self.manifest = SyncManifest(deviceId: defaults.string(forKey: deviceKey) ?? UUID().uuidString)
+        self.manifest = loadManifest()
+        // Restore status across launches so a relaunch doesn't read as "never synced".
+        if let last = manifest.lastInboxWriteAt {
+            status = .synced(last)
+            authorized = true
+        }
+    }
+
+    var healthAvailable: Bool { reader.isAvailable }
 
     var deviceId: String {
         if let id = defaults.string(forKey: deviceKey) { return id }
@@ -39,9 +68,9 @@ final class SyncCoordinator {
     // MARK: - Authorization
 
     func requestAuthorization() async {
-        guard HealthKitIngest.isAvailable else { status = .healthUnavailable; return }
+        guard reader.isAvailable else { status = .healthUnavailable; return }
         do {
-            try await ingest.requestAuthorization()
+            try await reader.requestAuthorization()
             authorized = true
         } catch {
             status = .failed("Authorization failed: \(error.localizedDescription)")
@@ -51,58 +80,66 @@ final class SyncCoordinator {
     // MARK: - Sync pass
 
     func runSync() async {
-        guard HealthKitIngest.isAvailable else { status = .healthUnavailable; return }
+        guard reader.isAvailable else { status = .healthUnavailable; return }
+        guard let transport = await transportProvider() else {
+            status = .failed("iCloud Drive is not available. Sign in to iCloud and enable Drive.")
+            return
+        }
         status = .syncing
+        manifest = loadManifest()
+        let floor = Calendar.current.date(byAdding: .day, value: -initialHistoryDays, to: Date())
+
         do {
-            var manifest = loadManifest()
-            var records: [SyncRecord] = []
-
-            // Quantity series deltas.
             for entry in HealthKitTypes.quantitySeries {
-                let key = entry.series.rawValue
-                let anchorData = manifest.anchors[key].flatMap { Data(base64Encoded: $0) }
-                let (samples, newAnchor) = try await ingest.readQuantityDelta(
-                    series: entry.series,
-                    identifier: entry.identifier,
-                    unit: entry.unit,
-                    anchorData: anchorData
-                )
-                records.append(contentsOf: samples.map(SyncRecord.sample))
-                if let newAnchor { manifest.anchors[key] = newAnchor.base64EncodedString() }
+                try await drain(key: entry.series.rawValue, transport: transport) { [reader, pageSize] anchor in
+                    try await reader.readQuantityPage(series: entry.series,
+                                                      anchorData: anchor,
+                                                      sinceDate: anchor == nil ? floor : nil,
+                                                      limit: pageSize)
+                }
+            }
+            try await drain(key: "sleep", transport: transport) { [reader, pageSize] anchor in
+                try await reader.readSleepPage(anchorData: anchor, sinceDate: anchor == nil ? floor : nil, limit: pageSize)
+            }
+            try await drain(key: "workout", transport: transport) { [reader, pageSize] anchor in
+                try await reader.readWorkoutPage(anchorData: anchor, sinceDate: anchor == nil ? floor : nil, limit: pageSize)
             }
 
-            // Sleep windows.
-            let sleepAnchor = manifest.anchors["sleep"].flatMap { Data(base64Encoded: $0) }
-            let (sleepEvents, sleepNew) = try await ingest.readSleepDelta(anchorData: sleepAnchor)
-            records.append(contentsOf: sleepEvents.map(SyncRecord.event))
-            if let sleepNew { manifest.anchors["sleep"] = sleepNew.base64EncodedString() }
-
-            // Workouts.
-            let workoutAnchor = manifest.anchors["workout"].flatMap { Data(base64Encoded: $0) }
-            let (workoutEvents, workoutNew) = try await ingest.readWorkoutDelta(anchorData: workoutAnchor)
-            records.append(contentsOf: workoutEvents.map(SyncRecord.event))
-            if let workoutNew { manifest.anchors["workout"] = workoutNew.base64EncodedString() }
-
-            // Write to the bridge (off the main thread for the iCloud container lookup).
-            let transport = await resolveTransport()
-            if let transport, !records.isEmpty {
-                try transport.writeInbox(records, batchName: "batch-\(Self.batchStamp())")
-            }
             manifest.lastInboxWriteAt = Date()
-            if let transport { try? transport.writeManifest(manifest) }
+            try? transport.writeManifest(manifest)
             saveManifest(manifest)
-
             status = .synced(Date())
         } catch {
             status = .failed(error.localizedDescription)
         }
     }
 
-    // MARK: - Transport & manifest persistence
-
-    private func resolveTransport() async -> SyncTransport? {
-        await Task.detached { ICloudDriveTransport() }.value
+    /// Drain one type page by page: write each non-empty page, advance + persist
+    /// the anchor after every page, stop on a short (final) page or the safety cap.
+    private func drain(
+        key: String,
+        transport: SyncTransport,
+        fetch: (Data?) async throws -> (records: [SyncRecord], newAnchor: Data?)
+    ) async throws {
+        var anchorData = manifest.anchors[key].flatMap { Data(base64Encoded: $0) }
+        var page = 0
+        while true {
+            let (records, newAnchor) = try await fetch(anchorData)
+            if !records.isEmpty {
+                try transport.writeInbox(records, batchName: "\(key)-\(Self.batchStamp())-p\(page)")
+            }
+            if let newAnchor {
+                anchorData = newAnchor
+                manifest.anchors[key] = newAnchor.base64EncodedString()
+                saveManifest(manifest)
+            }
+            page += 1
+            if records.count < pageSize { break }
+            if page >= maxPagesPerType { break }
+        }
     }
+
+    // MARK: - Manifest persistence
 
     private func loadManifest() -> SyncManifest {
         if let data = defaults.data(forKey: manifestKey) {

@@ -5,23 +5,25 @@ enum HealthKitError: Error {
     case unavailable
 }
 
-/// Reads Apple Health into canonical records with incremental anchors.
+/// Reads Apple Health into canonical records, one bounded page at a time.
 ///
-/// - Live deltas: `HKAnchoredObjectQuery` (first run returns history, later runs
-///   only the changes since the persisted anchor).
-/// - Background wakes: `HKObserverQuery` + `enableBackgroundDelivery` (the
-///   observer only signals *that* something changed; we then run an anchored
-///   query to fetch *what* changed, and always call the observer completion).
+/// Reads are paginated via `HKAnchoredObjectQuery` with an explicit `limit`: the
+/// first call (nil anchor) returns up to `limit` samples plus an anchor, each
+/// subsequent call returns the next page. The coordinator drains pages and writes
+/// each one immediately, so a multi-year history never lands in memory at once.
+/// This is the fix for the first-sync crash (loading the entire history + encoding
+/// one monolithic NDJSON exhausted memory / blocked the main thread on device).
 ///
 /// Apple exposes HRV only as SDNN, so HRV here is SDNN. rMSSD stays with the Mac
 /// engine (Whoop). Anchors are returned as `Data`; the caller base64-encodes them
-/// into `SyncManifest.anchors`.
-final class HealthKitIngest {
+/// into `SyncManifest.anchors` and persists after every page (resumable sync).
+final class HealthKitIngest: HealthReader {
     let store = HKHealthStore()
     private let source = "apple_health"
     private var observerQueries: [HKObserverQuery] = []
 
     static var isAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
+    var isAvailable: Bool { Self.isAvailable }
 
     // MARK: - Authorization
 
@@ -30,72 +32,56 @@ final class HealthKitIngest {
         try await store.requestAuthorization(toShare: [], read: HealthKitTypes.readObjectTypes)
     }
 
-    // MARK: - Anchored delta reads
+    // MARK: - Paginated reads
 
-    /// Read new/changed samples for one quantity series since `anchorData`.
-    func readQuantityDelta(
-        series: SeriesType,
-        identifier: HKQuantityTypeIdentifier,
-        unit: HKUnit,
-        anchorData: Data?
-    ) async throws -> (samples: [HealthSample], newAnchor: Data?) {
-        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else {
+    func readQuantityPage(series: SeriesType, anchorData: Data?, sinceDate: Date?, limit: Int) async throws -> (records: [SyncRecord], newAnchor: Data?) {
+        guard let entry = HealthKitTypes.quantitySeries.first(where: { $0.series == series }),
+              let type = HKQuantityType.quantityType(forIdentifier: entry.identifier) else {
             return ([], anchorData)
         }
+        let unit = entry.unit
+        let (records, newAnchor) = try await runAnchoredPage(type: type, anchorData: anchorData, sinceDate: sinceDate, limit: limit) { samples in
+            (samples as? [HKQuantitySample] ?? []).map { SyncRecord.sample(self.mapQuantity($0, series: series, unit: unit)) }
+        }
+        return (records, newAnchor)
+    }
+
+    func readSleepPage(anchorData: Data?, sinceDate: Date?, limit: Int) async throws -> (records: [SyncRecord], newAnchor: Data?) {
+        guard let type = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return ([], anchorData) }
+        return try await runAnchoredPage(type: type, anchorData: anchorData, sinceDate: sinceDate, limit: limit) { samples in
+            (samples as? [HKCategorySample] ?? []).map { SyncRecord.event(self.mapSleep($0)) }
+        }
+    }
+
+    func readWorkoutPage(anchorData: Data?, sinceDate: Date?, limit: Int) async throws -> (records: [SyncRecord], newAnchor: Data?) {
+        return try await runAnchoredPage(type: .workoutType(), anchorData: anchorData, sinceDate: sinceDate, limit: limit) { samples in
+            (samples as? [HKWorkout] ?? []).map { SyncRecord.event(self.mapWorkout($0)) }
+        }
+    }
+
+    /// One bounded anchored-query page. `sinceDate` (first sync only) caps history;
+    /// the anchor carries pagination position on later pages.
+    private func runAnchoredPage(
+        type: HKSampleType,
+        anchorData: Data?,
+        sinceDate: Date?,
+        limit: Int,
+        map: @escaping ([HKSample]?) -> [SyncRecord]
+    ) async throws -> (records: [SyncRecord], newAnchor: Data?) {
         let anchor = Self.decodeAnchor(anchorData)
+        let predicate = sinceDate.map { HKQuery.predicateForSamples(withStart: $0, end: nil, options: .strictStartDate) }
         return try await withCheckedThrowingContinuation { continuation in
-            let query = HKAnchoredObjectQuery(
-                type: type, predicate: nil, anchor: anchor, limit: HKObjectQueryNoLimit
-            ) { runningQuery, samples, _, newAnchor, error in
+            let query = HKAnchoredObjectQuery(type: type, predicate: predicate, anchor: anchor, limit: limit) { runningQuery, samples, _, newAnchor, error in
                 self.store.stop(runningQuery)
                 if let error { continuation.resume(throwing: error); return }
-                let mapped = (samples as? [HKQuantitySample] ?? [])
-                    .map { self.mapQuantity($0, series: series, unit: unit) }
-                continuation.resume(returning: (mapped, Self.encodeAnchor(newAnchor)))
+                continuation.resume(returning: (map(samples), Self.encodeAnchor(newAnchor)))
             }
             store.execute(query)
         }
     }
 
-    /// Read new/changed sleep-analysis windows since `anchorData`.
-    func readSleepDelta(anchorData: Data?) async throws -> (events: [HealthEvent], newAnchor: Data?) {
-        guard let type = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else {
-            return ([], anchorData)
-        }
-        let anchor = Self.decodeAnchor(anchorData)
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKAnchoredObjectQuery(
-                type: type, predicate: nil, anchor: anchor, limit: HKObjectQueryNoLimit
-            ) { runningQuery, samples, _, newAnchor, error in
-                self.store.stop(runningQuery)
-                if let error { continuation.resume(throwing: error); return }
-                let mapped = (samples as? [HKCategorySample] ?? []).map { self.mapSleep($0) }
-                continuation.resume(returning: (mapped, Self.encodeAnchor(newAnchor)))
-            }
-            store.execute(query)
-        }
-    }
+    // MARK: - Background delivery & observers (used from a later result)
 
-    /// Read new/changed workouts since `anchorData`.
-    func readWorkoutDelta(anchorData: Data?) async throws -> (events: [HealthEvent], newAnchor: Data?) {
-        let anchor = Self.decodeAnchor(anchorData)
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKAnchoredObjectQuery(
-                type: .workoutType(), predicate: nil, anchor: anchor, limit: HKObjectQueryNoLimit
-            ) { runningQuery, samples, _, newAnchor, error in
-                self.store.stop(runningQuery)
-                if let error { continuation.resume(throwing: error); return }
-                let mapped = (samples as? [HKWorkout] ?? []).map { self.mapWorkout($0) }
-                continuation.resume(returning: (mapped, Self.encodeAnchor(newAnchor)))
-            }
-            store.execute(query)
-        }
-    }
-
-    // MARK: - Background delivery & observers
-
-    /// Ask HealthKit to wake the app on new data (requires the background-delivery
-    /// entitlement). Frequency is capped per type by the system (hourly for steps).
     func enableBackgroundDelivery() {
         for entry in HealthKitTypes.observableQuantityTypes {
             store.enableBackgroundDelivery(for: entry.type, frequency: .hourly) { _, _ in }
@@ -105,14 +91,10 @@ final class HealthKitIngest {
         }
     }
 
-    /// Install observer queries that call `onChange` when matching data changes.
-    /// Each observer MUST call its completion handler or HealthKit backs off and
-    /// eventually stops delivering — so we forward it through `onChange`.
     func installObservers(onChange: @escaping (@escaping () -> Void) -> Void) {
         var types: [HKSampleType] = HealthKitTypes.observableQuantityTypes.map { $0.type }
         if let sleep = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) { types.append(sleep) }
         types.append(HKObjectType.workoutType())
-
         for type in types {
             let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, _ in
                 onChange(completion)
@@ -126,7 +108,6 @@ final class HealthKitIngest {
 
     private func mapQuantity(_ s: HKQuantitySample, series: SeriesType, unit: HKUnit) -> HealthSample {
         let raw = s.quantity.doubleValue(for: unit)
-        // HealthKit reports saturation as a 0...1 fraction; canonical unit is percent.
         let value = (series == .oxygenSaturation) ? raw * 100 : raw
         return HealthSample(
             externalId: s.uuid.uuidString,
