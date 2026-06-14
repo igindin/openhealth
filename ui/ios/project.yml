@@ -17,11 +17,28 @@ targets:
     platform: iOS
     sources:
       - path: OpenHealth
+    info:
+      path: OpenHealth/Info.plist
+      properties:
+        CFBundleDisplayName: OpenHealth
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSHealthShareUsageDescription: "OpenHealth reads your Apple Health data on-device to show your trends and sync them to your own computer. Nothing is sent to any server."
+        NSUbiquitousContainers:
+          iCloud.org.openhealth.app:
+            NSUbiquitousContainerIsDocumentScopePublic: true
+            NSUbiquitousContainerName: OpenHealth
+            NSUbiquitousContainerSupportedFolderLevels: Any
+    entitlements:
+      path: OpenHealth/OpenHealth.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.background-delivery: true
+        com.apple.developer.icloud-services: [CloudDocuments]
+        com.apple.developer.icloud-container-identifiers: [iCloud.org.openhealth.app]
+        com.apple.developer.ubiquity-container-identifiers: [iCloud.org.openhealth.app]
     settings:
       base:
-        GENERATE_INFOPLIST_FILE: "YES"
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         PRODUCT_BUNDLE_IDENTIFIER: org.openhealth.app
         PRODUCT_NAME: OpenHealth
         MARKETING_VERSION: "0.1.0"

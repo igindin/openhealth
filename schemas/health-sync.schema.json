@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openhealth.org/schemas/health-sync.schema.json",
+  "title": "HealthSyncRecord",
+  "description": "One NDJSON line on the bridge between the iOS app and the local OpenHealth engine (iCloud Drive inbox/, or local-network). Discriminated by `kind`. Distinct from CanonicalRecord: this is the raw metric wire format the engine ingests, not the engine's evidence-graded record. Series vocabulary and shape seeded from openwearables (MIT, Copyright (c) 2025 Momentum).",
+  "oneOf": [
+    { "$ref": "#/$defs/sample" },
+    { "$ref": "#/$defs/event" },
+    { "$ref": "#/$defs/journal" },
+    { "$ref": "#/$defs/context" }
+  ],
+  "$defs": {
+    "sample": {
+      "type": "object",
+      "description": "A canonical time-series point (mirrors openwearables data_point_series).",
+      "required": ["kind", "schema_version", "external_id", "series_type", "value", "unit", "recorded_at", "zone_offset_seconds", "source"],
+      "properties": {
+        "kind": { "const": "sample" },
+        "schema_version": { "type": "integer" },
+        "external_id": { "type": "string", "description": "HealthKit sample UUID; the dedup key." },
+        "series_type": { "type": "string", "description": "Canonical metric key, e.g. heart_rate_variability_sdnn. rMSSD and SDNN are separate keys and must never be merged." },
+        "value": { "type": "number" },
+        "unit": { "type": "string" },
+        "recorded_at": { "type": "string", "description": "ISO-8601 start instant." },
+        "end_at": { "type": ["string", "null"] },
+        "zone_offset_seconds": { "type": "integer" },
+        "source": { "type": "string", "description": "Provider, e.g. apple_health." },
+        "source_bundle_id": { "type": ["string", "null"] },
+        "device_model": { "type": ["string", "null"] },
+        "metadata": { "type": ["object", "null"] }
+      }
+    },
+    "event": {
+      "type": "object",
+      "description": "A windowed record: workout or sleep session (mirrors openwearables event_record).",
+      "required": ["kind", "schema_version", "external_id", "category", "type", "start_at", "end_at", "zone_offset_seconds", "source"],
+      "properties": {
+        "kind": { "const": "event" },
+        "schema_version": { "type": "integer" },
+        "external_id": { "type": "string" },
+        "category": { "type": "string", "description": "workout | sleep" },
+        "type": { "type": "string" },
+        "start_at": { "type": "string" },
+        "end_at": { "type": "string" },
+        "zone_offset_seconds": { "type": "integer" },
+        "source": { "type": "string" },
+        "source_bundle_id": { "type": ["string", "null"] },
+        "device_model": { "type": ["string", "null"] },
+        "metrics": { "type": ["object", "null"], "description": "Pre-aggregated scalars (summary half); raw samples stay as sample records." }
+      }
+    },
+    "journal": {
+      "type": "object",
+      "description": "A daily check-in (wraps the local JournalEntry).",
+      "required": ["kind", "schema_version", "day_key", "recorded_at", "yes_no", "ratings", "note"],
+      "properties": {
+        "kind": { "const": "journal" },
+        "schema_version": { "type": "integer" },
+        "day_key": { "type": "string", "description": "yyyy-MM-dd of the reflected day." },
+        "recorded_at": { "type": "string" },
+        "yes_no": { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "ratings": { "type": "object", "additionalProperties": { "type": "integer" } },
+        "note": { "type": "string" }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "Life-context record (calendar load, weather, travel, stressor). Populated from Result 3.",
+      "required": ["kind", "schema_version", "external_id", "date", "kind_tag"],
+      "properties": {
+        "kind": { "const": "context" },
+        "schema_version": { "type": "integer" },
+        "external_id": { "type": "string" },
+        "date": { "type": "string" },
+        "kind_tag": { "type": "string", "description": "calendar_load | weather | travel | stressor (encoded as `kind` field inside the record payload)." },
+        "values": { "type": ["object", "null"], "additionalProperties": { "type": "number" } },
+        "text": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

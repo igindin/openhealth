@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct RootTabView: View {
+    @Environment(HealthStore.self) private var store
+
     var body: some View {
         TabView {
             // Journal is the home tab: the mobile product's core daily job.
@@ -12,7 +14,10 @@ struct RootTabView: View {
                 .tabItem { Label("Trends", systemImage: "chart.xyaxis.line") }
             InsightsView()
                 .tabItem { Label("Insights", systemImage: "lightbulb") }
+            SyncView()
+                .tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
         }
+        .task { await store.refresh() }
     }
 }
 
@@ -20,4 +25,5 @@ struct RootTabView: View {
     RootTabView()
         .environment(HealthStore())
         .environment(JournalStore())
+        .environment(SyncCoordinator())
 }
