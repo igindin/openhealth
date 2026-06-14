@@ -1506,6 +1506,28 @@
         </div>
       </div>
 
+      <!-- Settings Bento Card (registry section `settings` - present in both skins) -->
+      <div class="bento-card" id="sec-settings">
+        <div class="bento-card-header">
+          <span class="bento-card-title">Настройки</span>
+          <div class="card-icon-wrapper"><i class="ph ph-gear"></i></div>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:18px;">
+          <div>
+            <div style="font-weight:600; margin-bottom:10px;">Скин интерфейса</div>
+            <div style="display:flex; gap:12px; flex-wrap:wrap;">
+              <button type="button" onclick="setSkin('v1')" style="display:flex; align-items:center; gap:8px; padding:12px 16px; border-radius:var(--radius-md); border:1px solid rgba(0,0,0,0.12); background:var(--bg-card); color:var(--text-primary); font:inherit; cursor:pointer;"><i class="ph ph-moon"></i> Классический (тёмный)</button>
+              <button type="button" onclick="setSkin('v2')" style="display:flex; align-items:center; gap:8px; padding:12px 16px; border-radius:var(--radius-md); border:2px solid var(--color-purple); background:var(--bg-card); color:var(--text-primary); font:inherit; cursor:pointer;"><i class="ph ph-squares-four"></i> Bento (светлый) · сейчас</button>
+            </div>
+          </div>
+          <div>
+            <div style="font-weight:600; margin-bottom:6px;">Тема</div>
+            <span class="metric-subtitle">Тема bento (светлая). Тёмная и brutalist живут в классическом скине.</span>
+          </div>
+          <span class="metric-subtitle">Оба скина - один движок и один реестр (assets/registry.json): данные и метрики общие, отличается только оформление.</span>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -1518,6 +1540,7 @@
       <button class="rail-btn" data-target="sec-trends" data-tooltip="Тренды"><i class="ph ph-chart-line-up"></i></button>
       <button class="rail-btn" data-target="sec-biomarkers" data-tooltip="Анализы"><i class="ph ph-flask"></i></button>
       <button class="rail-btn" data-target="sec-correlations" data-tooltip="Влияние"><i class="ph ph-scales"></i></button>
+      <button class="rail-btn" data-target="sec-settings" data-tooltip="Настройки"><i class="ph ph-gear"></i></button>
     </div>
     <button class="rail-btn" id="scrollTopBtn" data-tooltip="Наверх" style="opacity:0.6;"><i class="ph ph-arrow-up"></i></button>
   </div>
@@ -1639,6 +1662,13 @@
     window.__renderManifest = function () {
       return Object.assign({ skin: 'v2' }, (window.OH ? OH.manifest() : { sections: [] }));
     };
+
+    // Skin switcher: персист выбора + переход. Точка входа index.html чтит oh.skin.
+    function setSkin(id) {
+      try { localStorage.setItem('oh.skin', id); } catch (e) { /* ignore */ }
+      const files = { v1: 'dashboard.html', v2: 'dashboard-v2.html' };
+      if (files[id]) window.location.href = files[id];
+    }
 
     // ----------------------------------------------------
     // UI UPDATER FUNCTIONS
@@ -2107,7 +2137,7 @@
 
       // Highlight active rail button on scroll
       window.addEventListener('scroll', () => {
-        const sections = ['sec-today', 'sec-habits', 'sec-trends', 'sec-biomarkers', 'sec-correlations'];
+        const sections = ['sec-today', 'sec-habits', 'sec-trends', 'sec-biomarkers', 'sec-correlations', 'sec-settings'];
         const scrollPos = window.scrollY + 120;
 
         sections.forEach(id => {

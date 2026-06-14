@@ -1,1 +1,26 @@
-dashboard.html
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenHealth</title>
+<meta name="theme-color" content="#060709">
+<link rel="manifest" href="manifest.webmanifest">
+<script>
+  // Skin router (Result 1): open the skin the user last chose in Settings.
+  //   v1 = classic dark  -> dashboard.html
+  //   v2 = bento light   -> dashboard-v2.html
+  // Both skins render from the same engine + registry (assets/registry.json), so the
+  // choice is purely cosmetic. Default is v1. Query string is preserved.
+  (function () {
+    var files = { v1: 'dashboard.html', v2: 'dashboard-v2.html' };
+    var skin = 'v1';
+    try { var s = localStorage.getItem('oh.skin'); if (s && files[s]) skin = s; } catch (e) {}
+    location.replace(files[skin] + (location.search || ''));
+  })();
+</script>
+</head>
+<body>
+  <noscript><a href="dashboard.html">Открыть OpenHealth (классический скин)</a></noscript>
+</body>
+</html>

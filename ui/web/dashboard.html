@@ -5802,12 +5802,15 @@
                 <div class="nav-config-note" style="margin-top:20px; font-weight:600; color: var(--ink);">Эффекты</div>
                 <div id="fxToggles"></div>
 
-                <a class="settings-link-row" href="dashboard-v2.html" target="_blank" rel="noopener">
-                  <i class="ph-light ph-flask lead"></i>
-                  <span>Экспериментальный дизайн v2</span>
-                  <span class="ver">ver 0.1</span>
-                  <i class="ph-light ph-arrow-up-right ext"></i>
-                </a>
+                <div class="nav-config-note" style="margin-top:20px; font-weight:600; color: var(--ink);">Скин интерфейса</div>
+                <div class="skin-switch" style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+                  <button type="button" class="btn-secondary" onclick="setSkin('v1')"><i class="ph-light ph-moon"></i> Классический (тёмный) · сейчас</button>
+                  <button type="button" class="btn-secondary" onclick="setSkin('v2')"><i class="ph-light ph-squares-four"></i> Bento (светлый)</button>
+                </div>
+                <p class="privacy-note" style="margin-top:10px;">
+                  <i class="ph-light ph-info"></i>
+                  <span>Скины - один движок и один реестр (<span class="mono">assets/registry.json</span>). Данные и метрики общие, отличается только оформление; выбор скина запоминается и применяется на входе.</span>
+                </p>
               </div>
             </div>
           </div>
@@ -10825,6 +10828,13 @@ const THEME_DEFS = [
   { id: 'light', label: 'Светлая', bg: '#f9fafb', card: '#ffffff', line: '#e5e7eb', ink: '#111827', accent: '#10b981' },
   { id: 'brutalist', label: 'Брутал', bg: '#ffffff', card: '#ffffff', line: '#000000', ink: '#000000', accent: '#0000ff' }
 ];
+
+// Skin switcher: персист выбора + переход. Точка входа index.html чтит oh.skin.
+function setSkin(id) {
+  try { localStorage.setItem('oh.skin', id); } catch (e) { /* ignore */ }
+  const files = { v1: 'dashboard.html', v2: 'dashboard-v2.html' };
+  if (files[id]) window.location.href = files[id];
+}
 
 function applyTheme(t, persist) {
   if (!THEME_DEFS.some(x => x.id === t)) return;
