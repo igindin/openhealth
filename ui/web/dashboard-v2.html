@@ -9,11 +9,19 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   
-  <!-- Phosphor Icons Light -->
-  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/light/style.css">
-  
+  <!-- Phosphor Icons: regular weight provides the base `.ph` class the markup uses
+       (the page previously loaded only `light`, whose base class is `.ph-light`, so
+       `.ph` icons rendered blank). Duotone is loaded for accent metric circles. -->
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/duotone/style.css">
+
   <!-- GSAP for smooth animations -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+  <!-- OpenHealth shared engine: single-source registry + chart kit (see EXTENDING.md).
+       V2 is a SKIN over this engine; it renders Today from OH, never from a local copy. -->
+  <script src="assets/oh-registry.js"></script>
+  <script src="assets/oh-charts.js"></script>
 
   <style>
     :root {
@@ -1568,21 +1576,13 @@
     // Canonical window.DATA demo fallback structure
     const DATA = {
       date: "вторник, сегодня",
-      recovery: 64,
-      hrv: 39,
-      rhr: 56,
-      sleep: 7.2,
-      sleepNeeded: 8.5,
-      strain: 14.2,
-      strainTarget: 15.5,
-      
+      // Today-метрики (recovery/hrv/rhr/sleep/strain) и 30-дневный тренд больше НЕ
+      // хардкодятся здесь: единственный источник - assets/registry.json, значения
+      // подставляет seedTodayFromRegistry() из OH (демо из реестра или реальные данные).
       trendRec: [58, 61, 55, 49, 63, 67, 60, 64, 58, 62, 70, 66, 61, 64],
       trendHrv: [41, 38, 35, 33, 42, 45, 40, 39, 37, 40, 47, 44, 40, 39],
       trendSleep: [7.0, 7.5, 6.8, 6.2, 7.8, 8.1, 7.2, 7.4, 6.9, 7.1, 8.0, 7.8, 7.2, 7.2],
       trendStrain: [12.1, 14.5, 11.2, 8.5, 13.0, 16.2, 12.8, 14.2, 10.5, 12.0, 15.8, 13.2, 11.0, 14.2],
-      
-      trend30Rec: [55, 57, 52, 50, 58, 60, 62, 59, 56, 61, 64, 67, 60, 62, 59, 64, 66, 61, 63, 68, 70, 65, 63, 60, 58, 61, 55, 49, 63, 64],
-      trend30Hrv: [38, 39, 36, 34, 40, 41, 43, 40, 37, 41, 42, 45, 41, 42, 39, 43, 44, 40, 41, 46, 48, 43, 41, 39, 38, 39, 37, 33, 42, 39],
 
       habits: [
         { id: "sleep", label: "Лечь до 23:30", done: true, delta: 8, icon: "ph-moon" },
@@ -1621,36 +1621,54 @@
     const getRecoveryZoneText = v => v >= 67 ? "Зелёная зона" : v >= 34 ? "Жёлтая зона" : "Красная зона";
     const getRecoveryExplanationText = v => v >= 67 ? "Организм готов к нагрузкам" : v >= 34 ? "Рекомендуется умеренный режим" : "Необходим глубокий покой";
 
+    // Today-метрики приходят ТОЛЬКО из общего реестра (assets/registry.json) через OH.
+    // Это и есть паритет: у V1 и V2 один источник определений, демо и реальных значений.
+    function seedTodayFromRegistry() {
+      if (!window.OH || !OH.registry) return;
+      DATA.recovery = OH.value('recovery');
+      DATA.hrv = OH.value('hrv');
+      DATA.rhr = OH.value('rhr');
+      DATA.sleep = OH.value('sleep');
+      DATA.sleepNeeded = OH.target('sleep');
+      DATA.strain = OH.value('strain');
+      DATA.strainTarget = OH.target('strain');
+      DATA.trend30Rec = OH.value('recovery_trend_30');
+    }
+
+    // Parity manifest: что этот скин рисует из реестра (+ id скина). Симметрично V1.
+    window.__renderManifest = function () {
+      return Object.assign({ skin: 'v2' }, (window.OH ? OH.manifest() : { sections: [] }));
+    };
+
     // ----------------------------------------------------
     // UI UPDATER FUNCTIONS
     // ----------------------------------------------------
 
     function updateRecoveryWidget() {
-      const rec = DATA.recovery;
+      const rec = Number(DATA.recovery) || 0;
       const col = getRecoveryColor(rec);
       const zoneText = getRecoveryZoneText(rec);
-      
+
       // Update Header Pill
       document.getElementById('headerCapsuleDot').style.background = col;
       document.getElementById('headerCapsuleText').textContent = `recovery ${rec}%`;
 
-      // Update Large Gauge Ring
-      document.getElementById('recoveryValueText').textContent = `${rec}%`;
-      const ringFg = document.getElementById('recoveryRingFg');
-      
-      // Calculate circle circumference for r=70 (2 * pi * 70 = 439.8)
-      const circ = 2 * Math.PI * 70;
-      ringFg.style.strokeDasharray = circ;
-      const offset = circ - (circ * rec / 100);
-      ringFg.style.strokeDashoffset = offset;
-      ringFg.style.stroke = col;
+      // Recovery ring via the SHARED chart kit (OHCharts.ring) - same kit V1 uses.
+      const ringHost = document.querySelector('.recovery-ring-container');
+      if (ringHost && window.OHCharts) {
+        const labelColor = (getComputedStyle(document.body).getPropertyValue('--text-primary') || '#121316').trim();
+        ringHost.innerHTML = OHCharts.ring({
+          percent: rec, size: 180, stroke: 14, color: col,
+          label: rec + '%', sub: 'RECOVERY', labelColor: labelColor
+        });
+      }
 
       // Update Text indicators
       const statusTextNode = document.getElementById('recoveryStatusText');
       statusTextNode.innerHTML = `<span class="status-indicator-dot" style="background:${col}"></span> ${zoneText} — ${getRecoveryExplanationText(rec)}`;
       statusTextNode.style.color = rec >= 34 && rec < 67 ? "#b59600" : col; // slightly darker yellow text for readability
 
-      document.getElementById('recoveryReadinessText').textContent = DATA.readiness;
+      document.getElementById('recoveryReadinessText').textContent = DATA.readiness || '';
     }
 
     function updateMetricCards() {
@@ -2043,14 +2061,15 @@
 
     // On Page Load
     window.addEventListener('DOMContentLoaded', async () => {
-      // 1. Initial render with demo data
-      renderUI();
+      // 0. Load the shared registry (single source of truth) + real data into OH.
+      try { await OH.load(); } catch (e) { /* registry missing: degrade to local demo */ }
+      seedTodayFromRegistry();
 
-      // 2. Load real data if present and re-render
-      const loadedReal = await loadRealData();
-      if (loadedReal) {
-        renderUI();
-      }
+      // 1. Load real data for not-yet-migrated sections (habits/biomarkers/correlations).
+      await loadRealData();
+
+      // 2. Render everything from the seeded DATA.
+      renderUI();
 
       // 3. GSAP Entry Animation for bento cards
       gsap.from(".bento-card", {
