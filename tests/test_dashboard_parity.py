@@ -63,6 +63,12 @@ class RegistryIntegrityTests(unittest.TestCase):
         sections = {s.get("id"): s for s in self.reg.get("sections", [])}
         self.assertEqual(TODAY_METRICS, set(sections["today"]["metric_ids"]))
 
+    def test_result2_sections_present(self):
+        ids = {s.get("id") for s in self.reg.get("sections", [])}
+        for sid in ("sleep", "strain", "stress", "body"):
+            with self.subTest(section=sid):
+                self.assertIn(sid, ids, "Result 2 section %r missing from registry" % sid)
+
     def test_every_section_metric_is_defined(self):
         by_id = {m.get("id") for m in self.reg.get("metrics", [])}
         for section in self.reg.get("sections", []):
@@ -87,6 +93,13 @@ class SkinsLoadSharedEngineTests(unittest.TestCase):
             with self.subTest(skin=path.name):
                 self.assertIn("assets/oh-registry.js", text)
                 self.assertIn("assets/oh-charts.js", text)
+
+    def test_both_skins_render_registry_sections(self):
+        # Both skins render whole registry sections via the shared OH.sectionView,
+        # so sleep/strain/stress/body appear in both with no skin-specific markup.
+        for path in (V1, V2):
+            with self.subTest(skin=path.name):
+                self.assertIn("OH.sectionView", _read(path))
 
     def test_both_skins_expose_render_manifest(self):
         for path in (V1, V2):
