@@ -127,6 +127,27 @@ them with `python -m openhealth modules`.
 5. Generate or refine hypotheses — graded, framed as questions where C3 or below.
 6. Leave open questions and Issue links for the next pass.
 
+## Extending the Dashboards (read before you build)
+
+The two dashboards (V1 dark, V2 Bento) are two skins over one engine. Before
+writing a new theme, module or skin, read `CAPABILITIES.md` and `EXTENDING.md` —
+a lot already exists.
+
+- **Show what exists first.** On an intent like "I want my own theme / module /
+  skin", first show the person what the system already does — you can open both
+  skins in a browser via a local server (`dashboard.html` and
+  `dashboard-v2.html`). Then propose an extension level (A/B/C from
+  `EXTENDING.md`): A = your own theme (token file with the same variable names),
+  B = your own skin (render from `OH` + `__renderManifest`, pass parity), C =
+  boundary both ways (your skin over our engine, your engine under our skin, or
+  the design tokens + chart kit standalone). Write from scratch only if nothing
+  fits.
+- **Parity is non-negotiable.** Any new metric or section goes into
+  `ui/web/assets/registry.json` (the single source of truth) and must appear in
+  **both** skins — no skin-local content. After changing the registry, regenerate
+  the capability map with `python3 ui/web/gen_capabilities.py`, and keep the
+  parity test green.
+
 ## Promote Durable Learnings
 
 When you learn something durable about how this system should work, promote it

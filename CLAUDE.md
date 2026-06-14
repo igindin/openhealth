@@ -29,3 +29,15 @@ cautiously, honoring the C1–C5 framing and red-flag rules from `AGENTS.md`.
   make something pass. If you spot a leaked secret in review, flag it immediately.
 - **No `core/` features without an RFC.** Don't add cloud deps, telemetry, or
   analytics. Don't refactor someone else's connector without their approval.
+
+## Extending the Dashboards
+
+Before writing a new theme, module or skin, read `CAPABILITIES.md` and
+`EXTENDING.md` — much already exists. First show the person what the system
+already does (you can open both skins in a browser via a local server:
+`dashboard.html` and `dashboard-v2.html`), propose an extension level (A/B/C
+from `EXTENDING.md`), and write from scratch only if nothing fits. Any new
+metric or section goes into `ui/web/assets/registry.json` and must appear in
+**both** skins (parity); after changing the registry, regenerate the capability
+map with `python3 ui/web/gen_capabilities.py`. The shared rule lives in
+`AGENTS.md`.
