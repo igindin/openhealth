@@ -60,6 +60,13 @@
       return (OH.data[key] !== undefined && OH.data[key] !== null) ? OH.data[key] : fallback;
     },
 
+    // Biomarkers (lab values with reference ranges) - single source in the registry,
+    // real values from data.local.json override. Both skins seed DATA.biomarkers from this.
+    biomarkers: function () {
+      if (Array.isArray(OH.data.biomarkers) && OH.data.biomarkers.length) return OH.data.biomarkers;
+      return (OH.registry && OH.registry.biomarkers) || [];
+    },
+
     state: function (id) {
       var m = OH.metric(id);
       if (!m) return 'unknown';
