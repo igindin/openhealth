@@ -5741,7 +5741,11 @@
         @keyframes oh-rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
         #z-r-sleep .oh-section, #z-r-strain .oh-section, #z-r-stress .oh-section, #z-r-body .oh-section, #z-r-algos .oh-section { animation: oh-rise .5s cubic-bezier(.16,1,.3,1) both; }
         @media (max-width:760px){ .oh-chart-card{ grid-column:1 / -1; } }
-        @media (max-width:640px){ .oh-section__grid{ grid-template-columns:1fr; } .oh-section{ padding:16px; } }
+        @media (max-width:640px){ .oh-section__grid{ grid-template-columns:1fr; } .oh-section{ padding:16px; }
+          /* Today bento collapses to one column on phones; beats the DnD inline spans. */
+          #todayGrid{ grid-template-columns:1fr !important; }
+          #todayGrid > .today-widget, #todayGrid > .card-outer{ grid-column:1 / -1 !important; }
+        }
       </style>
       <section class="zone" id="z-r-sleep"><div id="oh-mount-r-sleep"></div></section>
       <section class="zone" id="z-r-strain"><div id="oh-mount-r-strain"></div></section>
