@@ -22,6 +22,7 @@
        V2 is a SKIN over this engine; it renders Today from OH, never from a local copy. -->
   <script src="assets/oh-registry.js"></script>
   <script src="assets/oh-charts.js"></script>
+  <script src="assets/oh-correlate.js"></script>
 
   <style>
     :root {
@@ -1703,7 +1704,7 @@
         const unit = def.unit || '';
         const sub = subtitleFor(def.id);
         return `
-          <div class="metric-card ${colors[i % colors.length]}">
+          <div class="metric-card ${colors[i % colors.length]}" data-metric="${def.id}">
             <div class="card-top">
               <span class="metric-label">${(def.label_ru || def.id).toUpperCase()}</span>
               <div class="metric-icon-circle"><i class="ph ${def.icon || 'ph-circle'}"></i></div>

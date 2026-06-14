@@ -20,6 +20,7 @@
      V1 is a SKIN over this engine; Today metrics come from the registry, not a local copy. -->
 <script src="assets/oh-registry.js"></script>
 <script src="assets/oh-charts.js"></script>
+<script src="assets/oh-correlate.js"></script>
 <style>
   :root {
     --font: "Geist", "Geist Fallback", system-ui, -apple-system, sans-serif;
@@ -6335,7 +6336,7 @@ function updateTodayScreen() {
               : (window.OH ? OH.value(def.id) : undefined);
     if (!has(val)) {
       return `
-    <div class="metric-tile">
+    <div class="metric-tile" data-metric="${def.id}">
       <div class="k">${k}</div>
       <div class="v mono" style="color:var(--mut);">—</div>
       <div class="u">${u}</div>
@@ -6343,7 +6344,7 @@ function updateTodayScreen() {
     }
     const dec = Number.isInteger(val) ? 0 : 1;
     return `
-    <div class="metric-tile">
+    <div class="metric-tile" data-metric="${def.id}">
       <div class="k">${k}</div>
       <div class="v mono" data-count="${val}" data-dec="${dec}">${val}</div>
       <div class="u">${u}</div>

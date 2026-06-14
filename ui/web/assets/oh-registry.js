@@ -133,10 +133,15 @@
         if (m.chart === 'tile') {
           var val = OH.value(m.id);
           var v = (typeof val === 'number' && !Number.isInteger(val)) ? val.toFixed(1) : val;
+          var ser = OH.series ? OH.series(m.id) : null, ind = '';
+          if (ser && ser.length >= 4) {
+            var last = ser[ser.length - 1], mean = ser.reduce(function (s2, x) { return s2 + x; }, 0) / ser.length, d = last - mean, up = d >= 0;
+            ind = ' <span class="oh-ind" style="color:' + (up ? '#27C28A' : '#E0706A') + ';font-size:12px;font-weight:600">' + (up ? '▲' : '▼') + ' ' + Math.abs(d).toFixed(Math.abs(d) % 1 ? 1 : 0) + '</span>';
+          }
           return '<div class="oh-tile' + (demo ? ' oh--demo' : '') + '" data-metric="' + m.id + '">' +
             '<div class="oh-tile__top"><span class="oh-tile__label">' + (m.label_ru || m.id) + '</span>' +
             '<span class="oh-tile__icon"><i class="ph ' + (m.icon || 'ph-circle') + '"></i></span></div>' +
-            '<div class="oh-tile__val">' + v + (m.unit ? ' <span class="oh-tile__unit">' + m.unit + '</span>' : '') + '</div>' + chip + '</div>';
+            '<div class="oh-tile__val">' + v + (m.unit ? ' <span class="oh-tile__unit">' + m.unit + '</span>' : '') + ind + '</div>' + chip + '</div>';
         }
         var svg = OH.renderChart(m.id, { color: accent, labelColor: textColor, colorHours: accent, colorNeed: 'rgba(127,127,127,0.45)', highlightColor: accent, bg: opts.bg });
         return '<div class="oh-chart-card' + (demo ? ' oh--demo' : '') + '" data-metric="' + m.id + '">' +
