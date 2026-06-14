@@ -21,6 +21,7 @@
 <script src="assets/oh-registry.js"></script>
 <script src="assets/oh-charts.js"></script>
 <script src="assets/oh-correlate.js"></script>
+<script src="assets/oh-provenance.js"></script>
 <style>
   :root {
     --font: "Geist", "Geist Fallback", system-ui, -apple-system, sans-serif;
@@ -4493,6 +4494,10 @@
         <i class="ph-light ph-person"></i>
         <span>Тело</span>
       </a>
+      <a data-z="r-algos" data-icon="ph-function" onclick="go('r-algos')">
+        <i class="ph-light ph-function"></i>
+        <span>Алгоритмы</span>
+      </a>
       <a data-z="journal" data-icon="ph-notebook" onclick="go('journal')">
         <i class="ph-light ph-notebook"></i>
         <span>Журнал</span>
@@ -5739,6 +5744,7 @@
       <section class="zone" id="z-r-strain"><div id="oh-mount-r-strain"></div></section>
       <section class="zone" id="z-r-stress"><div id="oh-mount-r-stress"></div></section>
       <section class="zone" id="z-r-body"><div id="oh-mount-r-body"></div></section>
+      <section class="zone" id="z-r-algos"><div id="oh-mount-algorithms"></div></section>
 
       <section class="zone" id="z-settings">
         <div class="settings-col">
@@ -11043,6 +11049,9 @@ function renderRegistrySectionsV1() {
     var host = document.getElementById('oh-mount-' + zid);
     if (host) host.innerHTML = OH.sectionView(zmap[zid], { accent: accents[zmap[zid]], textColor: text, bg: '#14171d' });
   });
+  try { if (typeof titles === 'object') titles['r-algos'] = 'Алгоритмы'; } catch (e) { /* ignore */ }
+  var am = document.getElementById('oh-mount-algorithms');
+  if (am && OH.algorithmsView) am.innerHTML = OH.algorithmsView();
 }
 
 function renderDashboard() {

@@ -23,6 +23,7 @@
   <script src="assets/oh-registry.js"></script>
   <script src="assets/oh-charts.js"></script>
   <script src="assets/oh-correlate.js"></script>
+  <script src="assets/oh-provenance.js"></script>
 
   <style>
     :root {
@@ -1520,6 +1521,7 @@
       <button class="rail-btn" data-target="oh-sec-strain" data-tooltip="Нагрузка"><i class="ph ph-lightning"></i></button>
       <button class="rail-btn" data-target="oh-sec-stress" data-tooltip="Стресс"><i class="ph ph-gauge"></i></button>
       <button class="rail-btn" data-target="oh-sec-body" data-tooltip="Тело"><i class="ph ph-person"></i></button>
+      <button class="rail-btn" data-target="ohAlgorithms" data-tooltip="Алгоритмы"><i class="ph ph-function"></i></button>
       <button class="rail-btn" data-target="sec-settings" data-tooltip="Настройки"><i class="ph ph-gear"></i></button>
     </div>
     <button class="rail-btn" id="scrollTopBtn" data-tooltip="Наверх" style="opacity:0.6;"><i class="ph ph-arrow-up"></i></button>
@@ -2071,7 +2073,7 @@
       const text = (getComputedStyle(document.body).getPropertyValue('--text-primary') || '#121316').trim();
       host.innerHTML = ['sleep', 'strain', 'stress', 'body']
         .map(id => OH.sectionView(id, { accent: accents[id], textColor: text, bg: '#ffffff' }))
-        .join('');
+        .join('') + '<div id="ohAlgorithms">' + (OH.algorithmsView ? OH.algorithmsView() : '') + '</div>';
     }
 
     // ----------------------------------------------------

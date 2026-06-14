@@ -94,6 +94,7 @@ class SkinsLoadSharedEngineTests(unittest.TestCase):
                 self.assertIn("assets/oh-registry.js", text)
                 self.assertIn("assets/oh-charts.js", text)
                 self.assertIn("assets/oh-correlate.js", text)  # always-on DnD correlations
+                self.assertIn("assets/oh-provenance.js", text)  # provenance "?" + algorithms
 
     def test_both_skins_render_registry_sections(self):
         # Both skins render whole registry sections via the shared OH.sectionView,
