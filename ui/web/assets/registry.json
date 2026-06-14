@@ -2,18 +2,133 @@
   "version": 1,
   "note": "Single source of truth for OpenHealth skins. Skins (V1 classic, V2 bento) render FROM this file; they never hardcode metric definitions or demo values. Real values arrive via data.local.json keyed by metric id (or data_key). See EXTENDING.md.",
   "skins": [
-    { "id": "v1", "label_ru": "Классический (тёмный)", "label_en": "Classic (dark)", "file": "dashboard.html", "themes": ["dark", "light", "brutalist"] },
-    { "id": "v2", "label_ru": "Bento (светлый)", "label_en": "Bento (light)", "file": "dashboard-v2.html", "themes": ["bento"] }
+    {
+      "id": "v1",
+      "label_ru": "Классический (тёмный)",
+      "label_en": "Classic (dark)",
+      "file": "dashboard.html",
+      "themes": [
+        "dark",
+        "light",
+        "brutalist"
+      ]
+    },
+    {
+      "id": "v2",
+      "label_ru": "Bento (светлый)",
+      "label_en": "Bento (light)",
+      "file": "dashboard-v2.html",
+      "themes": [
+        "bento"
+      ]
+    }
   ],
   "sections": [
-    { "id": "today", "label_ru": "Сегодня", "label_en": "Today", "icon": "ph-house", "order": 1, "metric_ids": ["recovery", "hrv", "rhr", "sleep", "strain", "recovery_trend_30"] },
-    { "id": "settings", "label_ru": "Настройки", "label_en": "Settings", "icon": "ph-gear", "order": 99, "metric_ids": [] }
+    {
+      "id": "today",
+      "label_ru": "Сегодня",
+      "label_en": "Today",
+      "icon": "ph-house",
+      "order": 1,
+      "metric_ids": [
+        "recovery",
+        "hrv",
+        "rhr",
+        "sleep",
+        "strain",
+        "recovery_trend_30"
+      ]
+    },
+    {
+      "id": "sleep",
+      "label_ru": "Сон",
+      "label_en": "Sleep",
+      "icon": "ph-moon",
+      "order": 10,
+      "metric_ids": [
+        "sleep_duration_h",
+        "time_in_bed_h",
+        "sleep_efficiency_pct",
+        "sleep_consistency_pct",
+        "sleep_performance_pct",
+        "sleep_debt_h",
+        "restorative_h",
+        "restorative_pct",
+        "sleep_stages",
+        "sleep_hours_vs_need",
+        "sleep_duration_trend_7"
+      ]
+    },
+    {
+      "id": "strain",
+      "label_ru": "Нагрузка",
+      "label_en": "Strain",
+      "icon": "ph-lightning",
+      "order": 20,
+      "metric_ids": [
+        "day_strain",
+        "average_hr",
+        "active_calories",
+        "strength_activity_time",
+        "recovery_time_in_bed",
+        "hr_zones"
+      ]
+    },
+    {
+      "id": "stress",
+      "label_ru": "Стресс",
+      "label_en": "Stress",
+      "icon": "ph-gauge",
+      "order": 30,
+      "metric_ids": [
+        "stress_monitor",
+        "sleep_stress",
+        "non_activity_stress",
+        "respiratory_rate",
+        "blood_oxygen",
+        "skin_temperature"
+      ]
+    },
+    {
+      "id": "body",
+      "label_ru": "Тело",
+      "label_en": "Body",
+      "icon": "ph-person",
+      "order": 40,
+      "metric_ids": [
+        "weight",
+        "lean_body_mass",
+        "body_fat",
+        "steps",
+        "vo2max",
+        "fitness_age"
+      ]
+    },
+    {
+      "id": "settings",
+      "label_ru": "Настройки",
+      "label_en": "Settings",
+      "icon": "ph-gear",
+      "order": 99,
+      "metric_ids": []
+    }
   ],
   "metrics": [
     {
-      "id": "recovery", "label_ru": "Восстановление", "label_en": "Recovery", "unit": "%",
-      "source": "whoop", "chart": "ring", "section": "today", "icon": "ph-heartbeat",
-      "protocol_ref": "recovery@v3", "ref": { "green": 67, "yellow": 34 }, "demo": 64,
+      "id": "recovery",
+      "label_ru": "Восстановление",
+      "label_en": "Recovery",
+      "unit": "%",
+      "source": "whoop",
+      "chart": "ring",
+      "section": "today",
+      "icon": "ph-heartbeat",
+      "protocol_ref": "recovery@v3",
+      "ref": {
+        "green": 67,
+        "yellow": 34
+      },
+      "demo": 64,
       "provenance": {
         "what": "Готовность организма к нагрузке, 0-100%.",
         "how": "recovery@v3 из HRV (rMSSD, ln-SD), пульса покоя, частоты дыхания и качества сна относительно личной базы.",
@@ -21,9 +136,16 @@
       }
     },
     {
-      "id": "hrv", "label_ru": "Вариабельность (HRV)", "label_en": "HRV", "unit": "мс",
-      "source": "whoop", "chart": "tile", "section": "today", "icon": "ph-waveform",
-      "protocol_ref": "hrv_rmssd", "demo": 39,
+      "id": "hrv",
+      "label_ru": "Вариабельность (HRV)",
+      "label_en": "HRV",
+      "unit": "мс",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "today",
+      "icon": "ph-waveform",
+      "protocol_ref": "hrv_rmssd",
+      "demo": 39,
       "provenance": {
         "what": "Вариабельность сердечного ритма, rMSSD, мс.",
         "how": "rMSSD из ночных межударных интервалов WHOOP. Не смешивается с SDNN от Apple Health.",
@@ -31,9 +153,16 @@
       }
     },
     {
-      "id": "rhr", "label_ru": "Пульс покоя (RHR)", "label_en": "Resting HR", "unit": "уд/м",
-      "source": "whoop", "chart": "tile", "section": "today", "icon": "ph-heart",
-      "protocol_ref": "rhr", "demo": 56,
+      "id": "rhr",
+      "label_ru": "Пульс покоя (RHR)",
+      "label_en": "Resting HR",
+      "unit": "уд/м",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "today",
+      "icon": "ph-heart",
+      "protocol_ref": "rhr",
+      "demo": 56,
       "provenance": {
         "what": "Пульс покоя, уд/мин.",
         "how": "Минимальный устойчивый ночной пульс по данным WHOOP.",
@@ -41,9 +170,18 @@
       }
     },
     {
-      "id": "sleep", "label_ru": "Сон сегодня", "label_en": "Sleep", "unit": "ч",
-      "source": "whoop", "chart": "tile", "section": "today", "icon": "ph-moon",
-      "protocol_ref": "sleep_hours", "demo": 7.2, "target_key": "sleepNeeded", "target_default": 8.5,
+      "id": "sleep",
+      "label_ru": "Сон сегодня",
+      "label_en": "Sleep",
+      "unit": "ч",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "today",
+      "icon": "ph-moon",
+      "protocol_ref": "sleep_hours",
+      "demo": 7.2,
+      "target_key": "sleepNeeded",
+      "target_default": 8.5,
       "provenance": {
         "what": "Длительность сна за ночь, часы.",
         "how": "Из сессий сна WHOOP; цель сравнивается с расчётной потребностью.",
@@ -51,9 +189,18 @@
       }
     },
     {
-      "id": "strain", "label_ru": "Нагрузка (Strain)", "label_en": "Strain", "unit": "",
-      "source": "whoop", "chart": "tile", "section": "today", "icon": "ph-lightning",
-      "protocol_ref": "strain", "demo": 14.2, "target_key": "strainTarget", "target_default": 15.5,
+      "id": "strain",
+      "label_ru": "Нагрузка (Strain)",
+      "label_en": "Strain",
+      "unit": "",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "today",
+      "icon": "ph-lightning",
+      "protocol_ref": "strain",
+      "demo": 14.2,
+      "target_key": "strainTarget",
+      "target_default": 15.5,
       "provenance": {
         "what": "Кардионагрузка за день, шкала 0-21.",
         "how": "По времени в пульсовых зонах за сутки (модель WHOOP).",
@@ -61,14 +208,823 @@
       }
     },
     {
-      "id": "recovery_trend_30", "label_ru": "Тренд восстановления (30 дней)", "label_en": "Recovery trend (30d)", "unit": "%",
-      "source": "whoop", "chart": "sparkline", "section": "today", "icon": "ph-chart-line",
-      "data_key": "trend30Rec", "protocol_ref": "recovery@v3",
-      "demo": [55, 57, 52, 50, 58, 60, 62, 59, 56, 61, 64, 67, 60, 62, 59, 64, 66, 61, 63, 68, 70, 65, 63, 60, 58, 61, 55, 49, 63, 64],
+      "id": "recovery_trend_30",
+      "label_ru": "Тренд восстановления (30 дней)",
+      "label_en": "Recovery trend (30d)",
+      "unit": "%",
+      "source": "whoop",
+      "chart": "sparkline",
+      "section": "today",
+      "icon": "ph-chart-line",
+      "data_key": "trend30Rec",
+      "protocol_ref": "recovery@v3",
+      "demo": [
+        55,
+        57,
+        52,
+        50,
+        58,
+        60,
+        62,
+        59,
+        56,
+        61,
+        64,
+        67,
+        60,
+        62,
+        59,
+        64,
+        66,
+        61,
+        63,
+        68,
+        70,
+        65,
+        63,
+        60,
+        58,
+        61,
+        55,
+        49,
+        63,
+        64
+      ],
       "provenance": {
         "what": "Recovery за последние 30 дней.",
         "how": "Серия дневных recovery@v3, с переносом последнего известного значения через пропуски.",
         "why": "Тренд важнее одного дня: видно динамику восстановления."
+      }
+    },
+    {
+      "id": "sleep_duration_h",
+      "label_ru": "Длительность сна",
+      "label_en": "Sleep duration",
+      "unit": "ч",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "sleep",
+      "icon": "ph-bed",
+      "protocol_ref": "sleep_hours",
+      "demo": 7.2,
+      "provenance": {
+        "what": "Фактическое время сна за ночь, часы.",
+        "how": "Сумма стадий сна (deep + REM + light) из сессии WHOOP, без времени бодрствования в кровати.",
+        "why": "Базовая величина: от неё считаются долг сна, эффективность и доля стадий."
+      }
+    },
+    {
+      "id": "time_in_bed_h",
+      "label_ru": "Время в кровати",
+      "label_en": "Time in bed",
+      "unit": "ч",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "sleep",
+      "icon": "ph-bed",
+      "protocol_ref": "time_in_bed",
+      "demo": 8.1,
+      "provenance": {
+        "what": "Всё время от засыпания до подъёма, включая бодрствование, часы.",
+        "how": "Длина сессии сна WHOOP от начала до конца, до вычета пробуждений.",
+        "why": "Знаменатель для эффективности сна: сравнивается с фактической длительностью."
+      }
+    },
+    {
+      "id": "sleep_efficiency_pct",
+      "label_ru": "Эффективность сна",
+      "label_en": "Sleep efficiency",
+      "unit": "%",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "sleep",
+      "icon": "ph-gauge",
+      "protocol_ref": "sleep_efficiency",
+      "demo": 89,
+      "provenance": {
+        "what": "Доля времени в кровати, проведённая во сне, в процентах.",
+        "how": "Длительность сна делится на время в кровати по данным сессии WHOOP.",
+        "why": "Показывает, насколько время в кровати реально уходит на сон, а не на пробуждения."
+      }
+    },
+    {
+      "id": "sleep_consistency_pct",
+      "label_ru": "Консистентность сна",
+      "label_en": "Sleep consistency",
+      "unit": "%",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "sleep",
+      "icon": "ph-calendar-check",
+      "protocol_ref": "sleep_consistency",
+      "demo": 74,
+      "provenance": {
+        "what": "Совпадение времени отхода ко сну и подъёма от ночи к ночи, в процентах.",
+        "how": "WHOOP сравнивает время засыпания и пробуждения с предыдущими ночами; выше - стабильнее режим.",
+        "why": "Стабильный ритм сна поддерживает циркадные часы и качество восстановления."
+      }
+    },
+    {
+      "id": "sleep_performance_pct",
+      "label_ru": "Сон vs потребность",
+      "label_en": "Sleep vs need",
+      "unit": "%",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "sleep",
+      "icon": "ph-target",
+      "protocol_ref": "sleep_performance",
+      "demo": 84,
+      "provenance": {
+        "what": "Доля закрытой потребности во сне за ночь, в процентах.",
+        "how": "Фактическая длительность сна делится на расчётную потребность WHOOP (база + добор долга и нагрузки).",
+        "why": "Связывает сон не с фиксированной нормой, а с личной потребностью этой ночи."
+      }
+    },
+    {
+      "id": "sleep_debt_h",
+      "label_ru": "Долг сна",
+      "label_en": "Sleep debt",
+      "unit": "ч",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "sleep",
+      "icon": "ph-hourglass",
+      "protocol_ref": "sleep_debt@v2",
+      "demo": 1.4,
+      "provenance": {
+        "what": "Накопленный недосып относительно потребности, часы.",
+        "how": "sleep_debt@v2: суммарная нехватка сна за скользящее окно (~9 ночей) по данным WHOOP.",
+        "why": "Долг тянет вниз восстановление; его видно отдельно от длительности одной ночи."
+      }
+    },
+    {
+      "id": "restorative_h",
+      "label_ru": "Восстанавливающий сон",
+      "label_en": "Restorative sleep",
+      "unit": "ч",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "sleep",
+      "icon": "ph-battery-charging",
+      "protocol_ref": "restorative_sleep",
+      "demo": 3.1,
+      "provenance": {
+        "what": "Глубокий и REM-сон вместе, часы.",
+        "how": "Сумма стадий deep (SWS) и REM из гипнограммы WHOOP.",
+        "why": "Именно эти стадии отвечают за физическое и нервное восстановление."
+      }
+    },
+    {
+      "id": "restorative_pct",
+      "label_ru": "Восстанавливающий сон, %",
+      "label_en": "Restorative sleep, %",
+      "unit": "%",
+      "source": "derived",
+      "chart": "tile",
+      "section": "sleep",
+      "icon": "ph-battery-charging",
+      "protocol_ref": "restorative_sleep",
+      "demo": 43,
+      "provenance": {
+        "what": "Доля восстанавливающего сна (deep + REM) от общей длительности, в процентах.",
+        "how": "Часы deep и REM из WHOOP делятся на общую длительность сна.",
+        "why": "Показывает структуру сна, а не только его количество."
+      }
+    },
+    {
+      "id": "sleep_stages",
+      "label_ru": "Стадии сна",
+      "label_en": "Sleep stages",
+      "unit": "",
+      "source": "whoop",
+      "chart": "sleep_stages",
+      "section": "sleep",
+      "icon": "ph-bed",
+      "protocol_ref": "sleep_stages",
+      "demo": [
+        {
+          "stage": "Бодрствование",
+          "pct": 10,
+          "duration": "0:48",
+          "color": "#9aa0a6"
+        },
+        {
+          "stage": "Лёгкий",
+          "pct": 57,
+          "duration": "4:06",
+          "color": "#7CC8FF",
+          "typicalLow": 45,
+          "typicalHigh": 60
+        },
+        {
+          "stage": "Глубокий",
+          "pct": 19,
+          "duration": "1:24",
+          "color": "#B69CFF",
+          "typicalLow": 15,
+          "typicalHigh": 25
+        },
+        {
+          "stage": "REM",
+          "pct": 14,
+          "duration": "1:00",
+          "color": "#FF8FB1",
+          "typicalLow": 18,
+          "typicalHigh": 28
+        }
+      ],
+      "provenance": {
+        "what": "Распределение ночи по стадиям: бодрствование, лёгкий, глубокий (SWS), REM.",
+        "how": "Из сессий сна WHOOP; глубокий и REM — восстановительные стадии.",
+        "why": "Достаточно глубокого и REM важнее общей длительности для восстановления."
+      }
+    },
+    {
+      "id": "sleep_hours_vs_need",
+      "label_ru": "Часы сна vs потребность",
+      "label_en": "Sleep hours vs need",
+      "unit": "ч",
+      "source": "whoop",
+      "chart": "hours_vs_need",
+      "section": "sleep",
+      "icon": "ph-target",
+      "protocol_ref": "sleep_hours_vs_need",
+      "demo": {
+        "labels": [
+          "Пн",
+          "Вт",
+          "Ср",
+          "Чт",
+          "Пт",
+          "Сб",
+          "Вс"
+        ],
+        "hours": [
+          7.2,
+          6.8,
+          7.4,
+          5.8,
+          7.1,
+          6.3,
+          6.3
+        ],
+        "need": [
+          8,
+          8,
+          8,
+          8,
+          8,
+          8,
+          8
+        ]
+      },
+      "provenance": {
+        "what": "Сколько спал против расчётной потребности по дням.",
+        "how": "Часы сна WHOOP против потребности (накопленный долг + базовая норма).",
+        "why": "Систематический недосып относительно потребности копит долг сна."
+      }
+    },
+    {
+      "id": "sleep_duration_trend_7",
+      "label_ru": "Длительность сна (7 дней)",
+      "label_en": "Sleep duration (7d)",
+      "unit": "ч",
+      "source": "whoop",
+      "chart": "week_bars",
+      "section": "sleep",
+      "icon": "ph-chart-bar",
+      "protocol_ref": "sleep_hours",
+      "demo": [
+        {
+          "label": "Пн",
+          "value": 6.8
+        },
+        {
+          "label": "Вт",
+          "value": 7.4
+        },
+        {
+          "label": "Ср",
+          "value": 6.2
+        },
+        {
+          "label": "Чт",
+          "value": 7.8
+        },
+        {
+          "label": "Пт",
+          "value": 8.1
+        },
+        {
+          "label": "Сб",
+          "value": 7.2
+        },
+        {
+          "label": "Вс",
+          "value": 6.3,
+          "highlight": true
+        }
+      ],
+      "provenance": {
+        "what": "Длительность сна по ночам за последнюю неделю, часы.",
+        "how": "Серия дневной длительности сна WHOOP; пропуски остаются пустыми, без подстановки.",
+        "why": "Неделя видна целиком: понятно, отдельная это ночь или устойчивая нехватка."
+      },
+      "chart_opts": {
+        "unit": "ч"
+      }
+    },
+    {
+      "id": "day_strain",
+      "label_ru": "Нагрузка за день (Strain)",
+      "label_en": "Day Strain",
+      "unit": "/21",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "strain",
+      "icon": "ph-lightning",
+      "protocol_ref": "strain",
+      "demo": 14.2,
+      "provenance": {
+        "what": "Суммарная кардионагрузка за сутки по шкале 0-21.",
+        "how": "WHOOP считает по времени, проведённому в пульсовых зонах за весь день (логарифмическая шкала). Это её собственная метрика с датчика на запястье.",
+        "why": "Помогает держать баланс: сопоставляешь дневную нагрузку с восстановлением и видишь, был ли день лёгким или тяжёлым."
+      }
+    },
+    {
+      "id": "average_hr",
+      "label_ru": "Средний пульс",
+      "label_en": "Average HR",
+      "unit": "уд/м",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "strain",
+      "icon": "ph-heartbeat",
+      "protocol_ref": "average_hr",
+      "demo": 72,
+      "provenance": {
+        "what": "Средняя частота пульса за день, уд/мин.",
+        "how": "WHOOP усредняет непрерывный пульс с оптического датчика за сутки. Это измеренное значение, не производное.",
+        "why": "Фоновый ориентир дневной активности: спокойный средний пульс обычно идёт рядом с более лёгким днём."
+      }
+    },
+    {
+      "id": "active_calories",
+      "label_ru": "Активные калории",
+      "label_en": "Active Calories",
+      "unit": "ккал",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "strain",
+      "icon": "ph-flame",
+      "protocol_ref": "active_calories",
+      "demo": 640,
+      "provenance": {
+        "what": "Калории, потраченные сверх покоя за день.",
+        "how": "WHOOP оценивает по пульсу, нагрузке и профилю тела. Это её собственная оценка расхода энергии на активность.",
+        "why": "Дополняет картину нагрузки: показывает, сколько энергии ушло на движение помимо базового обмена."
+      }
+    },
+    {
+      "id": "strength_activity_time",
+      "label_ru": "Время силовой активности",
+      "label_en": "Strength Activity Time",
+      "unit": "мин",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "strain",
+      "icon": "ph-barbell",
+      "protocol_ref": "strength_activity_time",
+      "demo": 45,
+      "provenance": {
+        "what": "Длительность силовых активностей за день, минуты.",
+        "how": "Из активностей WHOOP, размеченных как силовые (Strength Trainer / силовая тренировка).",
+        "why": "Отделяет силовую работу от кардио: помогает видеть вклад силовых в общую нагрузку дня."
+      }
+    },
+    {
+      "id": "recovery_time_in_bed",
+      "label_ru": "Время восстановления в постели",
+      "label_en": "Recovery Time in Bed",
+      "unit": "ч",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "strain",
+      "icon": "ph-bed",
+      "protocol_ref": "recovery_time_in_bed",
+      "demo": 8.1,
+      "provenance": {
+        "what": "Рекомендованное WHOOP время в постели для восстановления под нагрузку дня, часы.",
+        "how": "WHOOP считает от потребности во сне с учётом долга сна и дневного Strain. Это рекомендация, а не фактически проведённое в постели время.",
+        "why": "Связывает нагрузку и восстановление: чем тяжелее был день, тем больше времени в постели предлагается заложить."
+      }
+    },
+    {
+      "id": "hr_zones",
+      "label_ru": "Время в пульсовых зонах",
+      "label_en": "Time in HR Zones",
+      "unit": "мин",
+      "source": "whoop",
+      "chart": "hr_zones",
+      "section": "strain",
+      "icon": "ph-chart-bar",
+      "protocol_ref": "hr_zones",
+      "demo": [
+        {
+          "zone": "50-59%",
+          "value": 42,
+          "color": "#7CC8FF"
+        },
+        {
+          "zone": "60-69%",
+          "value": 28,
+          "color": "#6FE3A5"
+        },
+        {
+          "zone": "70-79%",
+          "value": 14,
+          "color": "#FFDE4D"
+        },
+        {
+          "zone": "80-89%",
+          "value": 7,
+          "color": "#FF7A59"
+        },
+        {
+          "zone": "90-100%",
+          "value": 3,
+          "color": "#FF5A5A"
+        }
+      ],
+      "provenance": {
+        "what": "Минуты в пяти пульсовых зонах за день (Z1 50-59% … Z5 90-100% от макс. пульса).",
+        "how": "WHOOP раскладывает непрерывный пульс по зонам относительно макс. пульса. Из этого же распределения собирается дневной Strain.",
+        "why": "Показывает, на какой интенсивности прошёл день: больше времени в верхних зонах - выше нагрузка."
+      },
+      "chart_opts": {
+        "unit": "м"
+      }
+    },
+    {
+      "id": "stress_monitor",
+      "label_ru": "Стресс-монитор",
+      "label_en": "Stress Monitor",
+      "unit": "0-3",
+      "source": "whoop",
+      "chart": "gauge",
+      "section": "stress",
+      "icon": "ph-gauge",
+      "protocol_ref": "stress_monitor",
+      "demo": 1.4,
+      "provenance": {
+        "what": "Текущий уровень стресса по шкале WHOOP, 0-3.",
+        "how": "Из WHOOP Stress Monitor: модель по вариабельности (rMSSD) и пульсу в моменте. Это собственная метрика WHOOP, не путать с SDNN от Apple.",
+        "why": "Помогает заметить, когда напряжение растёт, и вовремя сделать паузу или дыхательную практику."
+      },
+      "chart_opts": {
+        "max": 3
+      }
+    },
+    {
+      "id": "sleep_stress",
+      "label_ru": "Стресс во сне",
+      "label_en": "Sleep stress",
+      "unit": "0-3",
+      "source": "whoop",
+      "chart": "gauge",
+      "section": "stress",
+      "icon": "ph-moon-stars",
+      "protocol_ref": "sleep_stress",
+      "demo": 0.8,
+      "provenance": {
+        "what": "Средний уровень стресса за время сна, 0-3.",
+        "how": "WHOOP усредняет стресс-монитор по ночному окну сна.",
+        "why": "Показывает, насколько спокойной была ночь; высокий ночной стресс часто связан с поздней едой, алкоголем или нагрузкой."
+      },
+      "chart_opts": {
+        "max": 3
+      }
+    },
+    {
+      "id": "non_activity_stress",
+      "label_ru": "Стресс вне нагрузки",
+      "label_en": "Non-activity stress",
+      "unit": "0-3",
+      "source": "whoop",
+      "chart": "gauge",
+      "section": "stress",
+      "icon": "ph-armchair",
+      "protocol_ref": "non_activity_stress",
+      "demo": 1.1,
+      "provenance": {
+        "what": "Стресс в спокойные часы бодрствования, без тренировок, 0-3.",
+        "how": "WHOOP считает стресс-монитор за периоды без физической активности.",
+        "why": "Отделяет психологическое и фоновое напряжение от честного подъёма пульса на тренировке."
+      },
+      "chart_opts": {
+        "max": 3
+      }
+    },
+    {
+      "id": "respiratory_rate",
+      "label_ru": "Частота дыхания",
+      "label_en": "Respiratory rate",
+      "unit": "вд/мин",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "stress",
+      "icon": "ph-wind",
+      "protocol_ref": "respiratory_rate",
+      "demo": 16.7,
+      "provenance": {
+        "what": "Частота дыхания во сне, вдохов в минуту.",
+        "how": "WHOOP измеряет дыхание во время сна. Те же значения могут приходить от Apple Health или Withings, если носишь их устройства.",
+        "why": "Стабильна у каждого человека; заметный сдвиг относительно личной базы иногда предшествует простуде или приходит при высокой нагрузке."
+      }
+    },
+    {
+      "id": "blood_oxygen",
+      "label_ru": "Кислород в крови (SpO2)",
+      "label_en": "Blood oxygen (SpO2)",
+      "unit": "%",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "stress",
+      "icon": "ph-drop",
+      "protocol_ref": "spo2",
+      "demo": 96.8,
+      "provenance": {
+        "what": "Насыщение крови кислородом во сне, %.",
+        "how": "WHOOP считает spo2_percentage за ночь по пульсоксиметру. Те же данные могут приходить от Apple Watch или Withings.",
+        "why": "Обычно держится у верхней границы; устойчивое снижение относительно базы стоит обсудить со специалистом."
+      }
+    },
+    {
+      "id": "skin_temperature",
+      "label_ru": "Температура кожи",
+      "label_en": "Skin temperature",
+      "unit": "°C",
+      "source": "whoop",
+      "chart": "tile",
+      "section": "stress",
+      "icon": "ph-thermometer",
+      "protocol_ref": "skin_temp",
+      "demo": 34.6,
+      "provenance": {
+        "what": "Температура кожи на запястье во сне, °C.",
+        "how": "WHOOP пишет skin_temp_celsius за ночь. Apple Watch и Withings дают похожую метрику с собственного датчика.",
+        "why": "Смотрят на отклонение от личной базы, а не на абсолют: сдвиг иногда сопровождает начало болезни или цикл."
+      }
+    },
+    {
+      "id": "weight",
+      "label_ru": "Вес",
+      "label_en": "Weight",
+      "unit": "кг",
+      "source": "withings",
+      "chart": "sparkline",
+      "section": "body",
+      "icon": "ph-scales",
+      "protocol_ref": "weight",
+      "demo": [
+        78.4,
+        78.2,
+        78.5,
+        78.1,
+        77.9,
+        78,
+        77.8,
+        77.6,
+        77.9,
+        77.5,
+        77.4,
+        77.6,
+        77.3,
+        77.2,
+        77.4,
+        77.1,
+        77,
+        77.2,
+        76.9,
+        76.8,
+        77,
+        76.7,
+        76.6,
+        76.8,
+        76.5,
+        76.4,
+        76.6,
+        76.3,
+        76.5,
+        76.4
+      ],
+      "provenance": {
+        "what": "Масса тела, кг.",
+        "how": "Импорт измерений с умных весов Withings; берётся утренний замер. Тренд показан за 30 дней.",
+        "why": "Базовый параметр состава тела; динамику смотрят на сглаженном тренде, а не по отдельному дню."
+      }
+    },
+    {
+      "id": "lean_body_mass",
+      "label_ru": "Безжировая масса",
+      "label_en": "Lean body mass",
+      "unit": "кг",
+      "source": "withings",
+      "chart": "sparkline",
+      "section": "body",
+      "icon": "ph-barbell",
+      "protocol_ref": "lean_mass",
+      "demo": [
+        60.1,
+        60,
+        60.2,
+        60.1,
+        60.3,
+        60.2,
+        60.4,
+        60.3,
+        60.5,
+        60.4,
+        60.6,
+        60.5,
+        60.7,
+        60.6,
+        60.8,
+        60.7,
+        60.9,
+        60.8,
+        61,
+        60.9,
+        61.1,
+        61,
+        61.2,
+        61.1,
+        61.3,
+        61.2,
+        61.4,
+        61.3,
+        61.5,
+        61.4
+      ],
+      "provenance": {
+        "what": "Безжировая масса тела (всё, кроме жира): мышцы, кости, вода, органы, кг.",
+        "how": "Оценка весов Withings по биоимпедансу (BIA): вес минус расчётный жир. BIA даёт оценку, а не прямое измерение; точнее смотреть динамику в одинаковых условиях замера.",
+        "why": "Помогает отличить изменение веса за счёт мышц от изменения за счёт жира или воды."
+      }
+    },
+    {
+      "id": "body_fat",
+      "label_ru": "Состав тела (% жира)",
+      "label_en": "Body composition (body fat %)",
+      "unit": "%",
+      "source": "withings",
+      "chart": "sparkline",
+      "section": "body",
+      "icon": "ph-drop-half",
+      "protocol_ref": "body_fat",
+      "demo": [
+        22.8,
+        22.7,
+        22.9,
+        22.6,
+        22.5,
+        22.7,
+        22.4,
+        22.3,
+        22.5,
+        22.2,
+        22.1,
+        22.3,
+        22,
+        21.9,
+        22.1,
+        21.8,
+        21.7,
+        21.9,
+        21.6,
+        21.5,
+        21.7,
+        21.4,
+        21.3,
+        21.5,
+        21.2,
+        21.1,
+        21.3,
+        21,
+        21.2,
+        21.1
+      ],
+      "provenance": {
+        "what": "Доля жира в массе тела, %.",
+        "how": "Оценка весов Withings по биоимпедансу (BIA). Цифра зависит от гидратации и времени замера, поэтому полезнее как тренд при одинаковых условиях измерения.",
+        "why": "Состав тела точнее описывает форму, чем один вес: при равном весе доля жира и мышц может меняться."
+      }
+    },
+    {
+      "id": "steps",
+      "label_ru": "Шаги",
+      "label_en": "Steps",
+      "unit": "шаг",
+      "source": "apple",
+      "chart": "week_bars",
+      "section": "body",
+      "icon": "ph-footprints",
+      "protocol_ref": "steps_daily",
+      "demo": [
+        {
+          "label": "Пн",
+          "value": 8420
+        },
+        {
+          "label": "Вт",
+          "value": 11230
+        },
+        {
+          "label": "Ср",
+          "value": 6540
+        },
+        {
+          "label": "Чт",
+          "value": 9870
+        },
+        {
+          "label": "Пт",
+          "value": 7650
+        },
+        {
+          "label": "Сб",
+          "value": 12100
+        },
+        {
+          "label": "Вс",
+          "value": 9300,
+          "highlight": true
+        }
+      ],
+      "provenance": {
+        "what": "Число шагов за день.",
+        "how": "Импорт из Apple Health (iPhone и Apple Watch). На графике - последние 7 дней.",
+        "why": "Простой показатель повседневной активности и общего объёма движения за пределами тренировок."
+      }
+    },
+    {
+      "id": "vo2max",
+      "label_ru": "VO2max (кардиофитнес)",
+      "label_en": "VO2max (cardio fitness)",
+      "unit": "мл/кг/мин",
+      "source": "apple",
+      "chart": "line_dots",
+      "section": "body",
+      "icon": "ph-lungs",
+      "protocol_ref": "vo2max",
+      "demo": [
+        {
+          "label": "Июл",
+          "value": 42.1
+        },
+        {
+          "label": "Авг",
+          "value": 42.5
+        },
+        {
+          "label": "Сен",
+          "value": 42.9
+        },
+        {
+          "label": "Окт",
+          "value": 43.2
+        },
+        {
+          "label": "Ноя",
+          "value": 43.4
+        },
+        {
+          "label": "Дек",
+          "value": 43.6
+        }
+      ],
+      "provenance": {
+        "what": "Оценка максимального потребления кислорода (кардиофитнес), мл/кг/мин.",
+        "how": "Расчётная оценка Apple Watch (Cardio Fitness) по пульсу во время ходьбы, бега и кардионагрузок. Это модельная оценка, а не лабораторный тест.",
+        "why": "Один из самых устойчивых маркеров аэробной выносливости; меняется медленно, поэтому смотрят на долгий тренд."
+      }
+    },
+    {
+      "id": "fitness_age",
+      "label_ru": "Биологический / фитнес-возраст",
+      "label_en": "Biological / fitness age",
+      "unit": "лет",
+      "source": "derived",
+      "chart": "tile",
+      "section": "body",
+      "icon": "ph-hourglass-medium",
+      "protocol_ref": "fitness_age",
+      "demo": 34,
+      "provenance": {
+        "what": "Оценка возраста тела по физическим показателям, лет.",
+        "how": "Расчёт на стороне Health OS из VO2max, состава тела и активности по сравнению с возрастными нормами. Это оценочная модель, а не медицинский показатель и не диагноз.",
+        "why": "Сводит несколько показателей в одну понятную цифру для отслеживания общего направления; интерпретируется как ориентир, а не как факт о здоровье."
       }
     }
   ]

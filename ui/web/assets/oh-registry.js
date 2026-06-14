@@ -83,6 +83,30 @@
       };
     },
 
+    // Render a metric's chart via the shared kit (OHCharts), dispatching on the
+    // metric's `chart` type. Value comes from OH.value(id) (real or demo). Returns
+    // an SVG string, or '' for non-chart tiles. opts pass through to the kit. This
+    // is what lets both skins render any registry chart with one call.
+    renderChart: function (id, opts) {
+      opts = opts || {};
+      var m = OH.metric(id);
+      if (!m || !global.OHCharts) return '';
+      opts = Object.assign({}, m.chart_opts || {}, opts); // registry chart_opts are defaults
+      var K = global.OHCharts, v = OH.value(id);
+      switch (m.chart) {
+        case 'ring': return K.ring(Object.assign({ percent: Number(v) || 0 }, opts));
+        case 'sparkline': return K.sparkline(Object.assign({ data: v || [] }, opts));
+        case 'week_bars': return K.weekBars(v || [], opts);
+        case 'line_dots': return K.lineDots(v || [], opts);
+        case 'hypnogram': return K.hypnogram(v || [], opts);
+        case 'sleep_stages': return K.sleepStages(v || [], opts);
+        case 'hours_vs_need': return K.hoursVsNeed(v || {}, opts);
+        case 'hr_zones': return K.hrZones(v || [], opts);
+        case 'gauge': return K.gauge(v, opts);
+        default: return '';
+      }
+    },
+
     load: function (opts) {
       opts = opts || {};
       var base = opts.base || './assets/';
