@@ -14,6 +14,9 @@ protocol SyncTransport: Sendable {
 
     /// Load the manifest if present.
     func readManifest() throws -> SyncManifest?
+
+    /// Read the Mac engine's snapshot from `outbox/snapshot.json`, if present.
+    func readOutbox() throws -> HealthSnapshot?
 }
 
 /// Writes the bridge layout to a plain directory. This is the testable base used
@@ -57,5 +60,12 @@ struct FileSyncTransport: SyncTransport {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(SyncManifest.self, from: data)
+    }
+
+    func readOutbox() throws -> HealthSnapshot? {
+        let snapshotURL = root.appendingPathComponent("outbox", isDirectory: true)
+            .appendingPathComponent("snapshot.json")
+        guard let data = try? Data(contentsOf: snapshotURL) else { return nil }
+        return try JSONDecoder().decode(HealthSnapshot.self, from: data)
     }
 }

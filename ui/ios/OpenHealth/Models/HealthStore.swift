@@ -11,8 +11,10 @@ import Observation
 final class HealthStore {
     var snapshot: HealthSnapshot = .empty
     private let ingest = HealthKitIngest()
+    private let transportProvider: () async -> SyncTransport?
 
-    init() {
+    init(transportProvider: @escaping () async -> SyncTransport? = { await Task.detached { ICloudDriveTransport() }.value }) {
+        self.transportProvider = transportProvider
         load()
     }
 
@@ -25,11 +27,16 @@ final class HealthStore {
         }
     }
 
-    /// Replace the snapshot with real Apple Health data when available.
+    /// Refresh the snapshot. Prefer the Mac engine's outbox (real recovery /
+    /// insights); otherwise show an on-device Apple Health view; otherwise keep
+    /// the bundled fallback.
     func refresh() async {
+        if let transport = await transportProvider(), let outbox = try? transport.readOutbox() {
+            snapshot = outbox
+            return
+        }
         guard HealthKitIngest.isAvailable else { return }
-        let display = await ingest.buildDisplay()
-        let built = Self.snapshot(from: display)
+        let built = Self.snapshot(from: await ingest.buildDisplay())
         // Keep the synthetic fallback if HealthKit returned nothing yet
         // (no permission granted, or no data on this device).
         if built.measurements.isEmpty && built.trends.isEmpty { return }

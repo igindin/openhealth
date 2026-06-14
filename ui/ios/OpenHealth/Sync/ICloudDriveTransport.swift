@@ -36,4 +36,8 @@ struct ICloudDriveTransport: SyncTransport {
     func readManifest() throws -> SyncManifest? {
         try file.readManifest()
     }
+
+    func readOutbox() throws -> HealthSnapshot? {
+        try file.readOutbox()
+    }
 }
