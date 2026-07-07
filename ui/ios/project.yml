@@ -26,6 +26,8 @@ targets:
         NSHealthShareUsageDescription: "OpenHealth reads your Apple Health data on-device to show your trends and sync them to your own computer. Nothing is sent to any server."
         NSCalendarsFullAccessUsageDescription: "OpenHealth reads your calendar load to correlate it with recovery. It stays on your device and your own iCloud."
         NSLocationWhenInUseUsageDescription: "OpenHealth uses your location only to fetch local weather as health context."
+        NSLocalNetworkUsageDescription: "OpenHealth can sync directly to your own computer on the same Wi-Fi, as an alternative to iCloud. Nothing leaves your local network."
+        NSBonjourServices: ["_openhealth._tcp"]
         NSUbiquitousContainers:
           iCloud.org.openhealth.app:
             NSUbiquitousContainerIsDocumentScopePublic: true

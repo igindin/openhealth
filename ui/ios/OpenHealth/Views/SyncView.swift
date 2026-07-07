@@ -70,9 +70,16 @@ struct SyncView: View {
     // MARK: - Sync
 
     private var syncCard: some View {
-        Card {
+        @Bindable var sync = sync
+        return Card {
             VStack(alignment: .leading, spacing: Theme.s3) {
                 cardHeader("SYNC")
+                Picker("Transport", selection: $sync.transportKind) {
+                    ForEach(SyncCoordinator.TransportKind.allCases) { kind in
+                        Text(kind.label).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
                 HStack(alignment: .top, spacing: Theme.s3) {
                     Image(systemName: statusIcon)
                         .font(.system(size: 18))
@@ -84,7 +91,7 @@ struct SyncView: View {
                         Text(statusLine)
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(statusIsError ? Theme.warn : Theme.ink)
-                        Text("Phone → iCloud Drive, one direction.")
+                        Text("Phone → \(sync.transportKind.label), one direction.")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.inkDim)
                     }

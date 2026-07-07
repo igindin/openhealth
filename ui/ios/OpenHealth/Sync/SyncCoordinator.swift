@@ -21,8 +21,20 @@ final class SyncCoordinator {
         case healthUnavailable
     }
 
+    /// Which bridge transport a sync pass writes through (Result 4). iCloud Drive
+    /// is the default background path; local network is a same-LAN alternative.
+    enum TransportKind: String, CaseIterable, Identifiable {
+        case icloud, localNetwork
+        var id: String { rawValue }
+        var label: String { self == .icloud ? "iCloud Drive" : "Local network" }
+    }
+
     private(set) var status: Status = .idle
     private(set) var authorized = false
+    private let transportKindKey = "openhealth.transport_kind"
+    var transportKind: TransportKind {
+        didSet { defaults.set(transportKind.rawValue, forKey: transportKindKey) }
+    }
 
     private let reader: HealthReader
     private let transportProvider: () async -> SyncTransport?
@@ -47,6 +59,7 @@ final class SyncCoordinator {
         self.pageSize = pageSize
         self.initialHistoryDays = initialHistoryDays
         self.maxPagesPerType = maxPagesPerType
+        self.transportKind = TransportKind(rawValue: defaults.string(forKey: "openhealth.transport_kind") ?? "") ?? .icloud
         self.manifest = SyncManifest(deviceId: defaults.string(forKey: deviceKey) ?? UUID().uuidString)
         self.manifest = loadManifest()
         // Restore status across launches so a relaunch doesn't read as "never synced".
@@ -81,9 +94,16 @@ final class SyncCoordinator {
 
     func runSync() async {
         guard reader.isAvailable else { status = .healthUnavailable; return }
-        guard let transport = await transportProvider() else {
-            status = .failed("iCloud Drive is not available. Sign in to iCloud and enable Drive.")
-            return
+        let transport: SyncTransport
+        switch transportKind {
+        case .localNetwork:
+            transport = LocalNetworkTransport()
+        case .icloud:
+            guard let icloud = await transportProvider() else {
+                status = .failed("iCloud Drive is not available. Sign in to iCloud and enable Drive.")
+                return
+            }
+            transport = icloud
         }
         status = .syncing
         manifest = loadManifest()
