@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import WidgetKit
 
 /// Holds the snapshot the Today/Trends screens render.
 ///
@@ -9,7 +10,9 @@ import Observation
 @Observable
 @MainActor
 final class HealthStore {
-    var snapshot: HealthSnapshot = .empty
+    var snapshot: HealthSnapshot = .empty {
+        didSet { publishToWidget() }
+    }
     private let ingest = HealthKitIngest()
     private let transportProvider: () async -> SyncTransport?
 
@@ -41,6 +44,13 @@ final class HealthStore {
         // (no permission granted, or no data on this device).
         if built.measurements.isEmpty && built.trends.isEmpty { return }
         snapshot = built
+    }
+
+    /// Share the compact snapshot with the home-screen widget and ask it to
+    /// refresh. No-op payload-wise when the App Group is unavailable (previews).
+    private func publishToWidget() {
+        WidgetSnapshotStore().write(WidgetSnapshot(from: snapshot))
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     // MARK: - Mapping HealthKit → snapshot

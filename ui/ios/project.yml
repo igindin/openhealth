@@ -42,6 +42,7 @@ targets:
         com.apple.developer.icloud-services: [CloudDocuments]
         com.apple.developer.icloud-container-identifiers: [iCloud.org.openhealth.app]
         com.apple.developer.ubiquity-container-identifiers: [iCloud.org.openhealth.app]
+        com.apple.security.application-groups: [group.org.openhealth.app]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.openhealth.app
@@ -49,6 +50,31 @@ targets:
         ENABLE_TESTABILITY: "YES"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    dependencies:
+      - target: OpenHealthWidgets
+  OpenHealthWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: OpenHealthWidgets
+      - path: OpenHealth/Widget/WidgetSnapshot.swift
+    info:
+      path: OpenHealthWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: OpenHealth
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: OpenHealthWidgets/OpenHealthWidgets.entitlements
+      properties:
+        com.apple.security.application-groups: [group.org.openhealth.app]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.openhealth.app.widgets
+        PRODUCT_NAME: OpenHealthWidgets
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
@@ -74,6 +100,7 @@ schemes:
     build:
       targets:
         OpenHealth: all
+        OpenHealthWidgets: all
         OpenHealthTests: [test]
     run:
       config: Debug
