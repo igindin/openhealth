@@ -32,7 +32,11 @@ struct ContextNote: Codable, Hashable, Sendable {
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case externalId = "external_id"
-        case date, kind, values, text
+        // Wire name is kind_tag (see health-sync.schema.json): the SyncRecord
+        // envelope already uses "kind" as its discriminator, and both encode
+        // into the same JSON object.
+        case kind = "kind_tag"
+        case date, values, text
     }
 }
 
