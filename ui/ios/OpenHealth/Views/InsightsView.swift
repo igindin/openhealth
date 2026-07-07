@@ -10,8 +10,12 @@ struct InsightsView: View {
                     Text("Hypotheses to explore, never conclusions. Each one shows how sure we are.")
                         .font(.system(size: 13)).foregroundStyle(Theme.inkSoft)
 
-                    ForEach(store.snapshot.insights) { insight in
-                        insightCard(insight)
+                    if store.snapshot.insights.isEmpty {
+                        emptyState
+                    } else {
+                        ForEach(store.snapshot.insights) { insight in
+                            insightCard(insight)
+                        }
                     }
                 }
                 .padding(Theme.s4)
@@ -19,6 +23,26 @@ struct InsightsView: View {
             .background(Theme.background)
             .navigationTitle("Insights")
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: Theme.s3) {
+            Image(systemName: "lightbulb")
+                .font(.system(size: 44, weight: .regular))
+                .foregroundStyle(Theme.inkSoft)
+                .padding(.bottom, Theme.s1)
+            Text("No hypotheses yet")
+                .font(.system(size: 20, weight: .semibold, design: .serif))
+                .foregroundStyle(Theme.ink)
+            Text("Keep a daily check-in and sync your recovery. Once there's enough signal, patterns worth testing show up here — each phrased as a question, with how to test it.")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.inkSoft)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, Theme.s5 * 2)
+        .padding(.horizontal, Theme.s3)
     }
 
     private func insightCard(_ insight: Insight) -> some View {
