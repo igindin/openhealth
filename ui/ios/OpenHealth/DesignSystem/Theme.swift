@@ -38,11 +38,12 @@ enum Theme {
         if score >= 34 { return "Yellow zone — go moderate" }
         return "Red zone — prioritise recovery"
     }
-    /// Recovery/score (0...100) → "Doctor Context" mood + one-liner.
-    static func recoveryMood(_ score: Double) -> (emoji: String, line: String) {
-        if score >= 67 { return ("😎", "Well recovered — use the day.") }
-        if score >= 34 { return ("🙂", "Middle ground. Pick one helpful action.") }
-        return ("😴", "Running low. Today is about sleep and rest.") }
+    /// Recovery/score (0...100) → "Doctor Context" icon + one-liner. The icon is
+    /// an SF Symbol (always renders), tinted to the recovery zone by the caller.
+    static func recoveryMood(_ score: Double) -> (symbol: String, line: String) {
+        if score >= 67 { return ("bolt.heart.fill", "Well recovered — use the day.") }
+        if score >= 34 { return ("figure.walk", "Middle ground. Pick one helpful action.") }
+        return ("moon.zzz.fill", "Running low. Today is about sleep and rest.") }
 
     // Warm neutral surfaces kept for backward-compatible decorative use.
     static let sand = Color(hex: 0x1C1A16)

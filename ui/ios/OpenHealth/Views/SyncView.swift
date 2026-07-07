@@ -13,6 +13,7 @@ struct SyncView: View {
                 VStack(alignment: .leading, spacing: Theme.s4) {
                     appleHealthCard
                     syncCard
+                    whatSyncsCard
                     Text("Health data is written to your iCloud Drive (OpenHealth folder) and read by the local OpenHealth app on your computer. Nothing is sent to any server.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.inkDim)
@@ -24,50 +25,129 @@ struct SyncView: View {
         }
     }
 
+    // MARK: - Apple Health
+
     private var appleHealthCard: some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.s3) {
-                Text("APPLE HEALTH")
-                    .font(.system(size: 11, weight: .semibold)).tracking(1.0)
-                    .foregroundStyle(Theme.inkSoft)
-                Text(sync.authorized
-                     ? "Access granted. New samples sync on demand."
-                     : "Allow on-device read access to your Health data.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.ink)
-                Button {
-                    Task { await sync.requestAuthorization(); await store.refresh() }
-                } label: {
-                    Text(sync.authorized ? "Re-check access" : "Allow Apple Health")
-                        .frame(maxWidth: .infinity)
+                cardHeader("APPLE HEALTH")
+                if sync.authorized {
+                    // Granted: quiet "connected" state, secondary re-check action.
+                    HStack(spacing: Theme.s2) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Theme.zoneGreen)
+                        Text("Connected")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                        Spacer()
+                        Button {
+                            Task { await sync.requestAuthorization(); await store.refresh() }
+                        } label: {
+                            Text("Re-check")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else {
+                    Text("Allow on-device read access to your Health data.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.ink)
+                    Button {
+                        Task { await sync.requestAuthorization(); await store.refresh() }
+                    } label: {
+                        Text("Allow Apple Health").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.accent)
+                    .disabled(!sync.healthAvailable)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.accent)
-                .disabled(!sync.healthAvailable)
             }
         }
     }
 
+    // MARK: - Sync
+
     private var syncCard: some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.s3) {
-                Text("SYNC")
-                    .font(.system(size: 11, weight: .semibold)).tracking(1.0)
-                    .foregroundStyle(Theme.inkSoft)
-                Text(statusLine)
-                    .font(.system(size: 14))
-                    .foregroundStyle(statusIsError ? Theme.warn : Theme.ink)
+                cardHeader("SYNC")
+                HStack(alignment: .top, spacing: Theme.s3) {
+                    Image(systemName: statusIcon)
+                        .font(.system(size: 18))
+                        .foregroundStyle(statusIsError ? Theme.warn
+                                         : (sync.status == .syncing ? Theme.accent : Theme.inkSoft))
+                        .frame(width: 22)
+                        .symbolEffect(.pulse, isActive: sync.status == .syncing)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(statusLine)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(statusIsError ? Theme.warn : Theme.ink)
+                        Text("Phone → iCloud Drive, one direction.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.inkDim)
+                    }
+                    Spacer()
+                }
                 Button {
                     Task { await sync.runSync(); await store.refresh() }
                 } label: {
-                    Text(sync.status == .syncing ? "Syncing…" : "Sync now")
-                        .frame(maxWidth: .infinity)
+                    HStack(spacing: Theme.s2) {
+                        if sync.status == .syncing { ProgressView().tint(Theme.background) }
+                        Text(sync.status == .syncing ? "Syncing…" : "Sync now")
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
-                .disabled(sync.status == .syncing || !sync.healthAvailable)
+                .disabled(sync.status == .syncing || !sync.healthAvailable || !sync.authorized)
+                if !sync.authorized {
+                    Text("Allow Apple Health first.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.inkDim)
+                }
             }
         }
+    }
+
+    // MARK: - What syncs
+
+    private var whatSyncsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: Theme.s3) {
+                cardHeader("WHAT SYNCS")
+                ForEach(Array(Self.syncedTypes.enumerated()), id: \.offset) { idx, item in
+                    if idx > 0 { Divider().overlay(Theme.hairline) }
+                    HStack(spacing: Theme.s3) {
+                        Image(systemName: item.icon)
+                            .font(.system(size: 15))
+                            .foregroundStyle(Theme.inkSoft)
+                            .frame(width: 24)
+                        Text(item.label)
+                            .font(.system(size: 15))
+                            .foregroundStyle(Theme.ink)
+                        Spacer()
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
+    private static let syncedTypes: [(icon: String, label: String)] = [
+        ("waveform.path.ecg", "Heart rate variability"),
+        ("heart.fill", "Resting & walking heart rate"),
+        ("bed.double.fill", "Sleep stages & duration"),
+        ("figure.run", "Workouts"),
+        ("flame.fill", "Steps & active energy"),
+    ]
+
+    // MARK: - Helpers
+
+    private func cardHeader(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold)).tracking(1.0)
+            .foregroundStyle(Theme.inkSoft)
     }
 
     private var statusIsError: Bool {
@@ -76,11 +156,21 @@ struct SyncView: View {
         return false
     }
 
+    private var statusIcon: String {
+        switch sync.status {
+        case .idle: return "clock"
+        case .syncing: return "arrow.triangle.2.circlepath"
+        case .synced: return "checkmark.icloud.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        case .healthUnavailable: return "xmark.icloud"
+        }
+    }
+
     private var statusLine: String {
         switch sync.status {
         case .idle: return "Not synced yet."
         case .syncing: return "Reading Apple Health and writing to iCloud…"
-        case .synced(let date): return "Last synced \(Self.formatter.string(from: date))."
+        case .synced(let date): return "Last synced \(Self.formatter.string(from: date))"
         case .failed(let message): return message
         case .healthUnavailable: return "Apple Health is not available on this device."
         }

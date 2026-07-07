@@ -89,9 +89,6 @@ struct TodayView: View {
                         .foregroundStyle(Theme.ink)
                 }
                 Spacer()
-                if let score = recoveryScore {
-                    recoveryPill(score)
-                }
             }
             Text(todayLabel)
                 .font(.system(size: 13, weight: .medium))
@@ -100,19 +97,6 @@ struct TodayView: View {
         }
         .padding(.top, Theme.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func recoveryPill(_ score: Double) -> some View {
-        HStack(spacing: 6) {
-            Circle().fill(Theme.recoveryColor(score)).frame(width: 8, height: 8)
-            Text("recovery \(Int(score))")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Theme.ink)
-        }
-        .padding(.horizontal, Theme.s3)
-        .padding(.vertical, 6)
-        .overlay(Capsule().stroke(Theme.hairlineStrong, lineWidth: 1))
-        .clipShape(Capsule())
     }
 
     // MARK: - Recovery hero
@@ -158,12 +142,14 @@ struct TodayView: View {
 
     private func doctorContext(score: Double) -> some View {
         let mood = Theme.recoveryMood(score)
+        let tint = Theme.recoveryColor(score)
         return Card {
             HStack(spacing: Theme.s3) {
-                Text(mood.emoji)
-                    .font(.system(size: 30))
+                Image(systemName: mood.symbol)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(tint)
                     .frame(width: 48, height: 48)
-                    .background(Theme.surfaceAlt)
+                    .background(tint.opacity(0.14))
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Doctor Context")
