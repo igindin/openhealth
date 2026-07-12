@@ -7,7 +7,10 @@ struct RecordsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.s4) {
-                    SectionHeader(title: "Lab panels")
+                    Text("Lab panels")
+                        .font(Theme.body(20, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     ForEach(store.snapshot.panels) { panel in
                         NavigationLink {
                             LabPanelDetailView(panel: panel)

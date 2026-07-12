@@ -60,27 +60,25 @@ struct JournalView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .onAppear(perform: seedIfNeeded)
+        .sensoryFeedback(.selection, trigger: values)
     }
 
     // MARK: - Header
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Theme.s2) {
-            Text("JOURNAL")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(1.2)
-                .foregroundStyle(Theme.inkSoft)
+            CapsLabel(text: "Journal")
             Text("What happened\nyesterday?")
-                .font(.system(size: 32, weight: .bold, design: .serif))
+                .font(Theme.display(32, weight: .bold))
                 .foregroundStyle(Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: Theme.s2) {
                 Text(dayLabel)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(Theme.body(13, weight: .medium))
                     .foregroundStyle(Theme.inkSoft)
                 if existing != nil {
                     Text("· logged")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(Theme.body(13, weight: .medium))
                         .foregroundStyle(Theme.zoneGreen)
                 }
             }
@@ -94,10 +92,7 @@ struct JournalView: View {
     private func sectionBlock(_ section: JournalSection, _ items: [JournalBehavior]) -> some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.s3) {
-                Text(section.rawValue.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.inkDim)
+                CapsLabel(text: section.rawValue, size: 10, color: Theme.inkDim)
                 ForEach(Array(items.enumerated()), id: \.element.id) { idx, behavior in
                     if idx > 0 { Divider().overlay(Theme.hairline) }
                     behaviorRow(behavior)
@@ -129,15 +124,12 @@ struct JournalView: View {
     private var noteBlock: some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.s2) {
-                Text("NOTE")
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.inkDim)
+                CapsLabel(text: "Note", size: 10, color: Theme.inkDim)
                 TextField("Anything else worth remembering…", text: $note, axis: .vertical)
                     .lineLimit(2...5)
-                    .font(.system(size: 15))
+                    .font(Theme.body(15))
                     .foregroundStyle(Theme.ink)
-                    .tint(Theme.accent)
+                    .tint(Theme.ink)
             }
         }
     }
@@ -152,19 +144,13 @@ struct JournalView: View {
                     Text(existing == nil ? "Save journal" : "Update journal")
                 }
             }
-            .font(.system(size: 16, weight: .semibold))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Theme.s3 + 2)
-            .foregroundStyle(didSave ? Theme.zoneGreen : Theme.background)
-            .background(didSave ? Theme.surface : Theme.zoneGreen)
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
-                    .stroke(didSave ? Theme.zoneGreen : .clear, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
         }
+        .buttonStyle(PrimaryButtonStyle(
+            tint: didSave ? Theme.zoneGreen : Theme.action,
+            label: Theme.onAction
+        ))
         .disabled(values.isEmpty && note.isEmpty)
-        .opacity(values.isEmpty && note.isEmpty ? 0.5 : 1)
+        .opacity(values.isEmpty && note.isEmpty ? 0.4 : 1)
     }
 
     // MARK: - History
@@ -174,10 +160,7 @@ struct JournalView: View {
         let past = journal.recent.filter { $0.dayKey != dayKey }
         if !past.isEmpty {
             VStack(alignment: .leading, spacing: Theme.s3) {
-                Text("RECENT")
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.inkDim)
+                CapsLabel(text: "Recent", size: 10, color: Theme.inkDim)
                 ForEach(past.prefix(7)) { entry in
                     HistoryRow(entry: entry)
                 }
@@ -247,7 +230,7 @@ private struct YesNoRow: View {
                 .foregroundStyle(Theme.inkSoft)
                 .frame(width: 22)
             Text(behavior.prompt)
-                .font(.system(size: 15))
+                .font(Theme.body(15))
                 .foregroundStyle(Theme.ink)
             Spacer(minLength: Theme.s3)
             HStack(spacing: Theme.s2) {
@@ -261,14 +244,11 @@ private struct YesNoRow: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .bold))
-                .frame(width: 38, height: 32)
-                .foregroundStyle(active ? Theme.background : Theme.inkSoft)
+                .frame(width: 40, height: 34)
+                .foregroundStyle(active ? Theme.onAction : Theme.inkSoft)
                 .background(active ? tint : Theme.surfaceAlt)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Theme.hairlineStrong, lineWidth: active ? 0 : 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .animation(.easeOut(duration: 0.15), value: active)
         }
         .buttonStyle(.plain)
     }
@@ -288,7 +268,7 @@ private struct ScaleRow: View {
                     .foregroundStyle(Theme.inkSoft)
                     .frame(width: 22)
                 Text(behavior.prompt)
-                    .font(.system(size: 15))
+                    .font(Theme.body(15))
                     .foregroundStyle(Theme.ink)
                 Spacer()
             }
@@ -296,17 +276,14 @@ private struct ScaleRow: View {
                 ForEach(1...5, id: \.self) { n in
                     Button { onPick(n) } label: {
                         Text("\(n)")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .font(Theme.body(15, weight: .semibold))
                             .monospacedDigit()
                             .frame(maxWidth: .infinity)
-                            .frame(height: 36)
-                            .foregroundStyle(value == n ? Theme.background : Theme.inkSoft)
-                            .background(value == n ? Theme.accent : Theme.surfaceAlt)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(Theme.hairlineStrong, lineWidth: value == n ? 0 : 1)
-                            )
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .frame(height: 38)
+                            .foregroundStyle(value == n ? Theme.onAction : Theme.inkSoft)
+                            .background(value == n ? Theme.action : Theme.surfaceAlt)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .animation(.easeOut(duration: 0.15), value: value)
                     }
                     .buttonStyle(.plain)
                 }
@@ -315,7 +292,7 @@ private struct ScaleRow: View {
                 HStack {
                     Text(lo); Spacer(); Text(hi)
                 }
-                .font(.system(size: 11))
+                .font(Theme.body(11))
                 .foregroundStyle(Theme.inkDim)
                 .padding(.leading, 22 + Theme.s3)
             }

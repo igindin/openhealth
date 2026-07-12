@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// A soft surface card used across screens.
+/// A soft surface card. Light: white paper + one soft shadow. Dark: tonal fill
+/// with a whisper of top light. Never a double border.
 struct Card<Content: View>: View {
+    @Environment(\.colorScheme) private var scheme
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -12,19 +14,88 @@ struct Card<Content: View>: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
-                    .stroke(Theme.hairline, lineWidth: 1)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(scheme == .dark ? 0.07 : 0),
+                                     Color.white.opacity(0)],
+                            startPoint: .top, endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
             )
+            .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.06),
+                    radius: 12, x: 0, y: 4)
     }
 }
 
-struct SectionHeader: View {
-    let title: String
+/// Tracked-caps micro label — the one way section headers are set.
+struct CapsLabel: View {
+    let text: String
+    var size: CGFloat = 11
+    var color: Color = Theme.inkSoft
+
     var body: some View {
-        Text(title)
-            .font(.system(size: 20, weight: .semibold))
-            .foregroundStyle(Theme.ink)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        Text(text.uppercased())
+            .font(Theme.label(size))
+            .tracking(1.4)
+            .foregroundStyle(color)
     }
+}
+
+/// Primary action: ink fill, full width. The only loud button in the app.
+struct PrimaryButtonStyle: ButtonStyle {
+    var tint: Color = Theme.action
+    var label: Color = Theme.onAction
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Theme.body(16, weight: .semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Theme.s4 - 2)
+            .foregroundStyle(label)
+            .background(tint.opacity(configuration.isPressed ? 0.85 : 1))
+            .clipShape(Capsule())
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Quiet secondary action — text only.
+struct GhostButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Theme.body(15, weight: .medium))
+            .foregroundStyle(Theme.inkSoft)
+            .opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+
+/// Staggered entrance: fade + small rise, once, honoring Reduce Motion.
+private struct RiseIn: ViewModifier {
+    let index: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : 12)
+            .onAppear(perform: reveal)
+            .task { reveal() }   // fallback: fires post-attach even when onAppear races
+    }
+
+    private func reveal() {
+        guard !shown else { return }
+        if reduceMotion { shown = true; return }
+        withAnimation(Theme.rise.delay(Double(index) * Theme.stagger)) {
+            shown = true
+        }
+    }
+}
+
+extension View {
+    /// Entrance choreography for boards and lists.
+    func riseIn(_ index: Int) -> some View { modifier(RiseIn(index: index)) }
 }
 
 /// Confidence chip. Visual weight drops as certainty drops — low-confidence
@@ -34,41 +105,32 @@ struct ConfidenceChip: View {
 
     var body: some View {
         Text("\(confidence.rawValue) · \(confidence.label)")
-            .font(.system(size: 12, weight: .semibold))
-            .padding(.horizontal, Theme.s2)
-            .padding(.vertical, Theme.s1)
+            .font(Theme.label(11))
+            .tracking(0.3)
+            .padding(.horizontal, Theme.s2 + 2)
+            .padding(.vertical, Theme.s1 + 1)
             .foregroundStyle(foreground)
             .background(background)
-            .overlay(
-                Capsule().stroke(border, lineWidth: 1)
-            )
             .clipShape(Capsule())
     }
 
     private var foreground: Color {
         switch confidence {
-        case .c5, .c4: return .white
-        case .c3: return Theme.accent
+        case .c5, .c4: return Theme.onAction
+        case .c3: return Theme.ink
         case .c2, .c1: return Theme.inkSoft
         }
     }
     private var background: Color {
         switch confidence {
-        case .c5, .c4: return Theme.accent
-        case .c3: return .clear
-        case .c2, .c1: return Theme.hairline.opacity(0.5)
-        }
-    }
-    private var border: Color {
-        switch confidence {
-        case .c5, .c4: return .clear
-        case .c3: return Theme.accent
-        case .c2, .c1: return .clear
+        case .c5, .c4: return Theme.action
+        case .c3: return Theme.surfaceAlt
+        case .c2, .c1: return Theme.surfaceAlt.opacity(0.6)
         }
     }
 }
 
-/// Horizontal range bar: green band = reference range, dot = the value.
+/// Horizontal range bar: band = reference range, dot = the value.
 /// State is paired with a word + icon, never color alone (accessibility).
 struct RangeBar: View {
     let value: Double?
@@ -93,7 +155,6 @@ struct RangeBar: View {
         .frame(height: 12)
     }
 
-    // Map the value/range onto the bar using a padded domain.
     private var domain: (Double, Double) {
         let lo = low ?? (value.map { $0 * 0.6 } ?? 0)
         let hi = high ?? (value.map { $0 * 1.4 } ?? 1)
@@ -115,133 +176,80 @@ struct RangeBar: View {
     }
 }
 
-/// Large hero tile: an oversized value on a calm gradient. The focal element of
-/// the Today board (editorial, number-forward). Decorative gradient only.
-struct HeroTile: View {
-    let measurement: Measurement
+/// A number that counts up to its value once on appear (instrument warm-up).
+struct CountUpNumber: View, Animatable {
+    var value: Double
+    var font: Font
+    var color: Color
+    var fraction: Double = 1
+
+    var animatableData: Double {
+        get { fraction }
+        set { fraction = newValue }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.s2) {
-            Text(measurement.title.uppercased())
-                .font(.system(size: 12, weight: .semibold))
-                .tracking(0.8)
-                .foregroundStyle(.white.opacity(0.85))
-            Spacer(minLength: Theme.s4)
-            Text(measurement.value)
-                .font(.system(size: 48, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            if let caption = measurement.caption {
-                Text(caption)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.85))
-            }
-        }
-        .padding(Theme.s4)
-        .frame(maxWidth: .infinity, minHeight: 180, alignment: .leading)
-        .background(Theme.heroGradient(for: measurement.metric))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        Text("\(Int((value * fraction).rounded()))")
+            .font(font)
+            .foregroundStyle(color)
     }
 }
 
-/// Small board tile: number-forward measurement on a warm neutral surface.
-struct BoardTile: View {
-    let measurement: Measurement
-    let tint: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Theme.s1) {
-            Text(measurement.title.uppercased())
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.6)
-                .foregroundStyle(Theme.inkSoft)
-            Spacer(minLength: Theme.s3)
-            Text(measurement.value)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(Theme.ink)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            if let caption = measurement.caption {
-                Text(caption).font(.system(size: 12)).foregroundStyle(Theme.inkSoft)
-            }
-        }
-        .padding(Theme.s4)
-        .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
-        .background(tint)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
-    }
-}
-
-/// Circular gauge: a colored ring with a big value in the center. Inspired by
-/// the recovery/strain ring language of fitness apps, recolored to our palette
-/// (teal = in range, amber = attention). The ring is a wellness summary, never
-/// a clinical judgment — semantic flags/safety keep their own colors.
+/// Circular gauge in the WHOOP register: thick round-capped arc, huge compressed
+/// numeral, tracked caps unit. Draws in and counts up once on appear.
+/// A wellness summary, never a clinical judgment.
 struct RingGauge: View {
     let progress: Double           // 0...1
     let centerValue: String
     var centerUnit: String? = nil
     var tint: Color = Theme.accent
-    var lineWidth: CGFloat = 16
+    var lineWidth: CGFloat = 18
     var size: CGFloat = 200
+    var animated: Bool = true
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var scheme
+    @State private var shown = false
 
     private var clamped: Double { min(max(progress, 0), 1) }
+    private var numeric: Double? { Double(centerValue) }
 
     var body: some View {
         ZStack {
             Circle()
                 .stroke(Theme.hairline, lineWidth: lineWidth)
             Circle()
-                .trim(from: 0, to: clamped)
-                .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .trim(from: 0, to: shown ? clamped : 0)
+                .stroke(
+                    tint,
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
                 .rotationEffect(.degrees(-90))
+                .shadow(color: tint.opacity(scheme == .dark ? 0.35 : 0.18),
+                        radius: shown ? (scheme == .dark ? 10 : 7) : 0)
             VStack(spacing: 0) {
-                Text(centerValue)
-                    .font(.system(size: size * 0.26, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.ink)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
+                if let n = numeric {
+                    CountUpNumber(value: n,
+                                  font: Theme.numeral(size * 0.34),
+                                  color: Theme.ink,
+                                  fraction: shown ? 1 : 0)
+                } else {
+                    Text(centerValue)
+                        .font(Theme.numeral(size * 0.3))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                }
                 if let unit = centerUnit {
-                    Text(unit)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.inkSoft)
+                    CapsLabel(text: unit, size: 11, color: Theme.inkSoft)
                 }
             }
         }
         .frame(width: size, height: size)
-    }
-}
-
-/// A ring with a heading and a plain-language readout below — the "what this
-/// means" line that keeps a number honest. Observational, not prescriptive.
-struct RingCard: View {
-    let title: String
-    let progress: Double
-    let centerValue: String
-    var centerUnit: String? = nil
-    var tint: Color = Theme.accent
-    let readout: String
-
-    var body: some View {
-        Card {
-            VStack(spacing: Theme.s3) {
-                Text(title.uppercased())
-                    .font(.system(size: 12, weight: .semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(Theme.inkSoft)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                RingGauge(progress: progress, centerValue: centerValue,
-                          centerUnit: centerUnit, tint: tint, size: 190)
-                    .padding(.vertical, Theme.s2)
-                Text(readout)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.ink)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-            }
+        .onAppear {
+            guard !shown else { return }
+            if reduceMotion || !animated { shown = true; return }
+            withAnimation(Theme.drawIn.delay(0.1)) { shown = true }
         }
     }
 }
@@ -252,7 +260,7 @@ func leadingNumber(_ s: String) -> Double? {
     return Double(prefix)
 }
 
-/// Prominent safety banner. The only place red is used.
+/// Prominent safety banner. The only place red is used loudly.
 struct SafetyBanner: View {
     let alert: SafetyAlert
     var body: some View {
@@ -260,8 +268,8 @@ struct SafetyBanner: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.white)
             VStack(alignment: .leading, spacing: Theme.s1) {
-                Text(alert.title).font(.system(size: 15, weight: .bold))
-                Text(alert.message).font(.system(size: 13))
+                Text(alert.title).font(Theme.body(15, weight: .bold))
+                Text(alert.message).font(Theme.body(13))
             }
             .foregroundStyle(.white)
         }

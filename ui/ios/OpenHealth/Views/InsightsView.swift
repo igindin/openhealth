@@ -8,13 +8,13 @@ struct InsightsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.s4) {
                     Text("Hypotheses to explore, never conclusions. Each one shows how sure we are.")
-                        .font(.system(size: 13)).foregroundStyle(Theme.inkSoft)
+                        .font(Theme.body(13)).foregroundStyle(Theme.inkSoft)
 
                     if store.snapshot.insights.isEmpty {
                         emptyState
                     } else {
-                        ForEach(store.snapshot.insights) { insight in
-                            insightCard(insight)
+                        ForEach(Array(store.snapshot.insights.enumerated()), id: \.element.id) { i, insight in
+                            insightCard(insight).riseIn(i)
                         }
                     }
                 }
@@ -32,10 +32,10 @@ struct InsightsView: View {
                 .foregroundStyle(Theme.inkSoft)
                 .padding(.bottom, Theme.s1)
             Text("No hypotheses yet")
-                .font(.system(size: 20, weight: .semibold, design: .serif))
+                .font(Theme.display(21))
                 .foregroundStyle(Theme.ink)
             Text("Keep a daily check-in and sync your recovery. Once there's enough signal, patterns worth testing show up here — each phrased as a question, with how to test it.")
-                .font(.system(size: 14))
+                .font(Theme.body(14))
                 .foregroundStyle(Theme.inkSoft)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -48,9 +48,9 @@ struct InsightsView: View {
     private func insightCard(_ insight: Insight) -> some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.s3) {
-                HStack {
+                HStack(alignment: .top) {
                     Text(insight.title)
-                        .font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.ink)
+                        .font(Theme.body(16, weight: .semibold)).foregroundStyle(Theme.ink)
                     Spacer()
                     ConfidenceChip(confidence: insight.confidence)
                 }
@@ -59,14 +59,14 @@ struct InsightsView: View {
                 Text(insight.confidence.framesAsQuestion
                      ? "Possible pattern: \(insight.statement) What else could explain it?"
                      : insight.statement)
-                    .font(.system(size: 15)).foregroundStyle(Theme.ink)
+                    .font(Theme.body(15)).foregroundStyle(Theme.ink)
 
                 if !insight.openQuestions.isEmpty {
                     VStack(alignment: .leading, spacing: Theme.s1) {
                         ForEach(insight.openQuestions, id: \.self) { q in
                             HStack(alignment: .top, spacing: Theme.s2) {
                                 Text("•").foregroundStyle(Theme.inkSoft)
-                                Text(q).font(.system(size: 13)).foregroundStyle(Theme.inkSoft)
+                                Text(q).font(Theme.body(13)).foregroundStyle(Theme.inkSoft)
                             }
                         }
                     }
@@ -74,18 +74,18 @@ struct InsightsView: View {
 
                 if let validation = insight.suggestedValidation {
                     DisclosureGroup {
-                        Text(validation).font(.system(size: 13)).foregroundStyle(Theme.inkSoft)
+                        Text(validation).font(Theme.body(13)).foregroundStyle(Theme.inkSoft)
                             .padding(.top, Theme.s1)
                     } label: {
                         Text("How to test this")
-                            .font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.accent)
+                            .font(Theme.body(14, weight: .medium)).foregroundStyle(Theme.accent)
                     }
                     .tint(Theme.accent)
                 }
 
                 if !insight.sources.isEmpty {
                     Text("Sources: \(insight.sources.count)")
-                        .font(.system(size: 11)).foregroundStyle(Theme.inkSoft)
+                        .font(Theme.body(11)).foregroundStyle(Theme.inkSoft)
                 }
             }
         }

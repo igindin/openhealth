@@ -1,9 +1,8 @@
 import SwiftUI
 
 /// Today: the recovery/strain summary and "what you're ready for". A glanceable
-/// readiness screen in the dark Widget-Board style, with the recovery ring
-/// color-coded green/yellow/red (web-dashboard language). "Doctor Context" gives
-/// a mood read on recovery. Observational only — never a diagnosis. The daily
+/// readiness board — animated recovery ring, metric tiles in their own hues,
+/// one plain-language action. Observational only — never a diagnosis. The daily
 /// journal lives on its own (first) tab.
 struct TodayView: View {
     @Environment(HealthStore.self) private var store
@@ -50,13 +49,13 @@ struct TodayView: View {
                     }
 
                     if let score = recoveryScore, let rec = recovery {
-                        recoveryCard(score: score, measurement: rec)
-                        doctorContext(score: score)
-                        boardCard
-                        readinessCard(score: score)
+                        recoveryCard(score: score, measurement: rec).riseIn(0)
+                        doctorContext(score: score).riseIn(1)
+                        boardCard.riseIn(2)
+                        readinessCard(score: score).riseIn(3)
                     } else {
                         Text("No recovery data yet. Connect a source on desktop.")
-                            .font(.system(size: 14))
+                            .font(Theme.body(14))
                             .foregroundStyle(Theme.inkSoft)
                     }
 
@@ -65,7 +64,7 @@ struct TodayView: View {
                     }
 
                     Text("A reflection helper, not a doctor. Anything worrying goes to a specialist.")
-                        .font(.system(size: 11))
+                        .font(Theme.body(11))
                         .foregroundStyle(Theme.inkDim)
                 }
                 .padding(Theme.s4)
@@ -79,20 +78,13 @@ struct TodayView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(greeting)
-                        .font(.system(size: 18, weight: .regular, design: .serif))
-                        .foregroundStyle(Theme.inkSoft)
-                    Text(store.snapshot.greetingName)
-                        .font(.system(size: 34, weight: .bold, design: .serif))
-                        .foregroundStyle(Theme.ink)
-                }
-                Spacer()
-            }
-            Text(todayLabel)
-                .font(.system(size: 13, weight: .medium))
+            Text(greeting)
+                .font(Theme.display(18, weight: .regular))
                 .foregroundStyle(Theme.inkSoft)
+            Text(store.snapshot.greetingName)
+                .font(Theme.display(34, weight: .bold))
+                .foregroundStyle(Theme.ink)
+            CapsLabel(text: todayLabel, size: 12)
                 .padding(.top, Theme.s1)
         }
         .padding(.top, Theme.s2)
@@ -105,33 +97,19 @@ struct TodayView: View {
         let color = Theme.recoveryColor(score)
         return Card {
             VStack(spacing: Theme.s3) {
-                Text("RECOVERY")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.inkSoft)
+                CapsLabel(text: "Recovery")
                     .frame(maxWidth: .infinity, alignment: .leading)
-                ZStack {
-                    Circle()
-                        .stroke(Theme.hairlineStrong, lineWidth: 14)
-                    Circle()
-                        .trim(from: 0, to: min(max(score / 100, 0), 1))
-                        .stroke(color, style: StrokeStyle(lineWidth: 14, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    VStack(spacing: 0) {
-                        Text("\(Int(score))")
-                            .font(.system(size: 64, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(color)
-                        Text(measurement.caption ?? "recovery")
-                            .font(.system(size: 11, weight: .medium))
-                            .tracking(0.8)
-                            .foregroundStyle(Theme.inkSoft)
-                    }
-                }
-                .frame(width: 190, height: 190)
+                RingGauge(
+                    progress: score / 100,
+                    centerValue: "\(Int(score))",
+                    centerUnit: measurement.caption ?? "recovery",
+                    tint: color,
+                    lineWidth: 20,
+                    size: 210
+                )
                 .padding(.vertical, Theme.s2)
                 Text(Theme.recoveryHeadline(score))
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(Theme.body(17, weight: .semibold))
                     .foregroundStyle(Theme.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -153,10 +131,10 @@ struct TodayView: View {
                     .clipShape(Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Doctor Context")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(Theme.body(14, weight: .semibold))
                         .foregroundStyle(Theme.ink)
                     Text(mood.line)
-                        .font(.system(size: 13))
+                        .font(Theme.body(13))
                         .foregroundStyle(Theme.inkSoft)
                 }
                 Spacer()
@@ -170,8 +148,8 @@ struct TodayView: View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: Theme.s3),
                             GridItem(.flexible(), spacing: Theme.s3)],
                   spacing: Theme.s3) {
-            ForEach(boardMetrics) { m in
-                MetricTile(measurement: m)
+            ForEach(Array(boardMetrics.enumerated()), id: \.element.id) { i, m in
+                MetricTile(measurement: m).riseIn(i + 2)
             }
         }
     }
@@ -181,28 +159,22 @@ struct TodayView: View {
     private func readinessCard(score: Double) -> some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.s3) {
-                Text("READY FOR TODAY")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.inkSoft)
+                CapsLabel(text: "Ready for today")
                 Text(readinessText(score))
-                    .font(.system(size: 15))
+                    .font(Theme.body(15))
                     .foregroundStyle(Theme.ink)
                 HStack(alignment: .top, spacing: Theme.s3) {
-                    Text("DO TODAY")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .tracking(0.6)
+                    CapsLabel(text: "Do today", size: 10, color: Theme.onAction)
                         .padding(.horizontal, Theme.s2)
                         .padding(.vertical, 6)
                         .background(Theme.recoveryColor(score))
-                        .foregroundStyle(Theme.background)
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     VStack(alignment: .leading, spacing: 3) {
                         Text(actionTitle(score))
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(Theme.body(14, weight: .semibold))
                             .foregroundStyle(Theme.ink)
                         Text(actionWhy(score))
-                            .font(.system(size: 12))
+                            .font(Theme.body(12))
                             .foregroundStyle(Theme.inkSoft)
                     }
                 }
@@ -245,15 +217,15 @@ struct TodayView: View {
                     HStack {
                         Image(systemName: "info.circle").foregroundStyle(Theme.warn)
                         Text("Some markers to review")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(Theme.body(15, weight: .semibold))
                             .foregroundStyle(Theme.ink)
                         Spacer()
                         Image(systemName: "chevron.right").foregroundStyle(Theme.inkSoft)
                     }
                     Text(panel.abnormal.map { "\($0.displayName) \($0.flag.label)" }.joined(separator: ", "))
-                        .font(.system(size: 13)).foregroundStyle(Theme.inkSoft)
+                        .font(Theme.body(13)).foregroundStyle(Theme.inkSoft)
                     Text("A prompt to review with a clinician, not a diagnosis.")
-                        .font(.system(size: 12)).foregroundStyle(Theme.inkDim)
+                        .font(Theme.body(12)).foregroundStyle(Theme.inkDim)
                 }
             }
         }
@@ -261,35 +233,34 @@ struct TodayView: View {
     }
 }
 
-/// Dark board tile: a luminous number on a recessed surface.
+/// Board tile: a compressed instrument numeral with the metric's own hue tick.
 private struct MetricTile: View {
+    @Environment(\.colorScheme) private var scheme
     let measurement: Measurement
 
     var body: some View {
+        let hue = Theme.metricHue(measurement.metric)
         VStack(alignment: .leading, spacing: Theme.s1) {
-            Text(measurement.title.uppercased())
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(0.6)
-                .foregroundStyle(Theme.inkSoft)
+            HStack(spacing: Theme.s2 - 2) {
+                Circle().fill(hue).frame(width: 6, height: 6)
+                CapsLabel(text: measurement.title, size: 10)
+            }
             Spacer(minLength: Theme.s2)
             Text(measurement.value)
-                .font(.system(size: 26, weight: .semibold, design: .rounded))
-                .monospacedDigit()
+                .font(Theme.numeral(30))
                 .foregroundStyle(Theme.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             if let caption = measurement.caption {
-                Text(caption).font(.system(size: 11)).foregroundStyle(Theme.inkDim)
+                Text(caption).font(Theme.body(11)).foregroundStyle(Theme.inkDim)
             }
         }
-        .padding(Theme.s3 + 1)
-        .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
-        .background(Theme.surfaceAlt)
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radiusSmall, style: .continuous)
-                .stroke(Theme.hairline, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSmall, style: .continuous))
+        .padding(Theme.s4)
+        .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
+        .background(Theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
+        .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05),
+                radius: 10, x: 0, y: 3)
     }
 }
 

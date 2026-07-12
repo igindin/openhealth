@@ -26,13 +26,15 @@ struct TrendsView: View {
                     }
 
                     if let t = trend {
-                        metricCard(t)
+                        metricCard(t).riseIn(0)
                     } else {
-                        Text("No trends yet.").foregroundStyle(Theme.inkSoft)
+                        Text("No trends yet.")
+                            .font(Theme.body(14))
+                            .foregroundStyle(Theme.inkSoft)
                     }
 
                     if !store.snapshot.correlations.isEmpty {
-                        correlationsCard
+                        correlationsCard.riseIn(1)
                     }
                 }
                 .padding(Theme.s4)
@@ -51,30 +53,30 @@ struct TrendsView: View {
                 chart(t)
                     .frame(height: 200)
                 Text(readout(t))
-                    .font(.system(size: 13)).foregroundStyle(Theme.inkSoft)
+                    .font(Theme.body(13)).foregroundStyle(Theme.inkSoft)
             }
         }
     }
 
-    /// A number-forward header: the latest value, its unit, and a calm delta chip
-    /// versus the period's typical (mean). Observational — direction only, no
-    /// good/bad grading.
+    /// A number-forward header: the latest value in the instrument voice, its
+    /// unit, and a calm delta chip versus the period's typical (mean).
+    /// Observational — direction only, no good/bad grading.
     @ViewBuilder
     private func statHeader(_ t: Trend) -> some View {
         let values = t.points.map(\.value)
         let last = values.last
         HStack(alignment: .firstTextBaseline, spacing: Theme.s2) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(t.title.uppercased())
-                    .font(.system(size: 11, weight: .semibold)).tracking(1.0)
-                    .foregroundStyle(Theme.inkSoft)
+                HStack(spacing: Theme.s2 - 2) {
+                    Circle().fill(Theme.metricHue(t.metric)).frame(width: 6, height: 6)
+                    CapsLabel(text: t.title)
+                }
                 HStack(alignment: .firstTextBaseline, spacing: Theme.s1) {
                     Text(last.map(trim) ?? "—")
-                        .font(.system(size: 40, weight: .bold, design: .rounded))
-                        .monospacedDigit()
+                        .font(Theme.numeral(46))
                         .foregroundStyle(Theme.ink)
                     Text(t.unit)
-                        .font(.system(size: 15, weight: .medium))
+                        .font(Theme.body(15, weight: .medium))
                         .foregroundStyle(Theme.inkSoft)
                 }
             }
@@ -95,13 +97,13 @@ struct TrendsView: View {
                 Image(systemName: up ? "arrow.up.right" : "arrow.down.right")
                     .font(.system(size: 11, weight: .bold))
                 Text("\(up ? "+" : "−")\(trim(abs(delta)))")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .font(Theme.body(13, weight: .semibold))
+                    .monospacedDigit()
             }
             .foregroundStyle(Theme.inkSoft)
             .padding(.horizontal, Theme.s2 + 2)
             .padding(.vertical, 6)
             .background(Theme.surfaceAlt)
-            .overlay(Capsule().stroke(Theme.hairlineStrong, lineWidth: 1))
             .clipShape(Capsule())
         }
     }
@@ -109,28 +111,28 @@ struct TrendsView: View {
     private var correlationsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: Theme.s3) {
-                Text("WHAT AFFECTS YOU")
-                    .font(.system(size: 11, weight: .semibold)).tracking(1.0)
-                    .foregroundStyle(Theme.inkSoft)
+                CapsLabel(text: "What affects you")
                 ForEach(store.snapshot.correlations) { c in
                     HStack(spacing: Theme.s2) {
-                        Text(c.dir == "up" ? "▲" : "▼")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(c.dir == "up" ? Theme.accent : Theme.warn)
-                        Text(c.label).font(.system(size: 14)).foregroundStyle(Theme.ink)
+                        Image(systemName: c.dir == "up" ? "arrow.up.right" : "arrow.down.right")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(c.dir == "up" ? Theme.zoneGreen : Theme.warn)
+                        Text(c.label).font(Theme.body(14)).foregroundStyle(Theme.ink)
                         Spacer()
                         if let d = c.delta {
                             Text("\(d > 0 ? "+" : "")\(d)")
-                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                .font(Theme.body(13, weight: .semibold))
+                                .monospacedDigit()
                                 .foregroundStyle(Theme.inkSoft)
                         }
                         Text(c.grade)
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .font(Theme.label(10))
+                            .tracking(0.5)
                             .foregroundStyle(Theme.inkDim)
                     }
                 }
                 Text("Behaviour ↔ recovery links from your journal. Association, not cause.")
-                    .font(.system(size: 11)).foregroundStyle(Theme.inkDim)
+                    .font(Theme.body(11)).foregroundStyle(Theme.inkDim)
             }
         }
     }
@@ -139,23 +141,24 @@ struct TrendsView: View {
 
     @ViewBuilder
     private func chart(_ t: Trend) -> some View {
+        let hue = Theme.metricHue(t.metric)
         let lastPoint = t.points.last
         Chart {
             if let lo = t.referenceLow, let hi = t.referenceHigh {
                 RectangleMark(yStart: .value("low", lo), yEnd: .value("high", hi))
-                    .foregroundStyle(Theme.accent.opacity(0.08))
+                    .foregroundStyle(hue.opacity(0.07))
             }
             ForEach(t.points) { p in
                 AreaMark(x: .value("Day", p.date), y: .value(t.unit, p.value))
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [Theme.accent.opacity(0.22), Theme.accent.opacity(0.0)],
+                            colors: [hue.opacity(0.22), hue.opacity(0.0)],
                             startPoint: .top, endPoint: .bottom
                         )
                     )
                     .interpolationMethod(.catmullRom)
                 LineMark(x: .value("Day", p.date), y: .value(t.unit, p.value))
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(hue)
                     .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     .interpolationMethod(.catmullRom)
             }
@@ -164,11 +167,12 @@ struct TrendsView: View {
                     .foregroundStyle(Theme.background)
                     .symbolSize(160)
                 PointMark(x: .value("Day", lp.date), y: .value(t.unit, lp.value))
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(hue)
                     .symbolSize(80)
                     .annotation(position: .top, spacing: 6) {
                         Text("\(trim(lp.value)) \(t.unit)")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .font(Theme.body(11, weight: .semibold))
+                            .monospacedDigit()
                             .foregroundStyle(Theme.ink)
                             .padding(.horizontal, 6).padding(.vertical, 3)
                             .background(Theme.surfaceAlt)
@@ -177,6 +181,7 @@ struct TrendsView: View {
             }
         }
         .chartYScale(domain: yDomain(t))
+        .chartPlotStyle { $0.clipped() }
         .chartXAxis {
             AxisMarks { _ in
                 AxisGridLine().foregroundStyle(Theme.hairline)

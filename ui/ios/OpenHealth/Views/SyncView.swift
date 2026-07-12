@@ -52,15 +52,12 @@ struct SyncView: View {
                     }
                 } else {
                     Text("Allow on-device read access to your Health data.")
-                        .font(.system(size: 14))
+                        .font(Theme.body(14))
                         .foregroundStyle(Theme.ink)
-                    Button {
+                    Button("Allow Apple Health") {
                         Task { await sync.requestAuthorization(); await store.refresh() }
-                    } label: {
-                        Text("Allow Apple Health").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
+                    .buttonStyle(PrimaryButtonStyle())
                     .disabled(!sync.healthAvailable)
                 }
             }
@@ -101,17 +98,16 @@ struct SyncView: View {
                     Task { await sync.runSync(); await store.refresh() }
                 } label: {
                     HStack(spacing: Theme.s2) {
-                        if sync.status == .syncing { ProgressView().tint(Theme.background) }
+                        if sync.status == .syncing { ProgressView().tint(Theme.onAction) }
                         Text(sync.status == .syncing ? "Syncing…" : "Sync now")
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.accent)
+                .buttonStyle(PrimaryButtonStyle())
                 .disabled(sync.status == .syncing || !sync.healthAvailable || !sync.authorized)
+                .opacity(!sync.authorized || !sync.healthAvailable ? 0.4 : 1)
                 if !sync.authorized {
                     Text("Allow Apple Health first.")
-                        .font(.system(size: 12)).foregroundStyle(Theme.inkDim)
+                        .font(Theme.body(12)).foregroundStyle(Theme.inkDim)
                 }
             }
         }
@@ -128,10 +124,10 @@ struct SyncView: View {
                     HStack(spacing: Theme.s3) {
                         Image(systemName: item.icon)
                             .font(.system(size: 15))
-                            .foregroundStyle(Theme.inkSoft)
+                            .foregroundStyle(Theme.metricHue(item.metric))
                             .frame(width: 24)
                         Text(item.label)
-                            .font(.system(size: 15))
+                            .font(Theme.body(15))
                             .foregroundStyle(Theme.ink)
                         Spacer()
                     }
@@ -141,20 +137,18 @@ struct SyncView: View {
         }
     }
 
-    private static let syncedTypes: [(icon: String, label: String)] = [
-        ("waveform.path.ecg", "Heart rate variability"),
-        ("heart.fill", "Resting & walking heart rate"),
-        ("bed.double.fill", "Sleep stages & duration"),
-        ("figure.run", "Workouts"),
-        ("flame.fill", "Steps & active energy"),
+    private static let syncedTypes: [(icon: String, label: String, metric: String)] = [
+        ("waveform.path.ecg", "Heart rate variability", "hrv"),
+        ("heart.fill", "Resting & walking heart rate", "rhr"),
+        ("bed.double.fill", "Sleep stages & duration", "sleep"),
+        ("figure.run", "Workouts", "strain"),
+        ("flame.fill", "Steps & active energy", "weight"),
     ]
 
     // MARK: - Helpers
 
     private func cardHeader(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11, weight: .semibold)).tracking(1.0)
-            .foregroundStyle(Theme.inkSoft)
+        CapsLabel(text: text)
     }
 
     private var statusIsError: Bool {

@@ -1,0 +1,94 @@
+name: OpenHealth
+options:
+  bundleIdPrefix: org.openhealth
+  deploymentTarget:
+    iOS: '17.0'
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    DEVELOPMENT_TEAM: YOUR_TEAM_ID
+    CODE_SIGN_STYLE: Automatic
+    ALWAYS_SEARCH_USER_PATHS: 'NO'
+    ALWAYS_USE_SEPARATE_HEADERMAPS: 'YES'
+targets:
+  OpenHealth:
+    type: application
+    platform: iOS
+    sources:
+    - path: OpenHealth
+    info:
+      path: OpenHealth/Info.plist
+      properties:
+        CFBundleDisplayName: OpenHealth
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+        - UIInterfaceOrientationPortrait
+        NSHealthShareUsageDescription: OpenHealth reads your Apple Health data on-device
+          to show your trends and sync them to your own computer. Nothing is sent
+          to any server.
+        NSCalendarsFullAccessUsageDescription: OpenHealth reads your calendar load
+          to correlate it with recovery. It stays on your device and your own iCloud.
+        NSLocationWhenInUseUsageDescription: OpenHealth uses your location only to
+          fetch local weather as health context.
+        NSLocalNetworkUsageDescription: OpenHealth can sync directly to your own computer
+          on the same Wi-Fi, as an alternative to iCloud. Nothing leaves your local
+          network.
+        NSBonjourServices:
+        - _openhealth._tcp
+        NSUbiquitousContainers:
+          iCloud.org.openhealth.app:
+            NSUbiquitousContainerIsDocumentScopePublic: true
+            NSUbiquitousContainerName: OpenHealth
+            NSUbiquitousContainerSupportedFolderLevels: Any
+    entitlements:
+      path: OpenHealth/OpenHealth.entitlements
+      properties:
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.background-delivery: true
+        com.apple.developer.icloud-services:
+        - CloudDocuments
+        com.apple.developer.icloud-container-identifiers:
+        - iCloud.org.openhealth.app
+        com.apple.developer.ubiquity-container-identifiers:
+        - iCloud.org.openhealth.app
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.openhealth.app
+        PRODUCT_NAME: OpenHealth
+        ENABLE_TESTABILITY: 'YES'
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: '1'
+        TARGETED_DEVICE_FAMILY: '1'
+        SUPPORTED_PLATFORMS: iphoneos iphonesimulator
+        IPHONEOS_DEPLOYMENT_TARGET: '17.0'
+  OpenHealthTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+    - path: OpenHealthTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: 'YES'
+        PRODUCT_NAME: OpenHealthTests
+        PRODUCT_BUNDLE_IDENTIFIER: org.openhealth.app.tests
+        SUPPORTED_PLATFORMS: iphoneos iphonesimulator
+        IPHONEOS_DEPLOYMENT_TARGET: '17.0'
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/OpenHealth.app/OpenHealth
+        BUNDLE_LOADER: $(TEST_HOST)
+        SWIFT_ENABLE_EXPLICIT_MODULES: 'NO'
+    dependencies:
+    - target: OpenHealth
+schemes:
+  OpenHealth:
+    build:
+      targets:
+        OpenHealth: all
+        OpenHealthTests:
+        - test
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+      - OpenHealthTests
