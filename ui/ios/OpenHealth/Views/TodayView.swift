@@ -93,27 +93,31 @@ struct TodayView: View {
 
     // MARK: - Recovery hero
 
+    // WHOOP register: the ring lives directly on the ground (no card box),
+    // followed by a left-aligned headline + explaining paragraph.
     private func recoveryCard(score: Double, measurement: Measurement) -> some View {
         let color = Theme.recoveryColor(score)
-        return Card {
-            VStack(spacing: Theme.s3) {
-                CapsLabel(text: "Recovery")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                RingGauge(
-                    progress: score / 100,
-                    centerValue: "\(Int(score))",
-                    centerUnit: measurement.caption ?? "recovery",
-                    tint: color,
-                    lineWidth: 20,
-                    size: 210
-                )
-                .padding(.vertical, Theme.s2)
-                Text(Theme.recoveryHeadline(score))
-                    .font(Theme.body(17, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+        return VStack(alignment: .leading, spacing: Theme.s3) {
+            RingGauge(
+                progress: score / 100,
+                centerValue: "\(Int(score))",
+                labelInside: "Recovery",
+                suffix: "%",
+                tint: color,
+                lineWidth: 14,
+                size: 250
+            )
+            .padding(.vertical, Theme.s3)
+            .frame(maxWidth: .infinity)
+            Text(Theme.recoveryHeadline(score))
+                .font(Theme.body(16, weight: .semibold))
+                .foregroundStyle(Theme.ink)
+            Text(readinessText(score))
+                .font(Theme.body(13))
+                .foregroundStyle(Theme.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Doctor Context
@@ -160,9 +164,6 @@ struct TodayView: View {
         Card {
             VStack(alignment: .leading, spacing: Theme.s3) {
                 CapsLabel(text: "Ready for today")
-                Text(readinessText(score))
-                    .font(Theme.body(15))
-                    .foregroundStyle(Theme.ink)
                 HStack(alignment: .top, spacing: Theme.s3) {
                     CapsLabel(text: "Do today", size: 10, color: Theme.onAction)
                         .padding(.horizontal, Theme.s2)
@@ -186,15 +187,20 @@ struct TodayView: View {
         }
     }
 
+    private func readinessOneLiner(_ score: Double) -> String {
+        if score >= 67 { return "Your HRV and resting HR are in a good range." }
+        if score >= 34 { return "Signals are mixed — a moderate day fits." }
+        return "Signals point to rest today."
+    }
+
     private func readinessText(_ score: Double) -> String {
-        let zone = Theme.recoveryHeadline(score).lowercased()
         if score >= 67 {
-            return "Recovery \(Int(score))% (\(zone)). Your body is primed — a harder session or a demanding day fits well today."
+            return "Your signals are in a good range. A harder session or a demanding day fits well today."
         }
         if score >= 34 {
-            return "Recovery \(Int(score))% (\(zone)). A moderate day suits you — keep intensity in check and protect tonight's sleep."
+            return "Signals are mixed. A moderate day suits you — keep intensity in check and protect tonight's sleep."
         }
-        return "Recovery \(Int(score))% (\(zone)). Treat today as easy — light movement, an earlier night, and less load."
+        return "Signals point to rest. Treat today as easy — light movement, an earlier night, and less load."
     }
     private func actionTitle(_ score: Double) -> String {
         if score >= 67 { return "Use the window for your hardest task" }
@@ -242,12 +248,16 @@ private struct MetricTile: View {
         let hue = Theme.metricHue(measurement.metric)
         VStack(alignment: .leading, spacing: Theme.s1) {
             HStack(spacing: Theme.s2 - 2) {
-                Circle().fill(hue).frame(width: 6, height: 6)
-                CapsLabel(text: measurement.title, size: 10)
+                Image(systemName: Self.icon(for: measurement.metric))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(hue)
+                Text(measurement.title)
+                    .font(Theme.body(13, weight: .medium))
+                    .foregroundStyle(Theme.inkSoft)
             }
             Spacer(minLength: Theme.s2)
             Text(measurement.value)
-                .font(Theme.numeral(30))
+                .font(Theme.numeral(28))
                 .foregroundStyle(Theme.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -261,6 +271,16 @@ private struct MetricTile: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.radius, style: .continuous))
         .shadow(color: .black.opacity(scheme == .dark ? 0 : 0.05),
                 radius: 10, x: 0, y: 3)
+    }
+
+    private static func icon(for metric: String) -> String {
+        switch metric {
+        case "hrv": return "waveform.path.ecg"
+        case "resting_hr": return "heart.fill"
+        case "sleep": return "bed.double.fill"
+        case "strain": return "flame.fill"
+        default: return "circle.fill"
+        }
     }
 }
 

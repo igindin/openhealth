@@ -16,12 +16,14 @@ enum Theme {
 
     // MARK: - Adaptive canvas
 
-    static let background = adaptive(light: 0xF6F5F2, dark: 0x0B0C0F)
-    static let surface = adaptive(light: 0xFFFFFF, dark: 0x15171C)
-    static let surfaceAlt = adaptive(light: 0xEFEDE8, dark: 0x101216)
-    static let ink = adaptive(light: 0x17191D, dark: 0xF5F6F8)
-    static let inkSoft = adaptive(light: 0x6E7480, dark: 0x9BA3AF)
-    static let inkDim = adaptive(light: 0x9AA0AA, dark: 0x5F6672)
+    // Light = Bevel's cool paper (airy gray ground, white cards).
+    // Dark = WHOOP's blue-graphite (never pure black).
+    static let background = adaptive(light: 0xF2F3F5, dark: 0x0F1319)
+    static let surface = adaptive(light: 0xFFFFFF, dark: 0x171D26)
+    static let surfaceAlt = adaptive(light: 0xEAECEF, dark: 0x121821)
+    static let ink = adaptive(light: 0x14171C, dark: 0xF2F5F9)
+    static let inkSoft = adaptive(light: 0x6E7480, dark: 0x8E99A8)
+    static let inkDim = adaptive(light: 0x9AA0AA, dark: 0x5C6675)
 
     /// Hairlines are opacity-based so they sit softly on any surface.
     static let hairline = Color.primary.opacity(0.07)
@@ -66,8 +68,8 @@ enum Theme {
         switch metric {
         case "hrv": return adaptive(light: 0x0F8E85, dark: 0x5AD8CC)
         case "resting_hr", "rhr": return adaptive(light: 0xC2593A, dark: 0xF08C5A)
-        case "sleep": return adaptive(light: 0x6A5ACD, dark: 0x9D8CFF)
-        case "strain": return adaptive(light: 0x3D6FB8, dark: 0x6FA8EF)
+        case "sleep": return adaptive(light: 0x6B5CE8, dark: 0x9D8CFF)
+        case "strain": return adaptive(light: 0xE8850C, dark: 0xF5A93B)
         case "weight": return adaptive(light: 0x5A6472, dark: 0xAAB4C2)
         default: return accent
         }
@@ -75,13 +77,13 @@ enum Theme {
 
     // MARK: - Type voices
 
-    /// Instrument numerals: heavy, compressed, tabular. The number is the artwork.
+    /// Numerals: plain SF bold, tabular — the WHOOP/Bevel register. Minimal.
     static func numeral(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .heavy).width(.compressed).monospacedDigit()
+        .system(size: size, weight: .bold).monospacedDigit()
     }
-    /// Editorial serif — greetings, onboarding, empty states. Nowhere else.
-    static func display(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .serif)
+    /// Display headlines: SF bold, tight. One minimal voice — no serif anywhere.
+    static func display(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
+        .system(size: size, weight: weight)
     }
     /// Tracked-caps micro label (pair with .tracking(1.4) + uppercased text).
     static func label(_ size: CGFloat = 11) -> Font {

@@ -195,20 +195,21 @@ struct CountUpNumber: View, Animatable {
     }
 }
 
-/// Circular gauge in the WHOOP register: thick round-capped arc, huge compressed
-/// numeral, tracked caps unit. Draws in and counts up once on appear.
-/// A wellness summary, never a clinical judgment.
+/// Circular gauge in the WHOOP/Bevel register: a thin gradient arc on a quiet
+/// track, caps label inside above a plain bold numeral. No glow. Draws in and
+/// counts up once on appear. A wellness summary, never a clinical judgment.
 struct RingGauge: View {
     let progress: Double           // 0...1
     let centerValue: String
     var centerUnit: String? = nil
+    var labelInside: String? = nil
+    var suffix: String? = nil       // e.g. "%" — set small beside the numeral
     var tint: Color = Theme.accent
-    var lineWidth: CGFloat = 18
+    var lineWidth: CGFloat = 12
     var size: CGFloat = 200
     var animated: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var scheme
     @State private var shown = false
 
     private var clamped: Double { min(max(progress, 0), 1) }
@@ -217,31 +218,46 @@ struct RingGauge: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Theme.hairline, lineWidth: lineWidth)
+                .stroke(Theme.hairlineStrong, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: shown ? clamped : 0)
                 .stroke(
-                    tint,
+                    AngularGradient(
+                        gradient: Gradient(colors: [tint.opacity(0.45), tint]),
+                        center: .center,
+                        startAngle: .degrees(0),
+                        endAngle: .degrees(360 * clamped)
+                    ),
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
-                .shadow(color: tint.opacity(scheme == .dark ? 0.35 : 0.18),
-                        radius: shown ? (scheme == .dark ? 10 : 7) : 0)
-            VStack(spacing: 0) {
+            VStack(spacing: 2) {
+                if let label = labelInside {
+                    CapsLabel(text: label, size: 11, color: Theme.ink.opacity(0.85))
+                }
                 if let n = numeric {
-                    CountUpNumber(value: n,
-                                  font: Theme.numeral(size * 0.34),
-                                  color: Theme.ink,
-                                  fraction: shown ? 1 : 0)
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        CountUpNumber(value: n,
+                                      font: Theme.numeral(size * 0.3),
+                                      color: Theme.ink,
+                                      fraction: shown ? 1 : 0)
+                        if let suffix {
+                            Text(suffix)
+                                .font(Theme.numeral(size * 0.13))
+                                .foregroundStyle(Theme.ink)
+                        }
+                    }
                 } else {
                     Text(centerValue)
-                        .font(Theme.numeral(size * 0.3))
+                        .font(Theme.numeral(size * 0.26))
                         .foregroundStyle(Theme.ink)
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
                 }
                 if let unit = centerUnit {
-                    CapsLabel(text: unit, size: 11, color: Theme.inkSoft)
+                    Text(unit)
+                        .font(Theme.body(12, weight: .medium))
+                        .foregroundStyle(Theme.inkSoft)
                 }
             }
         }

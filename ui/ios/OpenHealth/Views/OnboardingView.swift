@@ -99,8 +99,8 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             Spacer()
             RingGauge(progress: 0.76, centerValue: "76",
-                      centerUnit: "recovery",
-                      tint: Theme.zoneGreen, lineWidth: 20, size: 220)
+                      labelInside: "Recovery",
+                      tint: Theme.zoneGreen, lineWidth: 13, size: 220)
                 .padding(.bottom, Theme.s6)
             CapsLabel(text: "OpenHealth", size: 12, color: Theme.inkSoft)
                 .padding(.bottom, Theme.s3)
