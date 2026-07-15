@@ -42,6 +42,7 @@ _PARAM_IDS = (
     "correlations.min_yes_days",
     "correlations.min_no_days",
     "correlations.window_days",
+    "correlations.lag_days",
 )
 
 
@@ -165,12 +166,14 @@ def analyze(behaviors: List[Dict[str, Any]], window_days: int = DEFAULT_WINDOW_D
         action = _action_text(name, stats)
         # "How was this computed" trace — UI tooltip food. Same numbers as the
         # stats block, under stable names, plus the thresholds actually used.
+        lag_days = int(entry.get("lag_days") or 0)
         compute_trace = {
             "yes_days": stats["n_yes"],
             "no_days": stats["n_no"],
             "avg_yes": stats["mean_recovery_yes"],
             "avg_no": stats["mean_recovery_no"],
             "window_days": window_days,
+            "lag_days": lag_days,
             "min_yes_required": stats["min_yes_required"],
             "min_no_required": stats["min_no_required"],
         }
@@ -179,6 +182,7 @@ def analyze(behaviors: List[Dict[str, Any]], window_days: int = DEFAULT_WINDOW_D
             "behavior_id": bid,
             "category": category,
             "window_days": window_days,
+            "lag_days": lag_days,
             "confidence_grade": conf.value,
             "compute_trace": compute_trace,
             "algo_version": params.stamp(ALGO_VERSION, overrides),
@@ -210,20 +214,27 @@ def analyze(behaviors: List[Dict[str, Any]], window_days: int = DEFAULT_WINDOW_D
 
 # --- index reader: build behavior/recovery pairs from indexed records ------
 
-def from_index(db_path, window_days: Optional[int] = None, as_of: Optional[str] = None) -> List[Dict[str, Any]]:
+def from_index(db_path, window_days: Optional[int] = None, as_of: Optional[str] = None,
+               lag_days: Optional[int] = None) -> List[Dict[str, Any]]:
     """Assemble per-behavior recovery pairs from indexed journal + recovery data.
 
-    Reads only through the index API. Pairs each journal day (boolean entries)
-    with that day's recovery score. Days without a recovery score are dropped.
-    ``window_days`` defaults to the (user-tunable) ``correlations.window_days``.
+    Reads only through the index API. Pairs a journal day D (boolean entries)
+    with the recovery score of day ``D + lag_days``. Recovery is a morning
+    metric, so an evening behaviour on day D shows up in the NEXT morning's
+    recovery (``lag_days=1``); ``lag_days=0`` keeps the same-day pairing. Days
+    without a recovery score on the lagged day are dropped. ``window_days`` and
+    ``lag_days`` default to the user-tunable ``correlations.*`` params.
     """
     from datetime import date as _d
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
 
     from .. import index
 
     if window_days is None:
         window_days = int(_param("correlations.window_days", DEFAULT_WINDOW_DAYS))
+    if lag_days is None:
+        lag_days = int(_param("correlations.lag_days", 0))
+    lag_days = max(0, int(lag_days))
 
     end = _d.fromisoformat(as_of) if as_of else datetime.now(timezone.utc).date()
 
@@ -261,12 +272,17 @@ def from_index(db_path, window_days: Optional[int] = None, as_of: Optional[str] 
 
     behaviors: List[Dict[str, Any]] = []
     for bid, slot in by_behavior.items():
-        pairs = [
-            {"date": day, "yes": yes, "recovery": recovery_by_day.get(day)}
-            for day, yes in slot["days"].items()
-            if day in recovery_by_day
-        ]
-        behaviors.append({"behavior_id": bid, "category": slot["category"], "pairs": pairs})
+        pairs = []
+        for day, yes in slot["days"].items():
+            try:
+                rec_day = (_d.fromisoformat(day) + timedelta(days=lag_days)).isoformat()
+            except ValueError:
+                continue
+            if rec_day in recovery_by_day:
+                pairs.append({"date": day, "recovery_date": rec_day, "yes": yes,
+                              "recovery": recovery_by_day[rec_day]})
+        behaviors.append({"behavior_id": bid, "category": slot["category"],
+                          "pairs": pairs, "lag_days": lag_days})
     return behaviors
 
 

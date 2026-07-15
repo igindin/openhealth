@@ -1,4 +1,4 @@
-# MCP server (scaffold)
+# MCP server
 
 `openhealth.mcp_server` exposes the OpenHealth derived layer to an MCP client
 (Claude Code, Codex, any MCP host) as a small set of **live-query tools** over
@@ -6,18 +6,16 @@ stdio.
 
 ## Status
 
-This is a **scaffold**, split into two clean halves:
+Working and spec-compliant, split into two clean halves:
 
 - **Engine + tool registry** (`Engine`, `list_tools()`, `call_tool()`) — pure
-  stdlib, fully working, unit-test friendly. No SDK dependency.
-- **Transport** (`serve_stdio()`) — uses the official MCP SDK when it is
-  installed; otherwise runs a minimal stdlib fallback loop so the engine is
-  still drivable today.
+  stdlib, unit-test friendly, free of any transport concern.
+- **Transport** (`dispatch()`, `serve_stdio()`) — MCP over stdio, JSON-RPC 2.0,
+  also pure stdlib.
 
-The official MCP Python SDK (the `mcp` package) is **not** part of the standard
-library and is intentionally **not** a hard dependency (OpenHealth's core rule
-keeps runtime deps at zero). Until you add it, the real SDK transport is a
-documented stub — see "Enable the real server" below.
+No SDK is needed: the stdio wire format is small enough to implement directly
+against the spec, so OpenHealth's core rule (zero runtime dependencies) holds.
+The `mcp` package is **not** required and is **not** a dependency.
 
 ## Tools
 
@@ -35,88 +33,36 @@ Inspect the catalog (no server needed):
 python3 -m openhealth.mcp_server --list-tools
 ```
 
-## Run it now (stdlib fallback)
-
-With the SDK absent, the server runs a **newline-delimited JSON** loop on stdio.
-This is a stopgap, **not** a spec-compliant MCP server, but it lets you exercise
-every tool end to end:
+## Run it
 
 ```bash
 python3 -m openhealth.mcp_server --repo-root /path/to/openhealth
 ```
 
-Then write one JSON object per line to stdin; read one JSON object per line back:
+The server speaks newline-delimited JSON-RPC 2.0 on stdio — one JSON object per
+line in, one reply per line out:
 
 ```json
-{"method": "list_tools"}
-{"method": "call_tool", "name": "today", "arguments": {}}
-{"method": "call_tool", "name": "journal_checkin", "arguments": {"behavior_id": "lifestyle.alcohol", "value": true}}
-{"method": "call_tool", "name": "correlations", "arguments": {"window_days": 90}}
-{"method": "ping"}
-{"method": "shutdown"}
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"today","arguments":{}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"journal_checkin","arguments":{"behavior_id":"lifestyle.alcohol","value":true}}}
+{"jsonrpc":"2.0","id":5,"method":"ping"}
 ```
 
-Errors (unknown tool, bad JSON, engine exceptions) come back as
-`{"error": "..."}` and never crash the loop.
+Notifications (messages with no `id`) get no reply, as the spec requires.
 
-## Enable the real server
-
-1. **Add the optional dependency.** This repo's `pyproject.toml` is owned
-   centrally — do not edit it as part of an unrelated change. Ask the maintainer
-   to add an optional-extra so the SDK stays out of the zero-dep core:
-
-   ```toml
-   # [project.optional-dependencies]
-   mcp = [
-       "mcp>=1.2",
-   ]
-   ```
-
-   Install with:
-
-   ```bash
-   pip install -e ".[mcp]"
-   # or, ad hoc:  pip install "mcp>=1.2"
-   ```
-
-2. **Finish the transport.** `serve_stdio()` already detects the SDK
-   (`importlib.util.find_spec("mcp")`) and routes to `_serve_with_sdk()`. That
-   function currently contains a documented stub. Promote it to live code using
-   the canonical SDK shape (validate the exact symbols against the version you
-   pinned — the SDK API has moved between releases):
-
-   ```python
-   import anyio
-   from mcp.server import Server
-   from mcp.server.stdio import stdio_server
-   import mcp.types as types
-
-   server = Server(SERVER_NAME)
-
-   @server.list_tools()
-   async def _list() -> list[types.Tool]:
-       return [types.Tool(**t) for t in list_tools()]
-
-   @server.call_tool()
-   async def _call(name: str, arguments: dict) -> list[types.TextContent]:
-       result = call_tool(engine, name, arguments)
-       return [types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False))]
-
-   async def _run():
-       async with stdio_server() as (read, write):
-           await server.run(read, write, server.create_initialization_options())
-
-   anyio.run(_run)
-   return 0
-   ```
-
-   The engine layer does **not** change — `call_tool(engine, name, arguments)`
-   returns the same JSON-serializable dicts the fallback loop already uses.
+Errors land in the right place: a failing **tool** comes back in-band as
+`isError: true` with the message in `content`, so the agent can read it and
+retry — only **protocol** faults use JSON-RPC `error` (`-32700` parse,
+`-32600` invalid request, `-32601` unknown method, `-32603` internal). Neither
+crashes the loop.
 
 ## Register with an MCP client
 
-Once the real transport is live, point your MCP host at the stdio command. For a
-Claude Code / generic `mcpServers` config:
+Point your MCP host at the stdio command. For a Claude Code / generic
+`mcpServers` config:
 
 ```json
 {

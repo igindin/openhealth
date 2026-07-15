@@ -1,0 +1,80 @@
+# OpenHealth + Hermes self-host stack. Full walkthrough: docs/SELF-HOST.md.
+#
+#   cp deploy/.env.example deploy/.env         # then fill it in
+#   docker build -t hermes-agent /path/to/hermes-agent   # build Hermes once
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# Topology: Caddy (public, TLS + auth) → OpenHealth (health domain + web UI).
+# Hermes runs alongside as the platform: a Telegram gateway + cron, and an
+# OpenAI-compatible LLM proxy. OpenHealth's health index is the one source of
+# truth; Hermes keeps its own session store. They talk over HTTP only.
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      OPENHEALTH_DOMAIN: ${OPENHEALTH_DOMAIN}
+      OPENHEALTH_USER: ${OPENHEALTH_USER}
+      OPENHEALTH_PASSWORD_HASH: ${OPENHEALTH_PASSWORD_HASH}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - openhealth
+
+  openhealth:
+    build:
+      context: ..
+      dockerfile: deploy/openhealth.Dockerfile
+    image: openhealth-bridge
+    restart: unless-stopped
+    # No published ports on purpose: reachable ONLY via Caddy on the internal
+    # network. Never add a `ports:` mapping here — the bridge has no auth.
+    expose:
+      - "8770"
+    environment:
+      # Use Hermes as the LLM backend over its OpenAI-compatible proxy.
+      OPENHEALTH_LLM_BASE_URL: ${OPENHEALTH_LLM_BASE_URL:-}
+      OPENHEALTH_LLM_API_KEY: ${OPENHEALTH_LLM_API_KEY:-openhealth}
+    volumes:
+      - health_data:/data
+
+  # Hermes messaging gateway: Telegram bot + cron scheduler (both live in this
+  # process). Inbound messages are turned into IntakeEnvelopes and POSTed to
+  # OpenHealth's /api/intake so Telegram and the web UI share one health base.
+  hermes-gateway:
+    image: ${HERMES_IMAGE:-hermes-agent}
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    environment:
+      HERMES_UID: ${HERMES_UID:-10000}
+      HERMES_GID: ${HERMES_GID:-10000}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    volumes:
+      - hermes_data:/opt/data
+
+  # Hermes OpenAI-compatible LLM proxy. OpenHealth points OPENHEALTH_LLM_BASE_URL
+  # at http://hermes-proxy:8645. Provider auth lives in the hermes_data volume
+  # (run `hermes login` / `hermes proxy status` inside it once during setup).
+  hermes-proxy:
+    image: ${HERMES_IMAGE:-hermes-agent}
+    restart: unless-stopped
+    command: ["proxy", "start", "--host", "0.0.0.0", "--port", "8645"]
+    expose:
+      - "8645"
+    environment:
+      HERMES_UID: ${HERMES_UID:-10000}
+      HERMES_GID: ${HERMES_GID:-10000}
+    volumes:
+      - hermes_data:/opt/data
+
+volumes:
+  health_data:
+  hermes_data:
+  caddy_data:
+  caddy_config:

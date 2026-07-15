@@ -134,6 +134,83 @@ def render_capabilities(registry: dict) -> str:
         )
     lines.append("")
 
+    # --- Navigation groups -------------------------------------------------
+    groups = sorted(
+        registry.get("groups", []),
+        key=lambda g: (g.get("order", 0), g.get("id", "")),
+    )
+    if groups:
+        lines.append("## Навигация (группы)")
+        lines.append("")
+        lines.append(
+            "Навигация обоих скинов строится из этих групп (не больше 9): V1 - "
+            "сайдбар, V2 - правый навбар (Дом + группы + Настройки). Выбранная "
+            "персона может переупорядочить группы (opt-in, по умолчанию выключено)."
+        )
+        lines.append("")
+        lines.append("| id | Название | Иконка | Порядок | Разделы |")
+        lines.append("| --- | --- | --- | --- | --- |")
+        for g in groups:
+            secs = ", ".join("`%s`" % _esc(s) for s in g.get("section_ids", [])) or "—"
+            lines.append(
+                "| `%s` | %s | `%s` | %s | %s |"
+                % (
+                    _esc(g.get("id")),
+                    _dash(g.get("label_ru")),
+                    _esc(g.get("icon")),
+                    _esc(g.get("order")),
+                    secs,
+                )
+            )
+        lines.append("")
+
+    # --- Knowledge layer pointer ------------------------------------------
+    knowledge_sections = [s for s in sections if s.get("kind") == "knowledge"]
+    if knowledge_sections:
+        ids = ", ".join("`%s`" % _esc(s.get("id")) for s in knowledge_sections)
+        lines.append("## Слой знаний")
+        lines.append("")
+        lines.append(
+            "Кураторские справочники (%s) живут в `ui/web/assets/knowledge.json`: "
+            "девайсы по категориям, источники протоколов и короткие видео к "
+            "метрикам. У каждой записи есть провенанс (ссылка + дата проверки) и "
+            "честный уровень доказательности (high/medium/low, соотнесён с C1-C5). "
+            "Рендерятся в обоих скинах через `OH.knowledgeView`; попап «?» метрики "
+            "показывает её видео и уровень доказательности." % ids
+        )
+        lines.append("")
+
+    # --- Audience personas -------------------------------------------------
+    personas = registry.get("personas", [])
+    if personas:
+        lines.append("## Аудиторные пресеты (персоны)")
+        lines.append("")
+        lines.append(
+            "Пресеты переставляют навигацию под аудиторию (opt-in, по умолчанию "
+            "выключено; при выборе - через `OH.personaGroups`). Эталонные профили "
+            "(отмечены V) прописаны полностью. Схема полей - в `personas_schema` реестра."
+        )
+        lines.append("")
+        lines.append(
+            "| id | Название | Эталон | Приоритетные группы | Метрик | Девайсов | Источников |"
+        )
+        lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+        for p in personas:
+            pg = ", ".join("`%s`" % _esc(x) for x in p.get("priority_groups", [])) or "—"
+            lines.append(
+                "| `%s` | %s | %s | %s | %d | %d | %d |"
+                % (
+                    _esc(p.get("id")),
+                    _dash(p.get("label_ru")),
+                    "V" if p.get("reference") else "—",
+                    pg,
+                    len(p.get("focus_metrics", [])),
+                    len(p.get("devices", [])),
+                    len(p.get("sources", [])),
+                )
+            )
+        lines.append("")
+
     # --- Metrics -----------------------------------------------------------
     lines.append("## Метрики")
     lines.append("")

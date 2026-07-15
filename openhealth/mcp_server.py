@@ -10,24 +10,17 @@ any MCP client) as a small set of **live-query tools** over stdio:
 - ``correlations`` — current behavior→recovery impact prompts (graded, capped).
 - ``ask`` — natural-language question answered from the local context files.
 
-Status / SDK note
------------------
-The official MCP Python SDK (the ``mcp`` package, https://modelcontextprotocol.io)
-is **not a stdlib module and is not currently vendored here** (core rule keeps
-runtime deps at zero). So this file is a *scaffold*, deliberately split in two:
+Layout
+------
+1. ``Engine`` + the tool registry (``list_tools`` / ``call_tool``) — pure-stdlib
+   tool implementations and their JSON Schemas, unit-test friendly and free of
+   any transport concern.
+2. ``dispatch`` + ``serve_stdio`` — a spec-compliant MCP transport speaking
+   JSON-RPC 2.0 over stdio.
 
-1. ``Engine`` + ``TOOLS`` — pure-stdlib, fully working tool implementations and
-   their JSON Schemas. This half has no dependency on any SDK and is unit-test
-   friendly. The real server and the fallback loop both call straight into it.
-2. ``serve_stdio()`` — the transport. If the ``mcp`` SDK is importable it wires a
-   real MCP stdio server (see the clearly marked ``TODO`` block, which mirrors
-   the canonical SDK shape). If the SDK is absent, it runs a minimal,
-   newline-delimited JSON-RPC-ish stdio loop so the engine is still drivable and
-   testable today — and prints exactly how to enable the real server.
-
-To enable the real MCP server, follow ``docs/mcp.md`` (add the optional ``mcp``
-dependency, then this module lights up the SDK path automatically). Do **not**
-treat the fallback loop as a spec-compliant MCP server; it is a stopgap.
+No SDK is required: the stdio transport is small enough to implement directly
+against the wire format, so the core rule (zero runtime dependencies) holds.
+See ``docs/mcp.md`` for registering it with an MCP host.
 """
 
 import json
@@ -287,124 +280,117 @@ def call_tool(engine: Engine, name: str, arguments: Optional[Dict[str, Any]] = N
 
 
 # ---------------------------------------------------------------------------
-# Transport.
+# Transport: MCP over stdio (JSON-RPC 2.0), stdlib only.
 # ---------------------------------------------------------------------------
 
-def _sdk_available() -> bool:
-    import importlib.util
+PROTOCOL_VERSION = "2025-06-18"
 
-    return importlib.util.find_spec("mcp") is not None
+
+def dispatch(engine: Engine, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Handle one JSON-RPC message.
+
+    Returns the reply object, or ``None`` when the message is a notification
+    (no ``id``) — per JSON-RPC those must never be answered. Sending a reply to
+    ``notifications/initialized`` is the classic way to break a handshake.
+    """
+    method = message.get("method")
+    has_id = "id" in message
+    mid = message.get("id")
+
+    if method == "initialize":
+        # Echo back the client's protocol version when it offers one: clients
+        # negotiate, and answering with a different version fails the handshake.
+        requested = (message.get("params") or {}).get("protocolVersion")
+        result: Dict[str, Any] = {
+            "protocolVersion": requested or PROTOCOL_VERSION,
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+        }
+    elif method == "ping":
+        result = {}
+    elif method == "tools/list":
+        result = {"tools": list_tools()}
+    elif method == "resources/list":
+        result = {"resources": []}
+    elif method == "prompts/list":
+        result = {"prompts": []}
+    elif method == "tools/call":
+        params = message.get("params") or {}
+        try:
+            data = call_tool(engine, params.get("name"), params.get("arguments") or {})
+            result = {
+                "content": [
+                    {"type": "text", "text": json.dumps(data, ensure_ascii=False, indent=2)}
+                ],
+                "isError": False,
+            }
+        except Exception as exc:
+            # A failing tool is an in-band result, not a protocol error — the
+            # model is meant to read the message and decide what to do next.
+            result = {
+                "content": [{"type": "text", "text": "%s: %s" % (type(exc).__name__, exc)}],
+                "isError": True,
+            }
+    elif not has_id:
+        return None  # unrecognized notification — nothing to answer
+    else:
+        return {
+            "jsonrpc": "2.0",
+            "id": mid,
+            "error": {"code": -32601, "message": "method not found: %s" % method},
+        }
+
+    return {"jsonrpc": "2.0", "id": mid, "result": result} if has_id else None
+
+
+def _write(out: TextIO, payload: Dict[str, Any]) -> bool:
+    """Write one JSON-RPC line. ``False`` means the client's pipe is gone."""
+    try:
+        out.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        out.flush()
+        return True
+    except BrokenPipeError:
+        return False
 
 
 def serve_stdio(root: Path, *, out: Optional[TextIO] = None, in_: Optional[TextIO] = None) -> int:
-    """Serve the engine over stdio.
+    """Serve the engine over stdio as a spec-compliant MCP server.
 
-    Uses the real MCP SDK when present; otherwise runs the stdlib fallback loop
-    and tells the operator how to enable the real server.
+    Newline-delimited JSON-RPC 2.0 covering ``initialize`` / ``tools/list`` /
+    ``tools/call`` / ``ping``, with notifications correctly left unanswered and
+    tool failures returned in-band. Pure stdlib: no SDK, so the zero-runtime-
+    dependency rule holds.
     """
     engine = Engine(root)
-    if _sdk_available():
-        return _serve_with_sdk(engine)
-    return _serve_fallback(engine, out=out or sys.stdout, in_=in_ or sys.stdin)
-
-
-def _serve_with_sdk(engine: Engine) -> int:
-    """Wire the official MCP SDK stdio server.
-
-    TODO(mcp-sdk): This is intentionally a documented stub, not live code, until
-    the optional ``mcp`` dependency is added (see docs/mcp.md). When enabled, the
-    canonical shape is roughly:
-
-        import anyio
-        from mcp.server import Server
-        from mcp.server.stdio import stdio_server
-        import mcp.types as types
-
-        server = Server(SERVER_NAME)
-
-        @server.list_tools()
-        async def _list() -> list[types.Tool]:
-            return [types.Tool(**t) for t in list_tools()]
-
-        @server.call_tool()
-        async def _call(name: str, arguments: dict) -> list[types.TextContent]:
-            result = call_tool(engine, name, arguments)
-            return [types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False))]
-
-        async def _run():
-            async with stdio_server() as (read, write):
-                await server.run(read, write, server.create_initialization_options())
-
-        anyio.run(_run)
-        return 0
-
-    The exact symbols above must be validated against the installed SDK version
-    before this stub is promoted to real code; do not assume this signature is
-    correct without checking the SDK that gets pinned in pyproject.
-    """
-    sys.stderr.write(
-        "openhealth.mcp_server: the 'mcp' SDK is importable but the SDK transport "
-        "is still a documented stub. See docs/mcp.md to finish wiring it, or run "
-        "with the SDK absent to use the stdlib fallback loop.\n"
-    )
-    return 2
-
-
-def _serve_fallback(engine: Engine, *, out: TextIO, in_: TextIO) -> int:
-    """Minimal newline-delimited JSON stdio loop (NOT spec-compliant MCP).
-
-    Protocol (one JSON object per line, one JSON response per line):
-      {"method": "list_tools"}                                  -> {"tools": [...]}
-      {"method": "call_tool", "name": "...", "arguments": {...}} -> {"result": {...}}
-      {"method": "ping"}                                         -> {"result": "pong"}
-
-    A stopgap so the engine is drivable and testable before the SDK is wired.
-    """
-    sys.stderr.write(
-        "openhealth.mcp_server: 'mcp' SDK not installed — running the stdlib "
-        "fallback stdio loop (newline-delimited JSON). This is NOT a spec-compliant "
-        "MCP server; see docs/mcp.md to enable the real one.\n"
-    )
-    sys.stderr.flush()
+    out = out or sys.stdout
+    in_ = in_ or sys.stdin
 
     for raw in in_:
         line = raw.strip()
         if not line:
             continue
-        response = _handle_fallback_line(engine, line)
-        out.write(json.dumps(response, ensure_ascii=False) + "\n")
-        out.flush()
-        if response.get("_stop"):
+        try:
+            message = json.loads(line)
+        except ValueError as exc:
+            if not _write(out, {"jsonrpc": "2.0", "id": None,
+                                "error": {"code": -32700, "message": "parse error: %s" % exc}}):
+                break
+            continue
+        if not isinstance(message, dict):
+            if not _write(out, {"jsonrpc": "2.0", "id": None,
+                                "error": {"code": -32600, "message": "invalid request"}}):
+                break
+            continue
+        try:
+            reply = dispatch(engine, message)
+        except Exception as exc:  # one bad message must never kill the server
+            if "id" not in message:
+                continue
+            reply = {"jsonrpc": "2.0", "id": message.get("id"),
+                     "error": {"code": -32603, "message": "internal error: %s" % exc}}
+        if reply is not None and not _write(out, reply):
             break
     return 0
-
-
-def _handle_fallback_line(engine: Engine, line: str) -> Dict[str, Any]:
-    """Parse + dispatch one fallback-protocol request line into a response dict."""
-    try:
-        request = json.loads(line)
-    except ValueError as exc:
-        return {"error": "invalid JSON: %s" % exc}
-
-    method = request.get("method")
-    try:
-        if method == "ping":
-            return {"result": "pong"}
-        if method in ("shutdown", "exit"):
-            return {"result": "bye", "_stop": True}
-        if method == "list_tools":
-            return {"tools": list_tools()}
-        if method == "call_tool":
-            name = request.get("name")
-            if not name:
-                return {"error": "call_tool requires a 'name'"}
-            result = call_tool(engine, name, request.get("arguments") or {})
-            return {"result": result}
-        return {"error": "unknown method %r" % method}
-    except KeyError as exc:
-        return {"error": str(exc)}
-    except Exception as exc:  # surface engine errors as a clean response, don't crash the loop
-        return {"error": "%s: %s" % (type(exc).__name__, exc)}
 
 
 # ---------------------------------------------------------------------------

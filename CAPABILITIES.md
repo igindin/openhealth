@@ -23,11 +23,73 @@
 | id | Название | Иконка | Порядок | Метрики |
 | --- | --- | --- | --- | --- |
 | `today` | Сегодня | `ph-house` | 1 | `recovery`, `hrv`, `rhr`, `sleep`, `strain`, `recovery_trend_30` |
+| `pulse` | Пульс дня | `ph-heart` | 2 | — |
+| `habits` | Привычки | `ph-check-square` | 3 | — |
 | `sleep` | Сон | `ph-moon` | 10 | `sleep_duration_h`, `time_in_bed_h`, `sleep_efficiency_pct`, `sleep_consistency_pct`, `sleep_performance_pct`, `sleep_debt_h`, `restorative_h`, `restorative_pct`, `sleep_stages`, `sleep_hours_vs_need`, `sleep_duration_trend_7` |
-| `strain` | Нагрузка | `ph-lightning` | 20 | `day_strain`, `average_hr`, `active_calories`, `strength_activity_time`, `recovery_time_in_bed`, `hr_zones` |
+| `strain` | Нагрузка | `ph-lightning` | 20 | `day_strain`, `average_hr`, `hr_zones` |
+| `workouts` | Тренировки | `ph-barbell` | 25 | `active_calories`, `strength_activity_time`, `recovery_time_in_bed` |
 | `stress` | Стресс | `ph-gauge` | 30 | `stress_monitor`, `sleep_stress`, `non_activity_stress`, `respiratory_rate`, `blood_oxygen`, `skin_temperature` |
-| `body` | Тело | `ph-person` | 40 | `weight`, `lean_body_mass`, `body_fat`, `steps`, `vo2max`, `fitness_age` |
+| `body` | Тело | `ph-person` | 40 | `vo2max`, `fitness_age`, `steps` |
+| `body_composition` | Состав тела | `ph-chart-pie` | 41 | `weight`, `lean_body_mass`, `body_fat` |
+| `biomarkers` | Анализы | `ph-flask` | 42 | — |
+| `dna` | ДНК | `ph-dna` | 43 | — |
+| `vitals` | Обзор показателей | `ph-chart-line-up` | 44 | — |
+| `trends` | Тренды | `ph-calendar` | 50 | — |
+| `timeline` | Хронология | `ph-footprints` | 51 | — |
+| `correlations` | Влияние | `ph-scales` | 52 | — |
+| `algorithms` | Алгоритмы | `ph-function` | 53 | — |
+| `journal` | Журнал | `ph-notebook` | 60 | — |
+| `protocols` | Протоколы | `ph-book-open` | 70 | — |
+| `research` | Research | `ph-microscope` | 71 | — |
+| `methodology` | Методологии | `ph-function` | 72 | — |
+| `cascade` | Каскад целей | `ph-compass` | 73 | — |
+| `devices` | Девайсы | `ph-watch` | 74 | — |
+| `sources` | Источники | `ph-graduation-cap` | 75 | — |
+| `medications` | Препараты и БАДы | `ph-pill` | 80 | — |
+| `vaccination` | Вакцинация | `ph-syringe` | 81 | — |
+| `diagnostics` | Диагностика | `ph-pulse` | 82 | — |
+| `reports` | Отчёты | `ph-file-text` | 83 | — |
+| `digests` | Дайджесты | `ph-bell` | 84 | — |
+| `sync` | Источники данных | `ph-plugs-connected` | 85 | — |
 | `settings` | Настройки | `ph-gear` | 99 | — |
+
+## Навигация (группы)
+
+Навигация обоих скинов строится из этих групп (не больше 9): V1 - сайдбар, V2 - правый навбар (Дом + группы + Настройки). Выбранная персона может переупорядочить группы (opt-in, по умолчанию выключено).
+
+| id | Название | Иконка | Порядок | Разделы |
+| --- | --- | --- | --- | --- |
+| `today` | Сегодня | `ph-house` | 1 | `today`, `pulse`, `habits` |
+| `sleep` | Сон | `ph-moon` | 2 | `sleep` |
+| `activity` | Активность | `ph-lightning` | 3 | `strain`, `workouts` |
+| `stress` | Стресс | `ph-gauge` | 4 | `stress` |
+| `body` | Тело и анализы | `ph-person` | 5 | `body`, `body_composition`, `biomarkers`, `dna`, `vitals` |
+| `analytics` | Аналитика | `ph-chart-line-up` | 6 | `trends`, `timeline`, `correlations`, `algorithms` |
+| `journal` | Журнал | `ph-notebook` | 7 | `journal` |
+| `knowledge` | Знание и цели | `ph-book-open` | 8 | `protocols`, `research`, `methodology`, `cascade`, `devices`, `sources` |
+| `medical` | Медкарта | `ph-first-aid` | 9 | `medications`, `vaccination`, `diagnostics`, `reports`, `digests`, `sync` |
+
+## Слой знаний
+
+Кураторские справочники (`devices`, `sources`) живут в `ui/web/assets/knowledge.json`: девайсы по категориям, источники протоколов и короткие видео к метрикам. У каждой записи есть провенанс (ссылка + дата проверки) и честный уровень доказательности (high/medium/low, соотнесён с C1-C5). Рендерятся в обоих скинах через `OH.knowledgeView`; попап «?» метрики показывает её видео и уровень доказательности.
+
+## Аудиторные пресеты (персоны)
+
+Пресеты переставляют навигацию под аудиторию (opt-in, по умолчанию выключено; при выборе - через `OH.personaGroups`). Эталонные профили (отмечены V) прописаны полностью. Схема полей - в `personas_schema` реестра.
+
+| id | Название | Эталон | Приоритетные группы | Метрик | Девайсов | Источников |
+| --- | --- | --- | --- | --- | --- | --- |
+| `weight-loss` | Похудение | — | `today`, `body`, `activity`, `analytics` | 6 | 3 | 3 |
+| `seniors` | Активное долголетие | — | `today`, `activity`, `body`, `medical` | 6 | 3 | 3 |
+| `athlete` | Спортсмен | V | `today`, `activity`, `sleep`, `stress`, `analytics` | 8 | 5 | 4 |
+| `biohacker` | Биохакер | V | `today`, `analytics`, `sleep`, `stress`, `body`, `knowledge` | 8 | 6 | 4 |
+| `endurance` | Выносливость / айронмен | — | `today`, `activity`, `sleep`, `analytics` | 7 | 5 | 3 |
+| `data-geek` | Гик данных | — | `analytics`, `today`, `sleep`, `knowledge` | 6 | 4 | 3 |
+| `womens-health` | Женское здоровье | — | `today`, `body`, `sleep`, `stress`, `medical` | 6 | 3 | 2 |
+| `chronic` | Хронические состояния | — | `today`, `medical`, `body`, `analytics` | 6 | 3 | 2 |
+| `low-energy` | Мало энергии | V | `today`, `sleep`, `stress`, `body` | 7 | 4 | 3 |
+| `adhd` | СДВГ / фокус | — | `today`, `sleep`, `stress`, `journal` | 6 | 4 | 1 |
+| `mental-practice` | Ментальное здоровье и практики | — | `today`, `stress`, `sleep`, `journal` | 6 | 5 | 2 |
 
 ## Метрики
 

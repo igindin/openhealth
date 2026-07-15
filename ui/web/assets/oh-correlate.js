@@ -54,9 +54,9 @@
     s.textContent =
       '#oh-corr-overlay{position:fixed;inset:0;z-index:100001;display:none}' +
       '#oh-corr-overlay .oh-corr-back{position:absolute;inset:0;background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}' +
-      '#oh-corr-overlay .oh-corr-card{position:relative;max-width:min(600px,calc(100vw - 24px));margin:8vh auto 0;background:var(--card-inner,var(--bg-card,#fff));color:var(--ink,var(--text-primary,#111));border-radius:18px;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.4);font-family:inherit}' +
+      '#oh-corr-overlay .oh-corr-card{position:relative;max-width:min(600px,calc(100vw - 24px));max-height:84vh;overflow:auto;margin:8vh auto 0;background:var(--card-inner,var(--bg-card,#fff));color:var(--ink,var(--text-primary,#111));border-radius:18px;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.4);font-family:inherit}' +
       '.oh-corr-head{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:16px;margin-bottom:14px}' +
-      '.oh-corr-x{background:none;border:none;color:inherit;font-size:18px;cursor:pointer;opacity:.6;line-height:1}' +
+      '.oh-corr-x{background:none;border:none;color:inherit;font-size:18px;cursor:pointer;opacity:.6;line-height:1;padding:10px;margin:-10px}' +
       '.oh-corr-r{font-size:34px;font-weight:800;line-height:1}' +
       '.oh-corr-int{opacity:.7;font-size:13px;margin-bottom:14px}' +
       '.oh-corr-series{margin:10px 0}' +
@@ -109,28 +109,53 @@
   }
 
   var drag = null;
+  // Touch: drag activates after a stationary long-press (350ms) so normal page
+  // scroll keeps working; a swipe that moves before the hold simply scrolls.
+  var TOUCH_HOLD_MS = 350;
+
+  function cleanupDrag() {
+    if (!drag) return;
+    if (drag.ghost) drag.ghost.remove();
+    drag.card.classList.remove('oh-drag-src');
+    document.body.classList.remove('oh-dragging');
+    document.querySelectorAll('.oh-drop-target').forEach(function (el) { el.classList.remove('oh-drop-target'); });
+    drag = null;
+  }
+
+  function startDrag(e) {
+    drag.started = true;
+    var r = drag.card.getBoundingClientRect();
+    var g = drag.card.cloneNode(true);
+    g.classList.add('oh-drag-ghost');
+    g.style.cssText += ';position:fixed;left:0;top:0;margin:0;width:' + r.width + 'px;height:' + r.height + 'px;pointer-events:none;z-index:100000;opacity:.92;';
+    drag.offx = e.clientX - r.left; drag.offy = e.clientY - r.top; drag.ghost = g;
+    document.body.appendChild(g);
+    drag.card.classList.add('oh-drag-src');
+    document.body.classList.add('oh-dragging');
+  }
+
   function init() {
     if (init._bound) return; init._bound = true;
     ensureStyle();
     document.addEventListener('pointerdown', function (e) {
+      // Second finger / non-left button must not hijack an active drag (a
+      // replaced `drag` would leak its ghost element into the page forever).
+      if (drag || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
       var card = e.target.closest && e.target.closest('[data-metric]');
       if (!card) return;
       if (e.target.closest('button,a,input,select,textarea,.oh-corr-card')) return;
-      drag = { card: card, id: card.getAttribute('data-metric'), x: e.clientX, y: e.clientY, started: false, ghost: null, target: null };
+      drag = { card: card, id: card.getAttribute('data-metric'), x: e.clientX, y: e.clientY, t0: e.timeStamp, touch: e.pointerType === 'touch', started: false, ghost: null, target: null };
     });
     document.addEventListener('pointermove', function (e) {
-      if (!drag) return;
+      if (!drag || !e.isPrimary) return;
       if (!drag.started) {
-        if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 8) return;
-        drag.started = true;
-        var r = drag.card.getBoundingClientRect();
-        var g = drag.card.cloneNode(true);
-        g.classList.add('oh-drag-ghost');
-        g.style.cssText += ';position:fixed;left:0;top:0;margin:0;width:' + r.width + 'px;height:' + r.height + 'px;pointer-events:none;z-index:100000;opacity:.92;';
-        drag.offx = e.clientX - r.left; drag.offy = e.clientY - r.top; drag.ghost = g;
-        document.body.appendChild(g);
-        drag.card.classList.add('oh-drag-src');
-        document.body.classList.add('oh-dragging');
+        var moved = Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y);
+        if (drag.touch) {
+          // Moving before the hold elapses = the user is scrolling, not dragging.
+          if (e.timeStamp - drag.t0 < TOUCH_HOLD_MS) { if (moved >= 8) drag = null; return; }
+          if (moved < 4) return;
+        } else if (moved < 8) return;
+        startDrag(e);
       }
       drag.ghost.style.transform = 'translate(' + (e.clientX - drag.offx) + 'px,' + (e.clientY - drag.offy) + 'px) rotate(1.5deg) scale(.98)';
       drag.ghost.style.display = 'none';
@@ -141,17 +166,21 @@
       drag.target = (tgt && tgt !== drag.card) ? tgt : null;
       if (drag.target) drag.target.classList.add('oh-drop-target');
     });
-    document.addEventListener('pointerup', function () {
-      if (!drag) return;
-      if (drag.started) {
-        if (drag.ghost) drag.ghost.remove();
-        drag.card.classList.remove('oh-drag-src');
-        document.body.classList.remove('oh-dragging');
-        document.querySelectorAll('.oh-drop-target').forEach(function (el) { el.classList.remove('oh-drop-target'); });
-        if (drag.target) overlay(drag.id, drag.target.getAttribute('data-metric'));
-      }
-      drag = null;
+    // Once a drag is live, keep the page from scrolling under the finger.
+    // touchmove is cancelable here because the finger was stationary through the
+    // long-press, so the browser has not committed to a scroll yet.
+    document.addEventListener('touchmove', function (e) {
+      if (drag && drag.started) e.preventDefault();
+    }, { passive: false });
+    document.addEventListener('pointerup', function (e) {
+      if (!drag || !e.isPrimary) return;
+      var id = drag.id, target = drag.target, started = drag.started;
+      cleanupDrag();
+      if (started && target) overlay(id, target.getAttribute('data-metric'));
     });
+    // The browser can cancel the pointer (scroll takeover, alert, tab switch):
+    // without this cleanup the ghost card stays stuck on screen forever.
+    document.addEventListener('pointercancel', cleanupDrag);
   }
 
   OH.correlate = { init: init, overlay: overlay };

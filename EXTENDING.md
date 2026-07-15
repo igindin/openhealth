@@ -60,9 +60,35 @@
   реальная по `target_key`, иначе `target_default`.
 - `OH.raw(key, fb)` - любое значение из `data.local.json` по ключу (например,
   `readiness`, `action`), с фолбэком `fb`.
-- `OH.state(id)` - `'real'` если есть реальные данные, иначе `'demo'`.
+- `OH.state(id)` - единый контракт состояния блока: `'real'` (есть реальное
+  значение), `'insufficient'` (данные есть, но ниже порога `eligibility`),
+  `'empty'` (источник не подключён / раздел `status:"soon"`), `'demo'` (реальных
+  нет, показан помеченный пример). Скины красят не-real состояния приглушённо и
+  ставят честный чип («мало данных» / «нет данных» / «демо»).
+- `OH.eligibility(id) -> {ok, have, need, label}` - порог пригодности для
+  вычисляемых метрик (например, корреляции требуют N дней). Без `eligibility` в
+  реестре -> `{ok:true}`.
+- `OH.evidence(id)` - доказательность утверждения `{confidence:C1-C5, type,
+  sources}` (личные n=1 паттерны не выше C3). Без `evidence` -> `null`.
 - `OH.manifest()` - паритет-манифест: `sections` → метрики (`id` + `state`).
   Это эталон того, что любой скин обязан отрисовать из реестра.
+
+Навигация, персоны и слой знаний (тоже из реестра, оба скина читают):
+
+- `OH.nav.groups()` - `<=9` групп навигации с их подразделами (из
+  `registry.groups`), отфильтрованных по видимости `openhealth.nav.hidden`. Оба
+  скина строят навигацию только из этого.
+- `OH.personas()` / `OH.persona(id)` / `OH.setPersona(id)` / `OH.personaActive` -
+  11 аудиторных пресетов (`registry.personas`). `OH.personaGroups()` возвращает
+  группы, переупорядоченные под активную персону; без активной персоны это ровно
+  `OH.nav.groups()` (по умолчанию навигация не меняется - opt-in).
+- `OH.devices()` / `OH.protocolSources()` / `OH.videosFor(metricId)` - слой
+  знаний из `assets/knowledge.json`. `OH.evidenceLabel(level)` -> `{label, cls}`
+  (high/medium/low или C1-C5) для бейджа доказательности.
+- `OH.sectionView(id)` рендерит раздел; для `kind:"knowledge"` -> `OH.knowledgeView`,
+  для `status:"soon"` -> `OH.sectionStub` (честная заглушка «скоро»). Разметку
+  `sectionView` не переписывать: на ней держатся DnD (`[data-metric]`) и
+  провенанс (`.oh-q[data-prov]`).
 
 ## Контракт кита графиков: глобальный `OHCharts`
 
@@ -110,6 +136,29 @@ Parity-проверка сравнивает `__renderManifest()` каждого
   `state`, `manifest`, `load`), и переиспользовать наш скин как есть.
 - **Только дизайн.** Взять систему токенов и кит графиков (`oh-charts.js`)
   standalone, без остального движка.
+
+## Навигация группами, персоны и знания
+
+- **Группа навигации.** Правь `registry.groups` (id, label_ru, icon, order,
+  section_ids). Держи не больше 9 групп - навбар V2 = Дом + группы + Настройки, и
+  этот лимит проверяет parity-тест. Каждый `section_id` должен ссылаться на
+  существующий раздел. Оба скина подхватят из `OH.nav.groups()` - отдельный код
+  не нужен. Немигрированные разделы показывают честную заглушку «скоро».
+- **Персона (аудиторный пресет).** Правь `registry.personas` по схеме
+  `personas_schema`: id, label_ru, icon, tagline, priority_groups (из groups),
+  focus_metrics (из metrics), devices/sources (из knowledge.json), note,
+  reference. Все ссылки обязаны резолвиться - parity-тест это проверяет. Пикер в
+  настройках обоих скинов наполняется автоматически; выбор переупорядочивает
+  навигацию через `OH.personaGroups` (opt-in, по умолчанию выключено).
+- **Запись слоя знаний.** Правь `assets/knowledge.json` (`devices` /
+  `protocol_sources` / `video_refs`). Каждая запись обязана нести провенанс
+  (`source_url`/`url` + `checked_at`) и честный `evidence_level`
+  (high/medium/low). Видео привязывается к метрике полем `metric_id` (метрика
+  должна существовать). Ничего не выдумывать - только реальные ссылки.
+- **Состояния и честность.** Никогда не показывать выдуманное как реальное:
+  метрика без данных -> `demo`/`empty`, ниже порога -> `insufficient` с условием
+  и действием. Для порога добавь метрике `eligibility` (`need`, `have_key`,
+  `label_ru`). Личные n=1 паттерны в `evidence` не выше C3.
 
 ## Правило паритета
 

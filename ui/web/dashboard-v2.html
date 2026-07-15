@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>OpenHealth v2 Dashboard</title>
   
   <!-- Fonts Geist and Geist Mono -->
@@ -20,10 +20,13 @@
 
   <!-- OpenHealth shared engine: single-source registry + chart kit (see EXTENDING.md).
        V2 is a SKIN over this engine; it renders Today from OH, never from a local copy. -->
-  <script src="assets/oh-registry.js"></script>
-  <script src="assets/oh-charts.js"></script>
-  <script src="assets/oh-correlate.js"></script>
-  <script src="assets/oh-provenance.js"></script>
+  <script src="assets/oh-registry.js?v=8"></script>
+  <script src="assets/oh-charts.js?v=3"></script>
+  <script src="assets/oh-correlate.js?v=2"></script>
+  <script src="assets/oh-provenance.js?v=3"></script>
+  <script src="assets/oh-i18n.js?v=4"></script>
+  <script src="assets/oh-notify.js?v=1"></script>
+  <script src="assets/oh-onboarding.js?v=12"></script>
 
   <style>
     :root {
@@ -44,10 +47,25 @@
       --radius-lg: 24px;
       --radius-md: 16px;
       --radius-sm: 8px;
-      
+
+      /* Spacing scale — one baseline (8px) so every gap is n x unit.
+         Use these tokens, not hand-picked px, anywhere in this skin. */
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 24px;
+      --space-6: 32px;
+
+      /* Metric-tile contract (the repeating bento unit). Fixed label band so
+         every tile's value lands on the same line and icons never drift. */
+      --tile-pad: 16px;
+      --tile-label-h: 30px;   /* room for a 2-line uppercase label */
+      --tile-icon: 16px;
+
       --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
       --font-mono: 'Geist Mono', monospace;
-      
+
       --transition-smooth: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
@@ -59,6 +77,10 @@
 
     html {
       scroll-behavior: smooth;
+      /* overflow-x lives on <html>, NOT <body>: putting it on body forces
+         body's overflow-y to `auto`, which hijacks the scroll container and
+         breaks window.scrollTo / window.scrollY (rail nav + scroll-spy). */
+      overflow-x: hidden;
     }
 
     body {
@@ -67,7 +89,12 @@
       font-family: var(--font-sans);
       padding: 32px;
       min-height: 100dvh;
-      overflow-x: hidden;
+    }
+
+    /* Air above a section when the rail scrolls it to the top. */
+    #sec-today, #sec-habits, #sec-trends, #sec-biomarkers, #sec-correlations,
+    #sec-settings, #ohAlgorithms, .oh-section {
+      scroll-margin-top: 28px;
     }
 
     /* Scrollbar styling */
@@ -141,6 +168,35 @@
     }
 
     /* Recovery Pill in Header */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+    }
+
+    /* Sync button — bento round icon, matches the capsule surface */
+    .oh-sync-btn {
+      width: 44px;
+      height: 44px;
+      flex: 0 0 auto;
+      aspect-ratio: 1 / 1;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+      background: var(--bg-card);
+      color: var(--text-primary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.15rem;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02);
+      transition: var(--transition-smooth);
+    }
+    .oh-sync-btn:hover { background: var(--bg-main); transform: scale(1.06); }
+    .oh-sync-btn:disabled { opacity: 0.6; cursor: default; }
+    .oh-sync-btn.syncing i { animation: oh-spin 0.9s linear infinite; }
+    @keyframes oh-spin { to { transform: rotate(360deg); } }
+
     .recovery-capsule {
       display: flex;
       align-items: center;
@@ -167,7 +223,9 @@
     /* Bento Grid Layout */
     .bento-grid {
       display: grid;
-      grid-template-columns: 1.2fr 1.8fr;
+      /* minmax(0,·): треки не имеют права раздуваться под min-content контента
+         (nowrap-строка внутри карточки иначе распирает весь лейаут). */
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.8fr);
       gap: 24px;
     }
 
@@ -177,7 +235,10 @@
       gap: 24px;
     }
 
-    /* Bento Card */
+    /* Bento Card. NOTE: no opacity entry-animation — any opacity tween (GSAP or
+       CSS) can stall before completing (background/automated tabs) and leave the
+       card faded or blank, which is exactly the bug we hit. Cards are visible by
+       default; a subtle lift on hover is the only motion. */
     .bento-card {
       background: var(--bg-card);
       border-radius: var(--radius-lg);
@@ -307,7 +368,7 @@
     /* Metric Colored Bento Cards Grid */
     .metrics-bento-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 20px;
     }
 
@@ -429,6 +490,9 @@
       display: flex;
       align-items: center;
       gap: 16px;
+      /* min-width:0 по всей flex-цепочке: nowrap-текст внутри иначе задаёт
+         min-content ~520px и распирает ВЕСЬ мобильный лейаут до гор. скролла. */
+      min-width: 0;
     }
 
     .urgent-icon-circle {
@@ -447,6 +511,7 @@
       display: flex;
       flex-direction: column;
       gap: 2px;
+      min-width: 0;
     }
 
     .urgent-card-title {
@@ -457,7 +522,8 @@
     .urgent-card-why {
       font-size: 0.85rem;
       color: var(--text-muted);
-      max-width: 400px;
+      /* 400px на десктопе, но не шире доступного места на телефоне */
+      max-width: min(400px, 100%);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -886,6 +952,11 @@
       gap: 16px;
     }
 
+    /* Honest insufficient-data state (no fabricated effects) */
+    .corr-empty { grid-column: 1 / -1; padding: 4px 2px; }
+    .corr-empty-title { font-weight: 700; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .corr-empty-sub { font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; max-width: 60ch; }
+
     .correlation-mini-card {
       display: flex;
       align-items: center;
@@ -953,6 +1024,8 @@
     .rail-logo {
       width: 48px;
       height: 48px;
+      aspect-ratio: 1 / 1;
+      flex: 0 0 auto;
       border-radius: 50%;
       background: var(--color-dark);
       color: var(--color-yellow);
@@ -972,6 +1045,8 @@
     .rail-btn {
       width: 44px;
       height: 44px;
+      aspect-ratio: 1 / 1;
+      flex: 0 0 auto;
       border-radius: 50%;
       border: none;
       background: transparent;
@@ -1179,8 +1254,15 @@
         flex-direction: column;
         align-items: center;
         justify-content: space-between;
-        padding: 24px 0;
+        /* gap is a MIN distance even when space-between collapses (short window),
+           so the logo never touches the first nav button. overflow-y guards the
+           rare case the rail is taller than the viewport. */
+        gap: 16px;
+        overflow-y: auto;
+        scrollbar-width: none; /* hide the rail's own scrollbar (still scrolls by wheel) */
+        padding: 18px 0;
       }
+      .icon-rail::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
       .rail-nav {
         flex-direction: column;
@@ -1206,17 +1288,21 @@
         border-radius: var(--radius-lg);
         padding: 0 32px;
       }
+
+      /* Плавающий бар не должен перекрывать низ контента. */
+      body { padding-bottom: 140px; }
     }
 
     /* Tablet & Mobile (Collapse sidebar and bottom panel) */
     @media (max-width: 1023px) {
       body {
         padding: 20px;
-        padding-bottom: 96px; /* Space for the bottom rail */
+        /* Space for the bottom rail + the iPhone home-indicator zone. */
+        padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
       }
 
       .bento-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
       }
 
       .trend-card, .biomarkers-card {
@@ -1228,16 +1314,23 @@
         bottom: 0;
         left: 0;
         right: 0;
-        height: 72px;
+        /* Safe area: keep the 44px buttons above the iPhone home indicator. */
+        height: calc(72px + env(safe-area-inset-bottom, 0px));
         width: 100%;
         border-radius: 20px 20px 0 0;
         display: flex;
         flex-direction: row;
         align-items: center;
-        justify-content: space-around;
-        padding: 0 16px;
+        justify-content: flex-start;
+        padding: 0 16px env(safe-area-inset-bottom, 0px);
         box-shadow: 0 -5px 25px rgba(0, 0, 0, 0.05);
+        /* 10 nav buttons don't fit a 375px bar: scroll instead of clipping the
+           edges (clipped buttons = unreachable sections). */
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
       }
+      .icon-rail::-webkit-scrollbar { display: none; }
 
       .rail-logo {
         display: none; /* Hide logo inside mobile bottom bar */
@@ -1245,8 +1338,10 @@
 
       .rail-nav {
         flex-direction: row;
-        width: 100%;
+        width: max-content;   /* content-sized so every button stays reachable */
+        min-width: 100%;      /* ...but still fills wide phones/tablets */
         justify-content: space-around;
+        gap: 8px;
       }
 
       /* Disable tooltips on mobile */
@@ -1298,7 +1393,7 @@
         margin-top: 4px;
       }
       .metrics-bento-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
       }
       .header-info h1 {
         font-size: 1.8rem;
@@ -1329,14 +1424,17 @@
         <h1 id="headerGreeting">Привет</h1>
         <p id="headerDate">вторник, сегодня</p>
       </div>
-      <div class="recovery-capsule">
-        <div class="capsule-dot" id="headerCapsuleDot"></div>
-        <span class="capsule-text" id="headerCapsuleText">recovery 64%</span>
+      <div class="header-actions">
+        <button class="oh-sync-btn" id="syncBtnV2" type="button" title="Синхронизировать WHOOP" aria-label="Синхронизировать данные WHOOP"><i class="ph ph-arrows-clockwise"></i></button>
+        <div class="recovery-capsule">
+          <div class="capsule-dot" id="headerCapsuleDot"></div>
+          <span class="capsule-text" id="headerCapsuleText">recovery 64%</span>
+        </div>
       </div>
     </header>
 
     <!-- Bento Grid Container (padding-bottom clears the fixed bottom stats strip) -->
-    <div class="bento-grid" style="padding-bottom:140px;">
+    <div class="bento-grid">
       
       <!-- LEFT COLUMN -->
       <div class="grid-column" id="sec-today">
@@ -1409,7 +1507,7 @@
       <!-- WIDE BOTTOM CARDS -->
       
       <!-- 30-Day Recovery Trend Chart -->
-      <div class="bento-card trend-card" id="sec-trends">
+      <div class="bento-card trend-card" id="sec-trends" data-metric="recovery_trend_30">
         <div class="bento-card-header">
           <span class="bento-card-title">Тренд восстановления (30 дней)</span>
           <div class="card-icon-wrapper"><i class="ph ph-chart-line-up"></i></div>
@@ -1467,18 +1565,28 @@
         .oh-section__head { display:flex; align-items:center; gap:10px; margin-bottom:16px; }
         .oh-section__icon { font-size:20px; }
         .oh-section__title { font:600 17px var(--font-sans); margin:0; }
-        .oh-section__grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap:14px; align-items:start; }
-        .oh-tile { background: var(--bg-main); border-radius: var(--radius-md); padding:14px 16px; }
-        .oh-tile__top { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
-        .oh-tile__label { font:600 11px var(--font-sans); letter-spacing:.5px; color: var(--text-muted); text-transform:uppercase; }
-        .oh-tile__icon { color: var(--text-muted); font-size:16px; }
+        /* Equal-height tiles in a row (Gestalt similarity): stretch + auto-rows
+           equal so every same-kind tile reads as one family, not ragged. */
+        .oh-section__grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); grid-auto-rows: 1fr; gap: var(--space-3); align-items:stretch; }
+        .oh-tile { display:flex; flex-direction:column; height:100%; background: var(--bg-main); border-radius: var(--radius-md); padding: var(--tile-pad); }
+        /* Label band is a fixed height and top-aligned, so the value lands on the
+           same line across tiles and the icons sit on a shared top edge. */
+        .oh-tile__top { display:flex; justify-content:space-between; align-items:flex-start; gap: var(--space-2); min-height: var(--tile-label-h); margin-bottom: var(--space-2); }
+        .oh-tile__label { font:600 11px/1.35 var(--font-sans); letter-spacing:.5px; color: var(--text-muted); text-transform:uppercase; }
+        .oh-tile__icon { display:inline-flex; align-items:center; gap: var(--space-1); flex:0 0 auto; color: var(--text-muted); font-size: var(--tile-icon); line-height:1; }
         .oh-tile__val { font:700 26px var(--font-sans); }
         .oh-tile__unit { font-size:13px; font-weight:500; color: var(--text-muted); }
-        .oh-chart-card { grid-column: span 2; background: var(--bg-main); border-radius: var(--radius-md); padding:14px 16px; min-width:0; }
-        .oh-chart-card__head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+        .oh-chart-card { grid-column: span 2; display:flex; flex-direction:column; background: var(--bg-main); border-radius: var(--radius-md); padding: var(--tile-pad); min-width:0; }
+        .oh-chart-card__head { display:flex; justify-content:space-between; align-items:flex-start; gap: var(--space-2); margin-bottom: var(--space-3); }
         .oh-chart-card__label { font:600 13px var(--font-sans); }
-        .oh-chip { font:500 10px var(--font-sans); color: var(--text-muted); background: rgba(0,0,0,.05); padding:3px 8px; border-radius:999px; display:inline-flex; align-items:center; gap:4px; margin-top:8px; }
-        .oh--demo { opacity:.72; }
+        /* fixed label band keeps values on one line, so chips already align
+           across a row; sit the chip just under the value, left-aligned. */
+        .oh-tile .oh-chip { margin-top:auto; }
+        .oh-chip { font:500 10px var(--font-sans); color: var(--text-muted); background: rgba(0,0,0,.05); padding:3px 8px; border-radius:999px; display:inline-flex; align-items:center; gap: var(--space-1); margin-top: var(--space-2); align-self:flex-start; }
+        .oh--demo { opacity:.55; filter: saturate(.25); }
+        .oh-demo-banner { display:flex; align-items:center; gap:8px; font:500 12px var(--font-sans); color: var(--text-muted);
+          border:1px dashed rgba(0,0,0,.18); border-radius:10px; padding:8px 12px; margin:6px 0 10px; }
+        .oh-demo-banner a { color:inherit; cursor:pointer; text-decoration:underline; }
         @keyframes oh-rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
         .oh-section { animation: oh-rise .5s cubic-bezier(.16,1,.3,1) both; }
         @media (max-width:760px){ .oh-chart-card{ grid-column:1 / -1; } }
@@ -1494,11 +1602,21 @@
         </div>
         <div style="display:flex; flex-direction:column; gap:18px;">
           <div>
+            <div style="font-weight:600; margin-bottom:6px;">Настройка OpenHealth</div>
+            <span class="metric-subtitle">Пошаговая сборка под твою цель: какие модули показывать и какая палитра.</span>
+            <button type="button" onclick="try{OHOnboarding.open({rerun:true})}catch(e){}" style="margin-top:8px; display:inline-flex; align-items:center; gap:8px; padding:12px 16px; border-radius:var(--radius-md); border:1px solid rgba(0,0,0,0.12); background:var(--bg-card); color:var(--text-primary); font:inherit; cursor:pointer;"><i class="ph ph-arrows-clockwise"></i> Перезапустить настройку</button>
+          </div>
+          <div>
             <div style="font-weight:600; margin-bottom:10px;">Скин интерфейса</div>
             <div style="display:flex; gap:12px; flex-wrap:wrap;">
               <button type="button" onclick="setSkin('v1')" style="display:flex; align-items:center; gap:8px; padding:12px 16px; border-radius:var(--radius-md); border:1px solid rgba(0,0,0,0.12); background:var(--bg-card); color:var(--text-primary); font:inherit; cursor:pointer;"><i class="ph ph-moon"></i> Классический (тёмный)</button>
               <button type="button" onclick="setSkin('v2')" style="display:flex; align-items:center; gap:8px; padding:12px 16px; border-radius:var(--radius-md); border:2px solid var(--color-purple); background:var(--bg-card); color:var(--text-primary); font:inherit; cursor:pointer;"><i class="ph ph-squares-four"></i> Bento (светлый) · сейчас</button>
             </div>
+          </div>
+          <div>
+            <div style="font-weight:600; margin-bottom:6px;">Профиль (пресет)</div>
+            <span class="metric-subtitle">Переставляет разделы под твою цель. По умолчанию выключено — навигация не меняется.</span>
+            <select id="personaPickerV2" onchange="ohSetPersona(this.value)" style="margin-top:8px; padding:10px 12px; border-radius:var(--radius-md); border:1px solid rgba(0,0,0,0.12); background:var(--bg-card); color:var(--text-primary); font:inherit; width:100%; max-width:340px; display:block;"></select>
           </div>
           <div>
             <div style="font-weight:600; margin-bottom:6px;">Тема</div>
@@ -1513,21 +1631,7 @@
 
   <!-- RIGHT Vertical / BOTTOM Horizontal Icon Rail -->
   <div class="icon-rail">
-    <div class="rail-logo">OH</div>
-    <div class="rail-nav">
-      <button class="rail-btn active" data-target="sec-today" data-tooltip="Сегодня"><i class="ph ph-house"></i></button>
-      <button class="rail-btn" data-target="sec-habits" data-tooltip="Привычки"><i class="ph ph-check-square"></i></button>
-      <button class="rail-btn" data-target="sec-trends" data-tooltip="Тренды"><i class="ph ph-chart-line-up"></i></button>
-      <button class="rail-btn" data-target="sec-biomarkers" data-tooltip="Анализы"><i class="ph ph-flask"></i></button>
-      <button class="rail-btn" data-target="sec-correlations" data-tooltip="Влияние"><i class="ph ph-scales"></i></button>
-      <button class="rail-btn" data-target="oh-sec-sleep" data-tooltip="Сон"><i class="ph ph-moon"></i></button>
-      <button class="rail-btn" data-target="oh-sec-strain" data-tooltip="Нагрузка"><i class="ph ph-lightning"></i></button>
-      <button class="rail-btn" data-target="oh-sec-stress" data-tooltip="Стресс"><i class="ph ph-gauge"></i></button>
-      <button class="rail-btn" data-target="oh-sec-body" data-tooltip="Тело"><i class="ph ph-person"></i></button>
-      <button class="rail-btn" data-target="ohAlgorithms" data-tooltip="Алгоритмы"><i class="ph ph-function"></i></button>
-      <button class="rail-btn" data-target="sec-settings" data-tooltip="Настройки"><i class="ph ph-gear"></i></button>
-    </div>
-    <button class="rail-btn" id="scrollTopBtn" data-tooltip="Наверх" style="opacity:0.6;"><i class="ph ph-arrow-up"></i></button>
+    <div class="rail-nav" id="railNav"><!-- built from OH.nav.groups(): Дом + ≤9 групп + Настройки --></div>
   </div>
 
   <!-- BOTTOM Statistics Strip (Floating / Sticky Panel) -->
@@ -1592,12 +1696,15 @@
       trendSleep: [7.0, 7.5, 6.8, 6.2, 7.8, 8.1, 7.2, 7.4, 6.9, 7.1, 8.0, 7.8, 7.2, 7.2],
       trendStrain: [12.1, 14.5, 11.2, 8.5, 13.0, 16.2, 12.8, 14.2, 10.5, 12.0, 15.8, 13.2, 11.0, 14.2],
 
+      // Habits = manual daily check-in. Default UNCHECKED (honest: the user marks
+      // them; we don't pre-fill "done"). No fabricated %-recovery per habit — the
+      // real effect appears only in correlations once eligibility (≥5/5 days) is met.
       habits: [
-        { id: "sleep", label: "Лечь до 23:30", done: true, delta: 8, icon: "ph-moon" },
-        { id: "light", label: "Свет утром 15 мин", done: true, delta: 9, icon: "ph-sun" },
-        { id: "walk", label: "Прогулка 10к шагов", done: false, delta: 5, icon: "ph-footprints" },
-        { id: "water", label: "Вода 2.5л", done: false, delta: 3, icon: "ph-drop" },
-        { id: "nocoffee", label: "Без кофе после 15:00", done: true, delta: 12, icon: "ph-coffee" }
+        { id: "sleep", label: "Лечь до 23:30", done: false, icon: "ph-moon" },
+        { id: "light", label: "Свет утром 15 мин", done: false, icon: "ph-sun" },
+        { id: "walk", label: "Прогулка 10к шагов", done: false, icon: "ph-footprints" },
+        { id: "water", label: "Вода 2.5л", done: false, icon: "ph-drop" },
+        { id: "nocoffee", label: "Без кофе после 15:00", done: false, icon: "ph-coffee" }
       ],
       
       biomarkers: [
@@ -1609,13 +1716,11 @@
       ],
       biomarkersConnected: true,
       
-      correlations: [
-        { label: "Алкоголь вечером", delta: -21, dir: "down", grade: "C3", icon: "ph-wine" },
-        { label: "Свет утром 15 мин", delta: 9, dir: "up", grade: "C3", icon: "ph-sun" },
-        { label: "Экран после 23:00", delta: -12, dir: "down", grade: "C2", icon: "ph-device-mobile" },
-        { label: "Тренировка днём", delta: 6, dir: "up", grade: "C2", icon: "ph-barbell" },
-        { label: "Медитация 10 мин", delta: 4, dir: "up", grade: "C2", icon: "ph-brain" }
-      ],
+      // No seed correlations: showing fabricated effects (−21% etc.) as if real
+      // is dishonest. Empty -> the block renders the honest "insufficient_data"
+      // state (condition + action), never made-up numbers. Real correlations
+      // arrive via data.local.json once the journal has enough overlap with recovery.
+      correlations: [],
       
       readiness: "Recovery 64% (жёлтая зона) + три встречи в календаре + цель «стабильная энергия» — умеренный день, тяжёлую тренировку лучше перенести на завтра.",
       action: {
@@ -1664,9 +1769,14 @@
       const col = getRecoveryColor(rec);
       const zoneText = getRecoveryZoneText(rec);
 
-      // Update Header Pill
+      // Update Header Pill. Honesty: without real data the number is the
+      // registry demo — say so right in the capsule and dim the hero card,
+      // never present a fabricated "recovery 78%" as the user's own.
+      const isDemo = !(window.OH && OH.state && OH.state('recovery') === 'real');
       document.getElementById('headerCapsuleDot').style.background = col;
-      document.getElementById('headerCapsuleText').textContent = `recovery ${rec}%`;
+      document.getElementById('headerCapsuleText').textContent = `recovery ${rec}%` + (isDemo ? ' · демо' : '');
+      const heroCard = document.querySelector('.hero-recovery-card');
+      if (heroCard) heroCard.classList.toggle('oh--demo', isDemo);
 
       // Recovery ring via the SHARED chart kit (OHCharts.ring) - same kit V1 uses.
       const ringHost = document.querySelector('.recovery-ring-container');
@@ -1770,7 +1880,7 @@
               <div class="urgent-icon-circle" style="color: var(--color-purple);"><i class="ph ph-footprints"></i></div>
               <div class="urgent-text-content">
                 <span class="urgent-card-title">${walkHabit.label}</span>
-                <span class="urgent-card-why">${walkHabit.done ? 'Цель шагов выполнена' : 'Пройдено около 5к из 10к шагов'}</span>
+                <span class="urgent-card-why">${walkHabit.done ? 'Отмечено как выполнено' : 'Цель: 10к шагов за день'}</span>
               </div>
             </div>
             <div class="urgent-card-arrow"><i class="ph ph-arrow-right"></i></div>
@@ -1795,9 +1905,9 @@
       DATA.habits.forEach((h, idx) => {
         if (h.done) doneCount++;
 
-        const badgeSign = h.delta >= 0 ? '+' : '';
-        const badgeColorClass = h.delta >= 0 ? 'corr-val-positive' : 'corr-val-negative';
-
+        // No fabricated "+N% recovery" badge — a habit's real effect lives in
+        // correlations (shown only once eligibility is met). Here it's a plain
+        // check-in: done or not.
         const itemHtml = `
           <div class="habit-item ${h.done ? 'checked' : ''}" onclick="toggleHabit(${idx})">
             <div class="habit-item-left">
@@ -1806,7 +1916,6 @@
               </div>
               <span class="habit-name">${h.label}</span>
             </div>
-            <span class="habit-impact-badge ${badgeColorClass}">${badgeSign}${h.delta}% recovery</span>
           </div>
         `;
         container.insertAdjacentHTML('beforeend', itemHtml);
@@ -1866,7 +1975,10 @@
       const marker = document.getElementById('chartMarkerDot');
       const tooltip = document.getElementById('chartTooltip');
 
-      overlay.addEventListener('mousemove', (e) => {
+      // pointermove covers mouse AND touch scrubbing (mousemove alone left the
+      // tooltip unreachable on phones — and a tap's synthetic mousemove showed a
+      // marker that never hid, because touch fires no mouseleave).
+      overlay.addEventListener('pointermove', (e) => {
         const rect = svg.getBoundingClientRect();
         // project client cursor relative coordinate to SVG coordinates
         const scaleX = width / rect.width;
@@ -1897,10 +2009,14 @@
         tooltip.textContent = `День ${closestIndex + 1}: ${p.val}%`;
       });
 
-      overlay.addEventListener('mouseleave', () => {
+      const hideMarker = () => {
         marker.style.opacity = '0';
         tooltip.style.opacity = '0';
-      });
+      };
+      overlay.addEventListener('pointerleave', hideMarker);
+      // On touch there is no pointerleave after a tap — hide on lift/cancel.
+      overlay.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') hideMarker(); });
+      overlay.addEventListener('pointercancel', hideMarker);
     }
 
     function toggleBiomarkerRow(idx) {
@@ -1993,8 +2109,8 @@
                 </div>
                 <p class="rec-text">${b.discuss}</p>
                 <div class="rec-actions">
-                  <button class="btn-action" onclick="alert('Добавлено в блокнот врача')">Добавить в вопросы врачу</button>
-                  <button class="btn-action" style="opacity:0.7;" onclick="alert('История изменений маркера')">Показать историю</button>
+                  <button class="btn-action" onclick="ohQueueDoctorQuestion(${idx})">Добавить в вопросы врачу</button>
+                  <button class="btn-action" style="opacity:0.7;" onclick="ohMarkerHistory(${idx})">Показать историю</button>
                 </div>
               </div>
             </div>
@@ -2007,6 +2123,16 @@
     function updateCorrelationsBlock() {
       const container = document.getElementById('correlationsGridContainer');
       container.innerHTML = '';
+
+      // Honest insufficient-data state — never fabricated effects.
+      if (!Array.isArray(DATA.correlations) || DATA.correlations.length === 0) {
+        container.innerHTML =
+          '<div class="corr-empty">' +
+            '<div class="corr-empty-title"><i class="ph ph-scales"></i> Пока недостаточно данных</div>' +
+            '<div class="corr-empty-sub">Чтобы посчитать влияние на восстановление, нужно ≥5 дней с отметкой привычки и ≥5 без неё, при наличии recovery в те же дни. Отмечай привычки в чек-ине — здесь появится реальная корреляция, а не пример.</div>' +
+          '</div>';
+        return;
+      }
 
       DATA.correlations.forEach(c => {
         const isPositive = c.delta >= 0;
@@ -2034,7 +2160,8 @@
       const doneHabits = DATA.habits.filter(h => h.done).length;
       const percent = totalHabits > 0 ? Math.round((doneHabits / totalHabits) * 100) : 0;
 
-      document.getElementById('statsDonutValueText').textContent = `${percent}%`;
+      // Show "3/5" (not "60%") so the habit donut isn't misread as recovery %.
+      document.getElementById('statsDonutValueText').textContent = `${doneHabits}/${totalHabits}`;
       document.getElementById('statsHabitsSummaryText').textContent = `${doneHabits} из ${totalHabits} выполнено`;
 
       const statsDonutFg = document.getElementById('statsDonutFg');
@@ -2056,6 +2183,11 @@
 
     // Primary UI render orchestration
     function renderUI() {
+      // Single data-apply pass from DATA. Header date was hardcoded "вторник,
+      // сегодня" and never refreshed — keep it in sync with the footer/cards.
+      const hd = document.getElementById('headerDate');
+      // «данные за …»: дата выгрузки не должна читаться как сегодняшняя.
+      if (hd && DATA.date) hd.textContent = 'данные за ' + DATA.date;
       updateRecoveryWidget();
       updateMetricCards();
       updateUrgentTodayBlock();
@@ -2069,14 +2201,132 @@
 
     // WHOOP sections (sleep/strain/stress/body) rendered from the registry via the
     // shared OH.sectionView - identical source to V1, only the .oh-* theming differs.
+    // Lightweight non-blocking toast (replaces native alert popups).
+    function ohToast(msg) {
+      const t = document.createElement('div');
+      t.className = 'oh-toast';
+      t.textContent = msg;
+      t.style.cssText = 'position:fixed;left:50%;bottom:120px;transform:translateX(-50%) translateY(8px);background:var(--color-dark,#1a1a1a);color:#fff;padding:12px 18px;border-radius:12px;font:600 13px var(--font-sans,system-ui,sans-serif);box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:100050;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;max-width:80vw;text-align:center;';
+      document.body.appendChild(t);
+      requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translateX(-50%) translateY(0)'; });
+      setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateX(-50%) translateY(8px)'; setTimeout(() => t.remove(), 300); }, 2400);
+    }
+    function ohMarkerName(idx) {
+      const el = document.querySelector('#biomarker-item-' + idx + ' .biomarker-name-txt');
+      return el ? el.textContent.trim() : ('маркер #' + idx);
+    }
+    // "Doctor questions" persist locally (never leaves the device) so the list
+    // survives reloads - a real action instead of a throwaway alert.
+    function ohQueueDoctorQuestion(idx) {
+      const name = ohMarkerName(idx), key = 'oh.doctorQuestions';
+      let list = [];
+      try { list = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) {}
+      if (list.indexOf(name) === -1) {
+        list.push(name);
+        try { localStorage.setItem(key, JSON.stringify(list)); } catch (e) {}
+        ohToast('Добавлено в вопросы врачу: ' + name + ' (' + list.length + ')');
+      } else {
+        ohToast(name + ' уже в списке вопросов (' + list.length + ')');
+      }
+    }
+    function ohMarkerHistory(idx) {
+      ohToast('История ' + ohMarkerName(idx) + ' появится после загрузки нескольких панелей анализов.');
+    }
+
+    // Sync WHOOP -> rebuild snapshot -> refresh the whole screen in one click.
+    // Backend /api/sync refreshes the token, pulls recent data and rebuilds
+    // data.local.json; here we re-seed OH + DATA and re-render via renderUI().
+    let ohSyncBusy = false;
+    async function ohSync() {
+      if (ohSyncBusy) return;
+      ohSyncBusy = true;
+      const btn = document.getElementById('syncBtnV2');
+      if (btn) { btn.disabled = true; btn.classList.add('syncing'); }
+      ohToast('Синхронизация WHOOP…');
+      try {
+        const r = await fetch('/api/sync', { method: 'POST' });
+        const d = await r.json().catch(() => ({}));
+        if (d.status === 'ok') {
+          try { await OH.load(); } catch (e) {}
+          await loadRealData();
+          seedTodayFromRegistry();
+          renderUI();
+          const date = d.summary && d.summary.dataDate ? ' · ' + d.summary.dataDate : '';
+          ohToast('Синхронизировано' + (d.synced ? ': ' + d.synced + ' записей' : '') + date);
+        } else if (d.status === 'auth') {
+          ohToast('WHOOP: нужна повторная авторизация (whoop-auth-url в терминале)');
+        } else {
+          ohToast('Синк не удался: ' + (d.message || 'ошибка'));
+        }
+      } catch (e) {
+        ohToast('Сервер недоступен для синка');
+      } finally {
+        ohSyncBusy = false;
+        if (btn) { btn.disabled = false; btn.classList.remove('syncing'); }
+      }
+    }
+
+    // Rail nav from OH.nav.groups(): Дом + ≤9 групп + Настройки. Each group
+    // scrolls to its first section's anchor (bespoke sec-<id> or oh-sec-<id> stub).
+    function buildRailNav() {
+      const rail = document.getElementById('railNav');
+      if (!rail || !window.OH || !OH.nav) return;
+      const btn = (target, icon, tip, active) =>
+        '<button class="rail-btn' + (active ? ' active' : '') + '" data-target="' + target + '" data-tooltip="' + tip + '"><i class="ph ' + icon + '"></i></button>';
+      const anchorFor = (g) => {
+        const first = g.sections[0];
+        if (!first) return 'sec-today';
+        return document.getElementById('sec-' + first.id) ? 'sec-' + first.id : 'oh-sec-' + first.id;
+      };
+      let html = btn('sec-today', 'ph-house', 'Сегодня', true);
+      // personaGroups() == nav.groups() when no persona is active (default) —
+      // opt-in reordering only, so the rail is unchanged unless a preset is chosen.
+      (OH.personaGroups ? OH.personaGroups() : OH.nav.groups()).forEach(g => {
+        if (g.id === 'today') return;
+        html += btn(anchorFor(g), g.icon || 'ph-circle', g.label_ru, false);
+      });
+      html += btn('sec-settings', 'ph-gear', 'Настройки', false);
+      rail.innerHTML = html;
+    }
+
+    // Persona picker (opt-in): fill from OH.personas(), select the active one.
+    function ohPopulatePersonaPicker() {
+      const sel = document.getElementById('personaPickerV2');
+      if (!sel || !window.OH || !OH.personas) return;
+      const active = OH.personaActive || '';
+      let html = '<option value="">Без профиля (по умолчанию)</option>';
+      OH.personas().forEach(p => {
+        html += '<option value="' + p.id + '"' + (p.id === active ? ' selected' : '') + '>' + p.label_ru + '</option>';
+      });
+      sel.innerHTML = html;
+    }
+    // Choosing a persona reorders the nav via OH.personaGroups(); empty resets to default.
+    function ohSetPersona(id) {
+      if (!window.OH || !OH.setPersona) return;
+      OH.setPersona(id || null);
+      buildRailNav();
+    }
+    window.ohSetPersona = ohSetPersona;
+
     function renderRegistrySections() {
       const host = document.getElementById('registrySections');
       if (!host || !window.OH || !OH.registry) return;
-      const accents = { sleep: '#3FA9F5', strain: '#8B6CF0', stress: '#FF7A59', body: '#27C28A' };
+      if (window.OHCharts) OHCharts.setActiveSkin('v2'); // V2 chart renderers (bento)
+      const accents = { sleep: '#3FA9F5', strain: '#8B6CF0', workouts: '#8B6CF0', stress: '#FF7A59', body: '#27C28A', body_composition: '#27C28A' };
       const text = (getComputedStyle(document.body).getPropertyValue('--text-primary') || '#121316').trim();
-      host.innerHTML = ['sleep', 'strain', 'stress', 'body']
-        .map(id => OH.sectionView(id, { accent: accents[id], textColor: text, bg: '#ffffff' }))
-        .join('') + '<div id="ohAlgorithms">' + (OH.algorithmsView ? OH.algorithmsView() : '') + '</div>';
+      // Render EVERY non-bespoke registry section straight from the single source:
+      // sectionView dispatches ready->metric grid, knowledge->curated content,
+      // status:soon->honest stub. Bespoke sections have their own bento cards above,
+      // so they're excluded here. Migration is now a pure registry edit (flip status
+      // + assign metric_ids) — no V2 code change needed per section.
+      const bespoke = new Set(['today', 'habits', 'biomarkers', 'correlations', 'trends', 'settings', 'algorithms']);
+      const secs = (OH.registry.sections || [])
+        .filter(s => !bespoke.has(s.id))
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      host.innerHTML = secs
+        .map(s => OH.sectionView(s.id, { accent: accents[s.id] || '#8B6CF0', textColor: text, bg: '#ffffff' }))
+        .join('')
+        + '<div id="ohAlgorithms">' + (OH.algorithmsView ? OH.algorithmsView() : '') + '</div>';
     }
 
     // ----------------------------------------------------
@@ -2119,64 +2369,48 @@
       // 2. Render everything from the seeded DATA.
       renderUI();
 
-      // 3. GSAP Entry Animation for bento cards
-      gsap.from(".bento-card", {
-        opacity: 0,
-        y: 24,
-        stagger: 0.08,
-        duration: 0.8,
-        ease: "power3.out"
+      // 3. Build the rail nav from OH.nav groups (after sections render, so group
+      //    anchors — incl. coming-soon stubs — exist for scroll targets).
+      buildRailNav();
+      ohPopulatePersonaPicker();
+
+      // 4. Navigation click handlers — DELEGATED on the rail container so they
+      //    survive rail rebuilds (the persona picker re-renders the buttons).
+      const rail = document.getElementById('railNav');
+      if (rail) rail.addEventListener('click', (e) => {
+        const btn = e.target.closest('.rail-btn'); if (!btn) return;
+        const targetId = btn.getAttribute('data-target'); if (!targetId) return;
+        rail.querySelectorAll('.rail-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const targetSection = document.getElementById(targetId);
+        // scrollIntoView resolves the real scroll container itself - robust even
+        // when <html> overflow is computed `auto`, where window.scrollTo no-ops.
+        if (targetSection) targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
 
-      // 4. Setup navigation click handlers
-      const railButtons = document.querySelectorAll('.rail-btn');
-      railButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-          const targetId = btn.getAttribute('data-target');
-          if (targetId) {
-            // Remove active classes
-            railButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+      // Sync button (header)
+      const syncBtn = document.getElementById('syncBtnV2');
+      if (syncBtn) syncBtn.addEventListener('click', ohSync);
 
-            const targetSection = document.getElementById(targetId);
-            if (targetSection) {
-              const yOffset = -40; // small header offset
-              const y = targetSection.getBoundingClientRect().top + window.scrollY + yOffset;
-              window.scrollTo({ top: y, behavior: 'smooth' });
-            }
-          }
+      // Highlight active rail button on scroll. Buttons are queried FRESH each
+      // call, so a rebuilt rail (persona reorder) still lights up correctly.
+      const onScrollSpy = () => {
+        const buttons = document.querySelectorAll('.rail-btn');
+        const scrollPos = window.scrollY + 140;
+        let activeId = null;
+        buttons.forEach(btn => {
+          const id = btn.getAttribute('data-target');
+          const el = id && document.getElementById(id);
+          if (el && scrollPos >= el.offsetTop) activeId = id; // last section whose top we passed
         });
-      });
+        if (!activeId) return;
+        buttons.forEach(btn => btn.classList.toggle('active', btn.getAttribute('data-target') === activeId));
+      };
+      window.addEventListener('scroll', onScrollSpy, { passive: true });
+      onScrollSpy();
 
-      // Scroll to top button
-      document.getElementById('scrollTopBtn').addEventListener('click', () => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      });
-
-      // Highlight active rail button on scroll
-      window.addEventListener('scroll', () => {
-        const sections = ['sec-today', 'sec-habits', 'sec-trends', 'sec-biomarkers', 'sec-correlations', 'sec-settings'];
-        const scrollPos = window.scrollY + 120;
-
-        sections.forEach(id => {
-          const el = document.getElementById(id);
-          if (el) {
-            const top = el.offsetTop;
-            const bottom = top + el.offsetHeight;
-
-            if (scrollPos >= top && scrollPos < bottom) {
-              railButtons.forEach(btn => {
-                if (btn.getAttribute('data-target') === id) {
-                  btn.classList.add('active');
-                } else {
-                  btn.classList.remove('active');
-                }
-              });
-            }
-          }
-        });
-      });
-
+      // Onboarding: assemble the app on genuine first run (goal -> modules -> palette).
+      try { if (window.OHOnboarding) OHOnboarding.maybeAutoStart(); } catch (e) {}
     });
   </script>
 </body>

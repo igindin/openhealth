@@ -36,7 +36,7 @@ are authoritative.
 | Provider | Category | Auth | Status | Connector |
 |---|---|---|---|---|
 | WHOOP | tracker | OAuth2 | **supported** | `openhealth/whoop.py` (live API) |
-| Oura Ring | tracker | OAuth2 | **supported** | `connectors/oura.py` (export; live pull planned) |
+| Oura Ring | tracker | OAuth2 | **supported** | `connectors/oura.py` (export) + `connectors/oura_live.py` (live API v2) |
 | Garmin | tracker | OAuth2 (business-gated) | **supported** | `connectors/garmin.py` (export) |
 | Apple Health | hub | file export | **supported** | `connectors/apple_health.py` |
 | Fitbit (Google) | tracker | OAuth2 | planned | — |
@@ -86,7 +86,7 @@ Create credentials:
 
 Rate limits: per-app defaults around 100 req/min and 10,000/day — a daily sync uses a handful of calls.
 
-### Oura Ring — supported (export connector; live OAuth2 pull planned)
+### Oura Ring — supported (export connector + live OAuth2 v2 connector)
 
 - Portal: <https://cloud.ouraring.com/oauth/applications> · Docs: <https://cloud.ouraring.com/docs/authentication> · API: `https://api.ouraring.com/v2`
 - Data: sleep, readiness, activity, HRV, resting HR, temperature, SpO2, respiratory rate, workouts.
@@ -98,7 +98,12 @@ Create credentials:
 3. Set a redirect URI (whitelist), e.g. `http://localhost:8765/callback`.
 4. Copy Client ID / Client Secret and run the OAuth2 code flow; call `/v2/usercollection/*` with `Authorization: Bearer <token>`.
 
-Honest note: legacy Personal Access Tokens were **deprecated in December 2025** — OAuth2 is the only auth method now. Today the repo ships a file-export connector (`connectors/oura.py`); env vars `OPENHEALTH_OURA_CLIENT_ID` / `OPENHEALTH_OURA_CLIENT_SECRET` are reserved for the live client.
+Live pull: `connectors/oura_live.py` (CLI: `oura-auth-url`, `oura-exchange-code`, `oura-sync`, `oura-capabilities`); env vars `OPENHEALTH_OURA_CLIENT_ID` / `OPENHEALTH_OURA_CLIENT_SECRET` / `OPENHEALTH_OURA_REDIRECT_URI` / `OPENHEALTH_OURA_SCOPES`. Default synced collections: `daily_readiness`, `daily_sleep`, `daily_activity`, `sleep`, `daily_spo2`. The file-export connector (`connectors/oura.py`) stays available.
+
+Honest notes (verified against a live developer app):
+- Legacy Personal Access Tokens were **deprecated in December 2025** — OAuth2 is the only auth method now.
+- Token exchange happens at Oura's Ory identity server (`https://moi.ouraring.com/oauth/v2/ext/oauth-token`), not the legacy `api.ouraring.com/oauth/token` (which now returns `400 invalid_request`). The data API stays on `https://api.ouraring.com/v2`.
+- `daily_spo2` needs the separate `spo2` OAuth scope; `oura-sync` skips any collection the granted token can't reach (with a note) instead of aborting.
 
 ### Garmin — supported (export connector; official API is business-gated)
 

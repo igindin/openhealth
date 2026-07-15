@@ -22,6 +22,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 UIWEB = REPO_ROOT / "ui" / "web"
 REGISTRY_PATH = UIWEB / "assets" / "registry.json"
+KNOWLEDGE_PATH = UIWEB / "assets" / "knowledge.json"
 V1 = UIWEB / "dashboard.html"
 V2 = UIWEB / "dashboard-v2.html"
 INDEX = UIWEB / "index.html"
@@ -162,6 +163,122 @@ class CapabilitiesAndDocsTests(unittest.TestCase):
             rendered,
             "CAPABILITIES.md is stale. Regenerate: python3 ui/web/gen_capabilities.py",
         )
+
+
+class NavGroupsTests(unittest.TestCase):
+    def setUp(self):
+        self.reg = json.loads(_read(REGISTRY_PATH))
+
+    def test_groups_present_and_capped_at_9(self):
+        groups = self.reg.get("groups", [])
+        self.assertTrue(groups, "registry must define navigation groups")
+        self.assertLessEqual(len(groups), 9, "navigation must stay at <=9 groups in both skins")
+
+    def test_group_shape_and_valid_section_refs(self):
+        section_ids = {s["id"] for s in self.reg.get("sections", [])}
+        for g in self.reg.get("groups", []):
+            with self.subTest(group=g.get("id")):
+                for key in ("id", "label_ru", "icon", "order", "section_ids"):
+                    self.assertIn(key, g, "group %r missing %s" % (g.get("id"), key))
+                for sid in g.get("section_ids", []):
+                    self.assertIn(sid, section_ids,
+                                  "group %r references unknown section %r" % (g.get("id"), sid))
+
+    def test_both_skins_build_nav_from_groups(self):
+        # Nav is derived from the single source (OH.nav / OH.personaGroups), never hardcoded.
+        for path in (V1, V2):
+            with self.subTest(skin=path.name):
+                text = _read(path)
+                self.assertTrue("OH.personaGroups" in text or "OH.nav.groups" in text,
+                                "%s must build nav from OH.nav/personaGroups" % path.name)
+
+
+class KnowledgeLayerTests(unittest.TestCase):
+    def setUp(self):
+        self.reg = json.loads(_read(REGISTRY_PATH))
+        self.know = json.loads(_read(KNOWLEDGE_PATH))
+
+    def test_devices_and_sources_are_knowledge_sections(self):
+        sections = {s["id"]: s for s in self.reg.get("sections", [])}
+        for sid in ("devices", "sources"):
+            with self.subTest(section=sid):
+                self.assertIn(sid, sections)
+                self.assertEqual(sections[sid].get("kind"), "knowledge",
+                                 "%s must be a knowledge section" % sid)
+
+    def test_knowledge_entries_carry_provenance_and_evidence(self):
+        self.assertTrue(self.know.get("devices"), "knowledge needs devices")
+        self.assertTrue(self.know.get("protocol_sources"), "knowledge needs protocol sources")
+        for d in self.know.get("devices", []):
+            with self.subTest(device=d.get("id")):
+                self.assertTrue(d.get("source_url"), "device %r needs a source_url" % d.get("id"))
+                self.assertIn("checked_at", d)
+                self.assertIn(d.get("evidence_level"), ("high", "medium", "low"))
+        for s in self.know.get("protocol_sources", []):
+            with self.subTest(source=s.get("id")):
+                self.assertTrue(s.get("url"), "source %r needs a url" % s.get("id"))
+                self.assertIn(s.get("evidence_level"), ("high", "medium", "low"))
+
+    def test_video_refs_point_at_real_metrics(self):
+        metric_ids = {m["id"] for m in self.reg.get("metrics", [])}
+        for v in self.know.get("video_refs", []):
+            with self.subTest(video=v.get("title")):
+                self.assertIn(v.get("metric_id"), metric_ids,
+                              "video ref points at unknown metric %r" % v.get("metric_id"))
+                self.assertTrue(v.get("url"))
+
+
+class PersonasTests(unittest.TestCase):
+    def setUp(self):
+        self.reg = json.loads(_read(REGISTRY_PATH))
+        self.know = json.loads(_read(KNOWLEDGE_PATH))
+
+    def test_eleven_personas_with_schema(self):
+        self.assertIn("personas_schema", self.reg, "personas need a documented schema")
+        self.assertEqual(len(self.reg.get("personas", [])), 11, "expected 11 audience presets")
+
+    def test_three_reference_profiles(self):
+        refs = {p["id"] for p in self.reg.get("personas", []) if p.get("reference")}
+        self.assertEqual(refs, {"athlete", "biohacker", "low-energy"})
+
+    def test_persona_refs_all_resolve(self):
+        group_ids = {g["id"] for g in self.reg.get("groups", [])}
+        metric_ids = {m["id"] for m in self.reg.get("metrics", [])}
+        device_ids = {d["id"] for d in self.know.get("devices", [])}
+        source_ids = {s["id"] for s in self.know.get("protocol_sources", [])}
+        for p in self.reg.get("personas", []):
+            with self.subTest(persona=p.get("id")):
+                for g in p.get("priority_groups", []):
+                    self.assertIn(g, group_ids, "persona %r bad group %r" % (p.get("id"), g))
+                for m in p.get("focus_metrics", []):
+                    self.assertIn(m, metric_ids, "persona %r bad metric %r" % (p.get("id"), m))
+                for d in p.get("devices", []):
+                    self.assertIn(d, device_ids, "persona %r bad device %r" % (p.get("id"), d))
+                for s in p.get("sources", []):
+                    self.assertIn(s, source_ids, "persona %r bad source %r" % (p.get("id"), s))
+
+    def test_both_skins_have_persona_picker(self):
+        for path in (V1, V2):
+            with self.subTest(skin=path.name):
+                self.assertIn("personaPicker", _read(path))
+
+
+class StateContractTests(unittest.TestCase):
+    def test_eligibility_metrics_have_required_keys(self):
+        reg = json.loads(_read(REGISTRY_PATH))
+        for m in reg.get("metrics", []):
+            elig = m.get("eligibility")
+            if not elig:
+                continue
+            with self.subTest(metric=m.get("id")):
+                for key in ("need", "have_key"):
+                    self.assertIn(key, elig, "eligibility of %r needs %s" % (m.get("id"), key))
+
+    def test_engine_exposes_state_contract(self):
+        engine = _read(UIWEB / "assets" / "oh-registry.js")
+        for token in ("insufficient", "eligibility", "personaGroups", "knowledgeView"):
+            with self.subTest(token=token):
+                self.assertIn(token, engine, "engine must expose %s" % token)
 
 
 if __name__ == "__main__":

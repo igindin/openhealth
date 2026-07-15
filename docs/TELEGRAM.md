@@ -90,6 +90,7 @@ Useful flags for `run`:
 | `--enable-ask` | off | turn on the `/ask` local agent bridge |
 | `--once` | off | process one `getUpdates` batch and exit (smoke runs) |
 | `--poll-timeout` | 50 | long-poll hold in seconds |
+| `--bridge-url` | `$OPENHEALTH_BRIDGE_URL` | POST plain intake to this bridge's `/api/intake` for **real-time** indexing (e.g. `http://127.0.0.1:8770`); without it, envelopes stay on disk and reach the index via the batch import parser |
 
 ## Commands
 

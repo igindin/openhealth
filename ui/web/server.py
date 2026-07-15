@@ -116,6 +116,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -144,6 +145,10 @@ except ImportError:  # running from a checkout without `pip install -e .`
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8770
 DATA_FILE = "data.local.json"
+# Build stamp exposed via /api/health: the UI (and the Hermes gateway) compare
+# it with what they expect and honestly say "restart the bridge" instead of
+# failing silently on endpoints an old, still-running process doesn't have.
+BUILD = "2026-07-07"
 
 MAX_BODY_BYTES = 64 * 1024
 MAX_PARAM_LEN = 200
@@ -151,16 +156,17 @@ MAX_SUMMARY_CHARS = 1500
 MAX_STDERR_TAIL = 500
 AGENT_TIMEOUT_S = 120
 
-ALLOWED_TASKS = frozenset({"insight", "correlations", "research", "transcript"})
+ALLOWED_TASKS = frozenset({"insight", "correlations", "research", "transcript", "visit-prep"})
 AGENT_BINARIES = ("claude", "codex", "openhealth")
 
 # --- agent selection config (~/.openhealth/agent.json) ----------------------
 
 CONFIG_FILE = "agent.json"
 # task config "agent" values the user may choose; "auto" keeps the cascade
-SELECTABLE_AGENTS = ("auto", "claude", "codex", "antigravity")
-# every agent CLI we know how to detect; antigravity ships the `agy` binary.
-# hermes/openclaw are detected and reported, but not runnable yet.
+SELECTABLE_AGENTS = ("auto", "claude", "codex", "antigravity", "hermes")
+# every agent CLI we know how to detect; antigravity ships the `agy` binary,
+# hermes ships the `hermes` binary (one-shot via `hermes -z PROMPT`).
+# openclaw is detected and reported, but not runnable yet.
 AGENT_CLI = {
     "claude": "claude",
     "codex": "codex",
@@ -219,6 +225,23 @@ TASK_INSTRUCTIONS = {
         "применительно к recovery/HRV/сну: 3-5 пунктов, каждый с C-grade (качество "
         "доказательств) и одной строкой сути."
     ),
+    # Doctor-ready visit prep — the strongest recurring JTBD across the field
+    # (Ideabrowser signals). Organizes the user's OWN data for a visit; framed
+    # explicitly as not-a-diagnosis, honest about gaps, evidence-graded.
+    "visit-prep": (
+        "Задача: собери короткий doctor-ready отчёт К ПРИЁМУ ВРАЧА из блока ДАННЫЕ и моего "
+        "контекста. Это НЕ диагноз и НЕ медсовет — ты организуешь МОИ данные, чтобы я пришёл "
+        "подготовленным. Структура ровно такая, по разделам:\n"
+        "1) Что изменилось за период — 2-4 факта по трендам (recovery/HRV/сон/strain, "
+        "биомаркеры) с направлением и, где есть, датой.\n"
+        "2) На что обратить внимание врача — значения вне нормы/оптимума и заметные сдвиги, "
+        "БЕЗ интерпретации причины.\n"
+        "3) Контекст и симптомы из журнала, если есть.\n"
+        "4) 3-5 вопросов врачу, вытекающих из моих данных.\n"
+        "Каждый фактический пункт — с уровнем C1-C5 и источником (какой трекер/анализ). "
+        "Ничего не выдумывай: где данных нет — пиши «нет данных». Заверши строкой: "
+        "«Это организованная выжимка моих данных для обсуждения с врачом, не медицинское заключение.»"
+    ),
 }
 
 TRANSCRIPT_STUB = {
@@ -271,9 +294,26 @@ def sanitize_model(raw) -> "str | None":
     return raw
 
 
+_BASE_URL_RE = re.compile(r"^https?://[A-Za-z0-9._:/\-]{1,200}$")
+
+
+def sanitize_base_url(value) -> "str | None":
+    """An OpenAI-compatible endpoint (e.g. the Hermes proxy). http(s) only."""
+    if not isinstance(value, str):
+        return None
+    v = value.strip()
+    return v if v and _BASE_URL_RE.match(v) else None
+
+
 def load_agent_config() -> dict:
-    """Read and validate agent.json; silently fall back to safe defaults."""
-    cfg = {"agent": "auto", "model": None, "extra_args": []}
+    """Read and validate agent.json; silently fall back to safe defaults.
+
+    ``base_url`` (an OpenAI-compatible endpoint such as the Hermes proxy) may
+    also come from the OPENHEALTH_LLM_BASE_URL env var — the deploy sets the
+    env, an in-app choice in agent.json overrides it.
+    """
+    env_base = sanitize_base_url(os.environ.get("OPENHEALTH_LLM_BASE_URL"))
+    cfg = {"agent": "auto", "model": None, "extra_args": [], "base_url": env_base}
     path = agent_config_path()
     if not path.is_file():
         return cfg
@@ -293,6 +333,7 @@ def load_agent_config() -> dict:
     extra = raw.get("extra_args")
     if isinstance(extra, list):
         cfg["extra_args"] = [str(a)[:MAX_PARAM_LEN] for a in extra[:MAX_EXTRA_ARGS] if isinstance(a, str)]
+    cfg["base_url"] = sanitize_base_url(raw.get("base_url")) or env_base
     return cfg
 
 
@@ -310,6 +351,7 @@ def save_agent_config(cfg: dict) -> Path:
         "agent": cfg.get("agent", "auto"),
         "model": cfg.get("model"),
         "extra_args": list(cfg.get("extra_args") or []),
+        "base_url": sanitize_base_url(cfg.get("base_url")),
     }
     tmp.write_text(json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.chmod(tmp, 0o600)
@@ -350,6 +392,16 @@ def handle_config_request(payload) -> "tuple":
             cfg["model"] = sanitize_model(payload["model"])
         except ValueError as exc:
             return 400, {"status": "error", "message": str(exc)}
+        changed = True
+    if "base_url" in payload:
+        raw = payload["base_url"]
+        if raw in (None, ""):
+            cfg["base_url"] = None
+        else:
+            url = sanitize_base_url(raw)
+            if url is None:
+                return 400, {"status": "error", "message": "base_url must be an http(s) URL"}
+            cfg["base_url"] = url
         changed = True
     if changed:
         try:
@@ -457,6 +509,20 @@ def summarize_data(data: "dict | None") -> str:
             if isinstance(b, dict)
         )
         parts.append("Биомаркеры ({} шт.): {}".format(len(biomarkers), items))
+        # Flag out-of-range labs explicitly — the doctor-relevant subset for
+        # visit-prep (and useful context for any task).
+        flagged = [
+            b for b in biomarkers
+            if isinstance(b, dict) and str(b.get("status") or "").lower() not in ("optimal", "normal", "ok", "оптимально", "в норме", "")
+        ]
+        if flagged:
+            fitems = "; ".join(
+                "{} {}{} ({})".format(
+                    b.get("name", "?"), _fmt_num(b.get("value", "?")), b.get("unit") or "", b.get("status")
+                )
+                for b in flagged[:12]
+            )
+            parts.append("Вне нормы/оптимума ({} шт.): {}".format(len(flagged), fitems))
 
     connections = data.get("connections")
     if isinstance(connections, dict):
@@ -712,7 +778,79 @@ def build_agent_command(
         cmd.extend(extra)
         cmd.extend(["--print", prompt])
         return cmd
+    if agent == "hermes":
+        # Hermes Agent one-shot: `-z PROMPT` prints ONLY the final response to
+        # stdout (no banner/spinner). --safe-mode strips MCP/plugins/memory so
+        # the run is predictable and all context travels in the prompt; --yolo
+        # skips approval prompts so a headless run never blocks on input.
+        # Model via -m (Hermes default provider/model comes from ~/.hermes).
+        cmd = ["hermes", "-z", prompt, "--safe-mode", "--yolo"]
+        if model:
+            cmd.extend(["-m", model])
+        cmd.extend(extra)
+        return cmd
     raise ValueError("unknown agent: {!r}".format(agent))
+
+
+def _openai_chat_url(base_url: str) -> str:
+    """Normalize a base URL to the /v1/chat/completions endpoint."""
+    b = base_url.rstrip("/")
+    if b.endswith("/chat/completions"):
+        return b
+    if b.endswith("/v1"):
+        return b + "/chat/completions"
+    return b + "/v1/chat/completions"
+
+
+def _run_openai_chat(prompt: str, base_url: str, model: "str | None" = None) -> dict:
+    """One blocking OpenAI-compatible chat call over HTTP.
+
+    This is how OpenHealth talks to the Hermes proxy (`hermes proxy start`),
+    which forwards to an OAuth provider and attaches real credentials — so any
+    bearer token works and no API key lives here. It also sidesteps the
+    interactive `hermes -z` one-shot (which can block on tool/gateway startup).
+    Returns the same shape as a CLI agent run.
+    """
+    import urllib.request
+    import urllib.error
+
+    url = _openai_chat_url(base_url)
+    body = json.dumps({
+        "model": model or "default",
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+    }).encode("utf-8")
+    key = os.environ.get("OPENHEALTH_LLM_API_KEY") or "openhealth"
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
+    )
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(req, timeout=AGENT_TIMEOUT_S) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+        took_ms = int((time.monotonic() - started) * 1000)
+        data = json.loads(raw)
+        text = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+        if not text:
+            return {"status": "error", "agent": "hermes", "message": "empty response from LLM endpoint", "took_ms": took_ms}
+        return {"status": "ok", "agent": "hermes", "result": text, "took_ms": took_ms}
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001
+            detail = str(exc)
+        return {"status": "error", "agent": "hermes",
+                "message": "HTTP {}: {}".format(exc.code, _redact(detail)[-MAX_STDERR_TAIL:])}
+    except (socket.timeout, TimeoutError):
+        return {"status": "timeout", "agent": "hermes",
+                "took_ms": int((time.monotonic() - started) * 1000)}
+    except urllib.error.URLError as exc:
+        return {"status": "error", "agent": "hermes",
+                "message": "cannot reach LLM endpoint: {}".format(_redact(str(exc.reason)))}
+    except (ValueError, KeyError, IndexError) as exc:
+        return {"status": "error", "agent": "hermes", "message": "bad LLM response: {}".format(exc.__class__.__name__)}
 
 
 def run_agent(prompt: str, base_dir: Path, config: "dict | None" = None) -> dict:
@@ -725,13 +863,16 @@ def run_agent(prompt: str, base_dir: Path, config: "dict | None" = None) -> dict
     """
     config = config if config is not None else load_agent_config()
     choice = config.get("agent") or "auto"
+    base_url = sanitize_base_url(config.get("base_url"))
     if choice == "auto":
         agents = available_agents()
         if not agents:
             return {"status": "no_agent", "message": "Установи Claude Code или Codex CLI"}
     else:
         binary = AGENT_CLI.get(choice)
-        if binary is None or shutil.which(binary) is None:
+        # Hermes via the OpenAI-compatible proxy is pure HTTP — no local binary.
+        http_hermes = choice == "hermes" and bool(base_url)
+        if not http_hermes and (binary is None or shutil.which(binary) is None):
             return {
                 "status": "no_agent",
                 "message": "Выбранный агент '{}' недоступен (CLI `{}` не найден). "
@@ -743,7 +884,7 @@ def run_agent(prompt: str, base_dir: Path, config: "dict | None" = None) -> dict
     extra_args = tuple(config.get("extra_args") or ())
     last = None
     for agent in agents:
-        last = _run_one_agent(agent, prompt, base_dir, model=model, extra_args=extra_args)
+        last = _run_one_agent(agent, prompt, base_dir, model=model, extra_args=extra_args, base_url=base_url)
         if last.get("status") in ("ok", "timeout"):
             return last
     return last
@@ -755,8 +896,12 @@ def _run_one_agent(
     base_dir: Path,
     model: "str | None" = None,
     extra_args: "tuple | list" = (),
+    base_url: "str | None" = None,
 ) -> dict:
-    """One blocking CLI run with a timeout."""
+    """One blocking agent run. Hermes with a configured proxy goes over HTTP
+    (OpenAI-compatible); every other agent runs its CLI with a timeout."""
+    if agent == "hermes" and base_url:
+        return _run_openai_chat(prompt, base_url, model=model)
     last_message_path = None
     if agent == "codex":
         fd, last_message_path = tempfile.mkstemp(prefix="oh-bridge-", suffix=".txt")
@@ -871,12 +1016,14 @@ def handle_agent_request(payload: dict, base_dir: Path) -> "tuple":
 CALENDAR_CACHE_TTL_S = 600  # live feed, refetched at most every 10 minutes
 _CALENDAR_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# Human steps only — the dashboard renders an input + "Подключить" button under
+# them, so the UI must never ask a person to craft an HTTP request by hand.
 CALENDAR_HOW = [
     "Google Calendar: Settings → нужный календарь → 'Integrate calendar' → "
     "скопируй 'Secret address in iCal format' (ссылка на .ics).",
     "Apple iCloud: Календарь → правый клик по календарю → 'Public Calendar' → скопируй webcal://-ссылку.",
-    "Сохрани её: POST /api/calendar c JSON {\"ics_url\": \"<ссылка>\"}. "
-    "URL секретный — хранится только локально в ~/.openhealth/calendar.json.",
+    "Вставь ссылку в поле ниже и нажми «Подключить» — URL секретный, "
+    "хранится только локально в ~/.openhealth/calendar.json.",
 ]
 
 _calendar_cache = {"url": None, "fetched_at": 0.0, "parsed": None}
@@ -1047,6 +1194,80 @@ def handle_journal_day_post(payload, base_dir: Path) -> "tuple":
         return 400, {"status": "error", "message": str(exc)}
     except OSError as exc:
         return 500, {"status": "error", "message": "cannot write journal: {}".format(exc.__class__.__name__)}
+
+
+# Fields the IntakeEnvelope contract requires (schemas/intake-envelope.schema.json).
+_INTAKE_REQUIRED = ("submission_id", "submitted_at", "channel", "author")
+
+
+def handle_intake(payload, base_dir: Path) -> "tuple":
+    """POST /api/intake — land an IntakeEnvelope from ANY transport (web,
+    Telegram-via-Hermes, a webhook) in the ONE health index, so a note made in
+    Telegram shows up in the web UI and vice versa ("одна база").
+
+    The raw envelope is also mirrored to disk (data/intake/<channel>/…) as
+    immutable provenance. Graceful: with no engine index the envelope is still
+    saved to disk and ``indexed`` is false — same contract as the journal.
+    """
+    if not isinstance(payload, dict):
+        return 400, {"status": "error", "message": "body must be a JSON object"}
+    missing = [k for k in _INTAKE_REQUIRED if not payload.get(k)]
+    if missing:
+        return 400, {"status": "error", "message": "missing required: {}".format(", ".join(missing))}
+
+    subid = re.sub(r"[^A-Za-z0-9._:-]", "", str(payload["submission_id"]))[:MAX_PARAM_LEN] or "intake"
+    channel = re.sub(r"[^a-z0-9_-]", "", str(payload["channel"]).lower())[:40] or "web"
+    submitted_at = str(payload["submitted_at"])
+    day = submitted_at[:10] if len(submitted_at) >= 10 else None
+    text = payload.get("text")
+    tags = [t for t in (payload.get("tags") or []) if isinstance(t, str)][:20]
+
+    # Mirror the raw envelope to disk for provenance (best-effort, never fatal).
+    envelope_path = None
+    try:
+        from openhealth.connectors import telegram_intake
+        envelope_path = telegram_intake.write_envelope(
+            payload, base_dir / "data" / "intake" / channel)
+    except Exception:  # noqa: BLE001 — provenance is best-effort
+        envelope_path = None
+
+    record = {
+        "id": "intake-{}-{}".format(channel, subid),
+        "record_type": "ContextNote",
+        "source_id": "intake-{}".format(channel),
+        "title": (text or "(intake)").strip()[:80] or "(intake)",
+        "summary": (text or "").strip()[:MAX_SUMMARY_CHARS],
+        "evidence_class": "personal",
+        "confidence": 0.5,
+        "date": day,
+        "captured_at": submitted_at,
+        "location": payload.get("location"),
+        "tags": tags + [channel, "intake"],
+        "note_kind": "intake",
+        "metadata": {
+            "channel": channel,
+            "author": str(payload["author"])[:120],
+            "submission_id": subid,
+            "attachments": payload.get("attachments") or [],
+        },
+    }
+
+    db_path = find_journal_db(base_dir)
+    if db_path is None:
+        return 200, {
+            "status": "ok", "submission_id": subid, "indexed": False,
+            "record_id": record["id"], "envelope": str(envelope_path) if envelope_path else None,
+            "message": "индекс не найден — конверт сохранён на диск (data/intake)",
+        }
+    try:
+        from openhealth import index as oh_index
+        oh_index.upsert_record(db_path, record)
+    except Exception as exc:  # noqa: BLE001
+        return 500, {"status": "error", "message": "cannot index intake: {}".format(exc.__class__.__name__)}
+    return 200, {
+        "status": "ok", "submission_id": subid, "indexed": True,
+        "record_id": record["id"], "envelope": str(envelope_path) if envelope_path else None,
+    }
 
 
 def handle_journal_day_get(date_str) -> "tuple":
@@ -1768,6 +1989,61 @@ _DEFAULT_INDEX = Path("~/health-os/data/index/health_os.sqlite3").expanduser()
 _BUILD_SCRIPT = Path(__file__).resolve().with_name("build_dashboard_data.py")
 
 
+WHOOP_SYNC_TIMEOUT_S = 180
+
+
+def handle_sync(base_dir: Path, days_back: int = 7) -> "tuple":
+    """POST /api/sync -> refresh WHOOP, pull recent data into the index, then
+    rebuild data.local.json so the dashboard shows fresh numbers in one click.
+
+    Credentials come from the SERVER's environment (OPENHEALTH_WHOOP_*), never
+    from the request — start the bridge with `.env.whoop.local` sourced. The
+    WHOOP repo-root is derived from the discovered index (its grandparent),
+    so the engine reads/writes the real private DB and tokens. Never logs
+    tokens or data, only the outcome. Returns {status:"ok"|"auth"|"error",
+    synced:<count>, summary:{recovery, dataDate}}.
+    """
+    db_path = find_journal_db(base_dir) or _DEFAULT_INDEX
+    if not db_path.is_file():
+        return 200, {"status": "error", "synced": False,
+                     "message": "индекс не найден ({}); подключи источник".format(db_path)}
+    if not os.getenv("OPENHEALTH_WHOOP_CLIENT_ID"):
+        return 200, {"status": "error", "synced": False,
+                     "message": "WHOOP не настроен на сервере: запусти bridge с .env.whoop.local"}
+    sync_root = db_path.parents[2]  # <root>/data/index/<db>.sqlite3 -> <root>
+    cmd = [sys.executable, "-m", "openhealth", "--repo-root", str(sync_root),
+           "whoop-sync", "--days-back", str(int(days_back))]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              timeout=WHOOP_SYNC_TIMEOUT_S, cwd=str(_REPO_ROOT),
+                              stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return 200, {"status": "error", "synced": False,
+                     "message": "синк превысил {}с".format(WHOOP_SYNC_TIMEOUT_S)}
+    except OSError as exc:
+        return 200, {"status": "error", "synced": False,
+                     "message": "не удалось запустить синк: {}".format(exc.__class__.__name__)}
+    if proc.returncode != 0:
+        tail = ((proc.stderr or "").strip() or (proc.stdout or "").strip())[-MAX_STDERR_TAIL:]
+        low = tail.lower()
+        if any(s in low for s in ("401", "403", "unauthorized", "invalid_grant", "invalid_token")):
+            return 200, {"status": "auth", "synced": False,
+                         "message": "WHOOP требует повторной авторизации (токен отозван). "
+                                    "Запусти whoop-auth-url в терминале и залогинься заново."}
+        return 200, {"status": "error", "synced": False,
+                     "message": "синк завершился с ошибкой: {}".format(tail or "no output")}
+    synced = None
+    try:
+        state = json.loads((sync_root / "data" / "index" / "whoop_sync_state.json").read_text("utf-8"))
+        synced = state.get("last_record_count")
+    except Exception:
+        pass
+    # Rebuild the snapshot so the freshly synced numbers reach the dashboard.
+    status, body = handle_rebuild(base_dir)
+    body["synced"] = synced
+    return status, body
+
+
 def handle_rebuild(base_dir: Path) -> "tuple":
     """POST /api/rebuild -> пересобрать <base_dir>/data.local.json из индекса.
 
@@ -1848,7 +2124,7 @@ class BridgeHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802 (http.server API)
         path = self.path.split("?", 1)[0]
         if path == "/api/health":
-            self._send_json({"ok": True, "agents": detect_agents()})
+            self._send_json({"ok": True, "build": BUILD, "agents": detect_agents()})
             return
         if path == "/api/config":
             self._send_json({"config": load_agent_config(), "agents": agents_status()})
@@ -1964,7 +2240,8 @@ class BridgeHandler(SimpleHTTPRequestHandler):
                         "/api/journal/day", "/api/journal/focus",
                         "/api/params", "/api/params/reset",
                         "/api/methodology/save", "/api/profile", "/api/missions",
-                        "/api/locations", "/api/weather/location", "/api/rebuild"):
+                        "/api/locations", "/api/weather/location", "/api/rebuild",
+                        "/api/sync", "/api/intake"):
             self._send_json({"status": "error", "message": "not found"}, status=404)
             return
 
@@ -1973,6 +2250,19 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             status, body = handle_rebuild(self.base_dir)
             log("POST /api/rebuild -> {} (rebuilt={})".format(
                 body.get("status"), body.get("rebuilt", "-")))
+            self._send_json(body, status=status)
+            return
+
+        # /api/sync (WHOOP -> index -> snapshot) is bodyless; optional ?days=N.
+        if path == "/api/sync":
+            query = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
+            try:
+                days = max(1, min(120, int((query.get("days") or ["7"])[0])))
+            except (ValueError, TypeError):
+                days = 7
+            status, body = handle_sync(self.base_dir, days)
+            log("POST /api/sync -> {} (synced={})".format(
+                body.get("status"), body.get("synced", "-")))
             self._send_json(body, status=status)
             return
 
@@ -2024,6 +2314,17 @@ class BridgeHandler(SimpleHTTPRequestHandler):
             n = len(body.get("locations", [])) if isinstance(body.get("locations"), list) else "-"
             log("POST /api/locations -> {} ({} entries)".format(body.get("status"), n))
             if body.get("status") == "ok":
+                schedule_background_rebuild(self.base_dir)  # rebuild-on-write
+            self._send_json(body, status=status)
+            return
+
+        if path == "/api/intake":
+            status, body = handle_intake(payload, self.base_dir)
+            # only the outcome + channel — intake text is personal data
+            log("POST /api/intake {} -> {} (indexed={})".format(
+                payload.get("channel", "?") if isinstance(payload, dict) else "?",
+                body.get("status"), body.get("indexed", "-")))
+            if body.get("status") == "ok" and body.get("indexed"):
                 schedule_background_rebuild(self.base_dir)  # rebuild-on-write
             self._send_json(body, status=status)
             return
@@ -2113,8 +2414,14 @@ def main(argv=None) -> None:
     parser = argparse.ArgumentParser(
         description="OpenHealth dashboard bridge: static files + local agent runner (127.0.0.1 only)."
     )
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="port on 127.0.0.1 (default 8770)")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="port (default 8770)")
     parser.add_argument("--dir", default=".", help="directory with statics and data.local.json (default: cwd)")
+    parser.add_argument(
+        "--host", default=HOST,
+        help="bind address (default 127.0.0.1, loopback-only = local-first). "
+             "Use 0.0.0.0 ONLY behind a reverse proxy that adds TLS + auth "
+             "(see docs/SELF-HOST.md); the bridge itself has no auth.",
+    )
     args = parser.parse_args(argv)
 
     base_dir = Path(args.dir).expanduser().resolve()
@@ -2122,20 +2429,47 @@ def main(argv=None) -> None:
         parser.error("--dir is not a directory: {}".format(base_dir))
 
     handler = partial(BridgeHandler, directory=str(base_dir))
+
+    def _make(family, host):
+        srv = ThreadingHTTPServer.__new__(ThreadingHTTPServer)
+        srv.address_family = family
+        srv.daemon_threads = True
+        srv.allow_reuse_address = True
+        ThreadingHTTPServer.__init__(srv, (host, args.port), handler)
+        return srv
+
+    host = args.host
+    loopback = host in ("127.0.0.1", "localhost", "::1")
+
+    # Primary: the requested IPv4 host (127.0.0.1 by default). For the loopback
+    # default we ALSO bind IPv6 ::1 so "localhost" answers instantly regardless
+    # of the OS's IPv4/IPv6 order (macOS resolves localhost -> ::1 first) — both
+    # loopback, so the local-first privacy model is preserved. For a non-loopback
+    # host (e.g. 0.0.0.0 behind a reverse proxy) we bind just that address.
+    servers = []
     try:
-        server = ThreadingHTTPServer((HOST, args.port), handler)
+        servers.append(_make(socket.AF_INET, host))
     except OSError as exc:
-        log("cannot bind {}:{} — {}".format(HOST, args.port, exc))
+        log("cannot bind {}:{} — {}".format(host, args.port, exc))
         sys.exit(1)
+    if loopback:
+        try:
+            servers.append(_make(socket.AF_INET6, "::1"))
+        except OSError:
+            pass  # IPv6 disabled/unavailable — IPv4 loopback is enough.
 
     agents = ", ".join(name for name, ok in detect_agents().items() if ok) or "none"
-    log("serving http://{}:{}  dir={}  agents: {}".format(HOST, args.port, base_dir, agents))
+    scope = "loopback" if loopback else "EXPOSED — ensure a reverse proxy adds TLS+auth"
+    log("serving http://{}:{}  dir={}  ({})  agents: {}".format(host, args.port, base_dir, scope, agents))
+    for extra in servers[1:]:
+        threading.Thread(target=extra.serve_forever, daemon=True).start()
     try:
-        server.serve_forever()
+        servers[0].serve_forever()
     except KeyboardInterrupt:
         log("shutting down")
     finally:
-        server.server_close()
+        for s in servers:
+            s.server_close()
 
 
 if __name__ == "__main__":

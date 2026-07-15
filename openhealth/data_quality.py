@@ -36,10 +36,12 @@ SEV_LOW = "low"
 
 # --- physiologic plausibility bounds ---------------------------------------
 #
-# (low, high) hard bounds for common daily/vital metrics, in their usual unit.
-# A value at/below low or at/above high is physiologically implausible for a
-# living person and almost always a data error, not a real reading. Keyed by a
-# lowercased metric name; aliases map several spellings to one key.
+# (low, high) INCLUSIVE hard bounds for common daily/vital metrics, in their usual
+# unit. A value strictly below low or strictly above high is physiologically
+# implausible for a living person and almost always a data error. The endpoints
+# themselves are VALID: recovery/sleep of exactly 0% or 100% and spo2 of 100% are
+# real readings, not errors. Keyed by a lowercased metric name; aliases map
+# several spellings to one key.
 
 PLAUSIBLE_BOUNDS: Dict[str, Tuple[float, float, str]] = {
     # metric_key: (low, high, unit/comment)
@@ -207,7 +209,9 @@ def _check_impossible(records: List[Dict[str, object]]) -> List[Dict[str, object
         if val is None:
             continue
         low, high, comment = PLAUSIBLE_BOUNDS[key]
-        if val <= low or val >= high:
+        # Bounds are inclusive: only STRICTLY outside is implausible. This keeps
+        # legitimate endpoints (recovery/sleep 0% or 100%, spo2 100%) clean.
+        if val < low or val > high:
             issues.append(_issue(
                 SEV_HIGH, name, _record_date(rec),
                 f"Значение {name}={val} вне физиологичных границ ({low}-{high} {comment}).",

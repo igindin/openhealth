@@ -1,0 +1,18 @@
+# Caddy: automatic TLS (Let's Encrypt) + Basic Auth in front of OpenHealth.
+#
+# WHY THIS MATTERS: the OpenHealth bridge itself has NO authentication — its
+# local-first design assumed a trusted loopback. On a server it must be reached
+# ONLY through this proxy, which terminates TLS and requires a login. The
+# `openhealth` service publishes no ports, so this is the sole entrance.
+
+{$OPENHEALTH_DOMAIN} {
+	encode gzip
+
+	# Basic auth guards the whole app. Generate the hash (never store plaintext):
+	#   docker run --rm caddy:2 caddy hash-password --plaintext 'your-strong-password'
+	basic_auth {
+		{$OPENHEALTH_USER} {$OPENHEALTH_PASSWORD_HASH}
+	}
+
+	reverse_proxy openhealth:8770
+}

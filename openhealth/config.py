@@ -43,6 +43,7 @@ class RepoPaths:
     whoop_tokens_path: Path
     whoop_sync_state_path: Path
     whoop_webhooks_path: Path
+    oura_tokens_path: Path
     google_tokens_path: Path
     google_calendar_config_path: Path
     google_calendar_sync_state_path: Path
@@ -83,6 +84,7 @@ def build_paths(root: Path) -> RepoPaths:
         whoop_tokens_path=data_index / "whoop_tokens.json",
         whoop_sync_state_path=data_index / "whoop_sync_state.json",
         whoop_webhooks_path=data_index / "whoop_webhooks.jsonl",
+        oura_tokens_path=data_index / "oura_tokens.json",
         google_tokens_path=data_index / "google_tokens.json",
         google_calendar_config_path=config_dir / "google_calendar.json",
         google_calendar_sync_state_path=data_index / "google_calendar_sync_state.json",

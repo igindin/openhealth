@@ -32,4 +32,10 @@ dashboard: ## Rebuild dashboard data from the local workspace + launch the dashb
 	-$(PY) ui/web/build_dashboard_data.py --db data/index/openhealth.sqlite3 --out ui/web/data.local.json
 	bash ui/web/OpenHealth.command
 
-.PHONY: help onboard setup test lint check modules dashboard
+app: ## Build the macOS desktop app (ui/web/dist/OpenHealth.app).
+	$(PY) ui/web/make_macos_app.py
+
+app-install: ## Build OpenHealth.app + install into ~/Applications.
+	$(PY) ui/web/make_macos_app.py --install
+
+.PHONY: help onboard setup test lint check modules dashboard app app-install

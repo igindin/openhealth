@@ -78,6 +78,43 @@ def build_parser() -> argparse.ArgumentParser:
     whoop_verify.add_argument("--signature", required=True, help="Value of the X-WHOOP-Signature header.")
     whoop_verify.add_argument("--timestamp", required=True, help="Value of the X-WHOOP-Signature-Timestamp header.")
 
+    oura_auth = subparsers.add_parser("oura-auth-url", help="Generate an Oura Cloud OAuth authorization URL.")
+    oura_auth.add_argument("--state", help="Eight-character CSRF state. Generated automatically if omitted.")
+    oura_auth.add_argument(
+        "--scope",
+        action="append",
+        metavar="SCOPE",
+        help=(
+            "Oura OAuth scope to request (repeatable). Overrides "
+            "OPENHEALTH_OURA_SCOPES and the built-in default set "
+            "(personal daily heartrate workout)."
+        ),
+    )
+
+    oura_exchange = subparsers.add_parser("oura-exchange-code", help="Exchange an Oura OAuth code for tokens.")
+    oura_exchange.add_argument("--code", required=True, help="Authorization code returned by Oura.")
+
+    oura_exchange_url = subparsers.add_parser(
+        "oura-exchange-redirect-url",
+        help="Parse a full Oura redirect URL, extract the code, and exchange it for tokens.",
+    )
+    oura_exchange_url.add_argument("--url", required=True, help="Full redirect URL captured after Oura OAuth.")
+    oura_exchange_url.add_argument("--expected-state", help="Optional OAuth state to verify.")
+
+    oura_sync = subparsers.add_parser("oura-sync", help="Sync Oura Cloud API data into OpenHealth.")
+    oura_sync.add_argument("--start", help="ISO date YYYY-MM-DD (default: days-back before end).")
+    oura_sync.add_argument("--end", help="ISO date YYYY-MM-DD (default: today).")
+    oura_sync.add_argument("--days-back", type=int, default=30, help="Fallback lookback window when no start is given.")
+    oura_sync.add_argument("--owner", default="user", help="Owner label stored in the Oura source manifest.")
+    oura_sync.add_argument(
+        "--collection",
+        action="append",
+        metavar="NAME",
+        help="Limit the sync to specific collections (repeatable), e.g. daily_readiness.",
+    )
+
+    subparsers.add_parser("oura-capabilities", help="Show Oura collections and notes for the v2 API.")
+
     withings_auth = subparsers.add_parser("withings-auth-url", help="Generate a Withings OAuth authorization URL.")
     withings_auth.add_argument("--redirect-uri", required=True, help="Callback URL registered in the Withings app, e.g. http://localhost:8765/callback.")
     withings_auth.add_argument("--state", help="Eight-character CSRF state. Generated automatically if omitted.")
@@ -204,6 +241,54 @@ def main(argv: Optional[List[str]] = None) -> int:
                 timestamp_header=args.timestamp,
             )
         }
+    elif args.command == "oura-auth-url":
+        from .connectors import oura_live
+        credentials = oura_live.load_credentials_from_env()
+        if args.scope:
+            credentials = replace(credentials, scopes=tuple(args.scope))
+        state = args.state or secrets.token_hex(4)
+        result = {
+            "authorization_url": oura_live.build_authorization_url(credentials, state),
+            "state": state,
+            "scopes": list(credentials.scopes),
+        }
+    elif args.command == "oura-exchange-code":
+        from .connectors import oura_live
+        paths = ensure_repo_structure(repo_root)
+        credentials = oura_live.load_credentials_from_env()
+        tokens = oura_live.exchange_code_for_tokens(credentials, args.code)
+        oura_live.save_tokens(paths.oura_tokens_path, tokens)
+        result = {
+            "token_path": str(paths.oura_tokens_path),
+            "expires_at": tokens["expires_at"],
+            "scope": tokens.get("scope"),
+        }
+    elif args.command == "oura-exchange-redirect-url":
+        from .connectors import oura_live
+        paths = ensure_repo_structure(repo_root)
+        credentials = oura_live.load_credentials_from_env()
+        parsed = oura_live.extract_code_from_redirect_url(args.url, args.expected_state)
+        tokens = oura_live.exchange_code_for_tokens(credentials, parsed["code"])
+        oura_live.save_tokens(paths.oura_tokens_path, tokens)
+        result = {
+            "token_path": str(paths.oura_tokens_path),
+            "expires_at": tokens["expires_at"],
+            "scope": tokens.get("scope"),
+            "state": parsed.get("state"),
+        }
+    elif args.command == "oura-sync":
+        from .connectors import oura_live
+        result = oura_live.sync_oura(
+            root=repo_root,
+            start=args.start,
+            end=args.end,
+            days_back=args.days_back,
+            owner=args.owner,
+            collections=args.collection,
+        )
+    elif args.command == "oura-capabilities":
+        from .connectors import oura_live
+        result = oura_live.CAPABILITIES
     elif args.command == "withings-auth-url":
         from .connectors import withings
         state = args.state or secrets.token_hex(4)

@@ -71,3 +71,17 @@ ui/web/refs/
 
 # Атмосферные фоны: локальные (cosmos-артворки, не для распространения)
 ui/web/assets/bg/
+
+# Личный медиа-воркспейс для слайдов (фото из Photos, скрины WHOOP, заметки
+# к нарезке) — локально, НЕ для публичного репо.
+ui/web/assets/slides/
+
+# Runtime intake envelopes (personal data) — written by POST /api/intake when the
+# bridge serves ui/web. Never commit intake content to the public repo.
+ui/web/data/
+data/intake/
+
+# Private research notes derived from personal sources (e.g. Gmail signal digests).
+# Local-only; used to inform features, never published. Any public learning doc must
+# be added explicitly (git add -f) or live outside this pattern.
+docs/learnings/ideabrowser-signals-*.md

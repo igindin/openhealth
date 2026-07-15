@@ -105,6 +105,12 @@ REGISTRY: Dict[str, Dict[str, Any]] = {
         "where": "correlations.from_index", "affects": ["behavior_impact"],
         "doc": "docs/methodology/correlations.md", "group": "correlations", "wired": True,
     },
+    "correlations.lag_days": {
+        "default": 0, "min": 0, "max": 3, "step": 1,
+        "label_ru": "Лаг: поведение → recovery через N дней", "unit": "дни",
+        "where": "correlations.from_index", "affects": ["behavior_impact"],
+        "doc": "docs/methodology/correlations.md", "group": "correlations", "wired": True,
+    },
     # --- insight detectors (insights.py) --------------------------------------
     "insights.sleep_goal_h": {
         "default": 8.0, "min": 6.0, "max": 10.0, "step": 0.25,

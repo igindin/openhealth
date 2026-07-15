@@ -21,7 +21,7 @@ from build_dashboard_data import (
     build_correlations_block,
     build_insights_block,
     build_recovery_block,
-    _load_whoop_by_date,
+    _load_recovery_by_date,
 )
 
 APPLE_SOURCE_ID = "apple-health-bridge"
@@ -66,7 +66,7 @@ def _trend(by_date: dict, dates: list[str], keys: list[str], metric: str, title:
 
 
 def _whoop_trends(con: sqlite3.Connection) -> list[dict]:
-    by_date = _load_whoop_by_date(con)
+    by_date = _load_recovery_by_date(con)
     dates = sorted(by_date)[-30:]
     candidates = [
         _trend(by_date, dates, ["recovery_score"], "recovery", "Recovery", "%"),

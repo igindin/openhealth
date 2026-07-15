@@ -1,0 +1,14 @@
+# Keep the OpenHealth image lean (deploy/openhealth.Dockerfile copies the repo).
+.git
+.github
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+tests
+ui/web/refs
+ui/web/dist
+*.local.json
+.env
+.env.*
+!.env.example

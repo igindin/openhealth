@@ -151,10 +151,15 @@ def delete_records_for_source(db_path: Path, source_id: str) -> None:
 def delete_records_by_ids(db_path: Path, record_ids: List[str]) -> None:
     if not record_ids:
         return
+    # Chunk the IN (...) list: SQLite caps host variables per statement
+    # (SQLITE_MAX_VARIABLE_NUMBER, historically 999), and a multi-day WHOOP
+    # purge easily exceeds that. Delete in batches well under the limit.
     connection = connect(db_path)
-    placeholders = ",".join("?" for _ in record_ids)
     with connection:
-        connection.execute("DELETE FROM records WHERE record_id IN (%s)" % placeholders, tuple(record_ids))
+        for start in range(0, len(record_ids), 500):
+            chunk = record_ids[start:start + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            connection.execute("DELETE FROM records WHERE record_id IN (%s)" % placeholders, tuple(chunk))
     connection.close()
 
 

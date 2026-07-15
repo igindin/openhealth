@@ -33,12 +33,21 @@ from pathlib import Path
 GREEN, YELLOW = 67, 34
 
 
-def _load_whoop_by_date(con: sqlite3.Connection) -> dict[str, dict[str, float]]:
-    """metric_name -> value, grouped by ISO date, for the whoop-live source."""
+def _load_recovery_by_date(con: sqlite3.Connection) -> dict[str, dict[str, float]]:
+    """metric_name -> value, grouped by ISO date, for the recovery sources.
+
+    Reads the live wearable sources that share the recovery metric vocabulary
+    (recovery_score / hrv_rmssd_milli / resting_heart_rate / sleep_performance_
+    percentage). Oura (oura-live) is applied first and WHOOP (whoop-live) second,
+    so on any date both cover, WHOOP wins — it carries the native strain and
+    sleep-performance the dashboard was built around. With only Oura connected,
+    Oura's readiness/HRV/RHR/sleep fill the same tiles.
+    """
     by_date: dict[str, dict[str, float]] = defaultdict(dict)
     rows = con.execute(
         "SELECT payload_json FROM records "
-        "WHERE record_type='Observation' AND source_id='whoop-live'"
+        "WHERE record_type='Observation' AND source_id IN ('oura-live', 'whoop-live') "
+        "ORDER BY CASE source_id WHEN 'oura-live' THEN 0 ELSE 1 END"
     ).fetchall()
     for (payload,) in rows:
         p = json.loads(payload)
@@ -50,7 +59,8 @@ def _load_whoop_by_date(con: sqlite3.Connection) -> dict[str, dict[str, float]]:
         by_date[d][mn] = v
         # Recovery payloads also carry rhr/hrv inside metadata.score; mirror them
         # so a recovery-score record alone is enough to populate the daily row.
-        score = (p.get("metadata") or {}).get("score") or {}
+        _score = (p.get("metadata") or {}).get("score")
+        score = _score if isinstance(_score, dict) else {}
         if "resting_heart_rate" in score and score["resting_heart_rate"] is not None:
             by_date[d].setdefault("resting_heart_rate", score["resting_heart_rate"])
         if "hrv_rmssd_milli" in score and score["hrv_rmssd_milli"] is not None:
@@ -96,7 +106,7 @@ def _hrv_minutes(value):
 
 
 def build_recovery_block(con: sqlite3.Connection) -> dict:
-    by_date = _load_whoop_by_date(con)
+    by_date = _load_recovery_by_date(con)
     dates = sorted(by_date)
     if not dates:
         return {}
@@ -258,11 +268,15 @@ def build_connections(con: sqlite3.Connection) -> dict:
         ).fetchall()
     }
     has_whoop = any(s["type"] == "whoop" for s in srcs.values())
+    has_oura = any(s["type"] == "oura" and sid == "oura-live" for sid, s in srcs.items())
     has_labs = any("microbiota" in sid or "pdf" in sid for sid in srcs)
     has_dna = any("genotype" in sid for sid in srcs)
 
     whoop_cend = next(
         (s["cend"] for s in srcs.values() if s["type"] == "whoop"), None
+    )
+    oura_cend = next(
+        (s["cend"] for sid, s in srcs.items() if s["type"] == "oura" and sid == "oura-live"), None
     )
 
     return {
@@ -271,7 +285,8 @@ def build_connections(con: sqlite3.Connection) -> dict:
                   "icon": "ph-activity"},
         "apple": {"label": "Apple Health", "connected": False, "lastSync": None,
                   "icon": "ph-heart"},
-        "oura": {"label": "Oura Ring", "connected": False, "lastSync": None,
+        "oura": {"label": "Oura Ring", "connected": has_oura,
+                 "lastSync": _human_date(oura_cend) if oura_cend else None,
                  "icon": "ph-shield"},
         "garmin": {"label": "Garmin Connect", "connected": False, "lastSync": None,
                    "icon": "ph-barbell"},
@@ -368,7 +383,7 @@ def build_insights_block(con: sqlite3.Connection) -> dict:
     except Exception:
         return {"insights": [], "protocols": []}
 
-    daily = _daily_from_whoop(_load_whoop_by_date(con))
+    daily = _daily_from_whoop(_load_recovery_by_date(con))
     try:
         found = _insights.detect_insights(daily, {"sleep_h": _sleep_goal_h()})
         protos = _protocols.build_protocols(found, correlations=[])
@@ -532,7 +547,8 @@ def _all_records(con: sqlite3.Connection) -> list[dict]:
             "date": p.get("date") or p.get("start_date"),
         })
         # Mirror rhr / hrv carried inside a recovery score sub-object.
-        score = (p.get("metadata") or {}).get("score") or {}
+        _score = (p.get("metadata") or {}).get("score")
+        score = _score if isinstance(_score, dict) else {}
         d = p.get("date") or p.get("start_date")
         for sk, alias in (("resting_heart_rate", "rhr"), ("hrv_rmssd_milli", "hrv")):
             if score.get(sk) is not None:
@@ -893,10 +909,64 @@ _DNA_SPEC = [
 ]
 
 
+def _genotypes_from_23andme(fh, want: set[str]) -> dict[str, str]:
+    """Raw 23andMe / AncestryDNA export: rsid<TAB>chromosome<TAB>position<TAB>genotype."""
+    found: dict[str, str] = {}
+    for line in fh:
+        if not line or line[0] != "r":
+            continue
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) < 4:
+            continue
+        if parts[0] in want:
+            found[parts[0]] = parts[3].strip()
+            if len(found) == len(want):
+                break
+    return found
+
+
+def _genotypes_from_vcf(fh, want: set[str]) -> dict[str, str]:
+    """Single-sample VCF (Genotek, and array/WGS labs generally): decode GT plus
+    REF/ALT into the same two-base call the 23andMe path yields.
+
+    Alleles are taken on the reference's forward strand, which is the convention
+    23andMe reports on too, so both paths feed _DNA_SPEC the same way. Only
+    diploid bi-allelic SNV calls are used; indels, no-calls (./.) and anything
+    non-single-base are skipped — the curated set is all SNVs.
+    """
+    found: dict[str, str] = {}
+    for line in fh:
+        if not line or line[0] == "#":
+            continue
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) < 10:  # CHROM..FORMAT + at least one sample column
+            continue
+        rsid = parts[2]
+        if rsid not in want:
+            continue
+        idx = parts[9].split(":")[0].replace("|", "/").split("/")
+        if len(idx) != 2 or not all(i.isdigit() for i in idx):
+            continue
+        alleles = [parts[3]] + parts[4].split(",")
+        try:
+            bases = [alleles[int(i)] for i in idx]
+        except IndexError:
+            continue
+        if not all(len(b) == 1 for b in bases):
+            continue
+        found[rsid] = "".join(bases)
+        if len(found) == len(want):
+            break
+    return found
+
+
 def build_dna(con: sqlite3.Connection) -> list[dict]:
     """Read the raw genotype file (local) and surface real genotypes for a
     curated set of well-established lifestyle variants. Factual call + cautious
-    note + C-grade. Never a diagnosis; strand-ambiguous loci show no direction."""
+    note + C-grade. Never a diagnosis; strand-ambiguous loci show no direction.
+
+    Accepts either a raw 23andMe-style export or a single-sample VCF — the
+    format is detected from the first line."""
     row = con.execute(
         "SELECT payload_json FROM sources WHERE source_id LIKE '%genotype%' LIMIT 1"
     ).fetchone()
@@ -907,19 +977,11 @@ def build_dna(con: sqlite3.Connection) -> list[dict]:
     if not path or not os.path.exists(path):
         return []
     want = {s[0] for s in _DNA_SPEC}
-    found: dict[str, str] = {}
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                if not line or line[0] != "r":
-                    continue
-                parts = line.rstrip("\n").split("\t")
-                if len(parts) < 4:
-                    continue
-                if parts[0] in want:
-                    found[parts[0]] = parts[3].strip()
-                    if len(found) == len(want):
-                        break
+            is_vcf = fh.readline().startswith("##fileformat=VCF")
+            fh.seek(0)
+            found = (_genotypes_from_vcf if is_vcf else _genotypes_from_23andme)(fh, want)
     except OSError:
         return []
     out = []

@@ -543,6 +543,7 @@ class BotConfig:
         today_file: Path = DEFAULT_TODAY_FILE,
         enable_ask: bool = False,
         agent_timeout_s: int = AGENT_TIMEOUT_S,
+        bridge_url: Optional[str] = None,
     ):
         self.data_dir = Path(data_dir)
         self.inbox_dir = Path(inbox_dir) if inbox_dir is not None else self.data_dir / "inbox"
@@ -550,6 +551,11 @@ class BotConfig:
         self.today_file = Path(today_file)
         self.enable_ask = enable_ask
         self.agent_timeout_s = agent_timeout_s
+        # When set (e.g. http://127.0.0.1:8770), a plain intake is ALSO POSTed to
+        # the bridge's /api/intake so it lands in the health index in real time
+        # ("внёс в телеге — сразу видно в вебе"). Without it, envelopes stay on
+        # disk and reach the index via the batch import parser.
+        self.bridge_url = bridge_url.rstrip("/") if bridge_url else None
         self.state_dir = self.data_dir / "state"
         self.offset_path = self.state_dir / "offset.json"
         self.checkin_state_path = self.state_dir / "checkin.json"
@@ -657,11 +663,32 @@ class Bot:
             download_failed |= not self._download_attachment(envelope, attachment)
         envelope_file = intake.write_envelope(envelope, self.config.data_dir)
         intake.write_card(envelope, self.config.inbox_dir, envelope_file=envelope_file)
+        indexed = self._push_to_bridge(envelope)
         logger.info(
-            "intake stored type=%s submission_id=%s chat_id=%s",
-            envelope["type"], envelope["submission_id"], chat_id,
+            "intake stored type=%s submission_id=%s chat_id=%s indexed=%s",
+            envelope["type"], envelope["submission_id"], chat_id, indexed,
         )
         self.api.send_message(chat_id, self._confirmation(envelope, download_failed))
+
+    def _push_to_bridge(self, envelope: Dict[str, Any]) -> bool:
+        """Best-effort real-time indexing: POST the envelope to the bridge's
+        /api/intake so it reaches the health index immediately. Returns True on a
+        200. Never raises — the disk copy is the durable path and the batch import
+        parser still ingests it if the bridge is offline.
+        """
+        if not self.config.bridge_url:
+            return False
+        try:
+            body = json.dumps(envelope).encode("utf-8")
+            req = urllib.request.Request(
+                self.config.bridge_url + "/api/intake",
+                data=body, headers={"Content-Type": "application/json"}, method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310 — local bridge
+                return 200 <= getattr(resp, "status", resp.getcode()) < 300
+        except (urllib.error.URLError, socket.timeout, ConnectionError, OSError, ValueError) as exc:
+            logger.warning("bridge intake push failed (envelope kept on disk): %s", exc.__class__.__name__)
+            return False
 
     def _download_attachment(self, envelope: Dict[str, Any], attachment: Dict[str, Any]) -> bool:
         """Fetch one attachment into <data-dir>/files/<kind>/; True on success."""
@@ -777,6 +804,9 @@ def _build_parser() -> argparse.ArgumentParser:
                        help="enable the /ask local agent bridge (codex/claude CLI)")
     run_p.add_argument("--once", action="store_true",
                        help="process one getUpdates batch and exit (smoke runs)")
+    run_p.add_argument("--bridge-url", default=os.environ.get("OPENHEALTH_BRIDGE_URL"),
+                       help="POST plain intake to this bridge's /api/intake for real-time "
+                            "indexing (e.g. http://127.0.0.1:8770); env OPENHEALTH_BRIDGE_URL")
 
     check_p = sub.add_parser("check", help="offline self-check: token, allowlist, folders, agent CLIs")
     check_p.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
@@ -830,6 +860,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         today_file=args.today_file,
         enable_ask=args.enable_ask,
         agent_timeout_s=args.agent_timeout,
+        bridge_url=getattr(args, "bridge_url", None),
     )
     config.state_dir.mkdir(parents=True, exist_ok=True)
     config.inbox_dir.mkdir(parents=True, exist_ok=True)

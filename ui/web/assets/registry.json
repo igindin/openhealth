@@ -68,9 +68,6 @@
       "metric_ids": [
         "day_strain",
         "average_hr",
-        "active_calories",
-        "strength_activity_time",
-        "recovery_time_in_bed",
         "hr_zones"
       ]
     },
@@ -96,13 +93,234 @@
       "icon": "ph-person",
       "order": 40,
       "metric_ids": [
+        "vo2max",
+        "fitness_age",
+        "steps"
+      ]
+    },
+    {
+      "id": "pulse",
+      "label_ru": "Пульс дня",
+      "label_en": "Day Pulse",
+      "icon": "ph-heart",
+      "order": 2,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "habits",
+      "label_ru": "Привычки",
+      "label_en": "Habits",
+      "icon": "ph-check-square",
+      "order": 3,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "workouts",
+      "label_ru": "Тренировки",
+      "label_en": "Workouts",
+      "icon": "ph-barbell",
+      "order": 25,
+      "metric_ids": [
+        "active_calories",
+        "strength_activity_time",
+        "recovery_time_in_bed"
+      ]
+    },
+    {
+      "id": "body_composition",
+      "label_ru": "Состав тела",
+      "label_en": "Body Composition",
+      "icon": "ph-chart-pie",
+      "order": 41,
+      "metric_ids": [
         "weight",
         "lean_body_mass",
-        "body_fat",
-        "steps",
-        "vo2max",
-        "fitness_age"
+        "body_fat"
       ]
+    },
+    {
+      "id": "biomarkers",
+      "label_ru": "Анализы",
+      "label_en": "Biomarkers",
+      "icon": "ph-flask",
+      "order": 42,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "dna",
+      "label_ru": "ДНК",
+      "label_en": "DNA",
+      "icon": "ph-dna",
+      "order": 43,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "vitals",
+      "label_ru": "Обзор показателей",
+      "label_en": "Vitals Overview",
+      "icon": "ph-chart-line-up",
+      "order": 44,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "trends",
+      "label_ru": "Тренды",
+      "label_en": "Trends",
+      "icon": "ph-calendar",
+      "order": 50,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "timeline",
+      "label_ru": "Хронология",
+      "label_en": "Timeline",
+      "icon": "ph-footprints",
+      "order": 51,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "correlations",
+      "label_ru": "Влияние",
+      "label_en": "Correlations",
+      "icon": "ph-scales",
+      "order": 52,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "algorithms",
+      "label_ru": "Алгоритмы",
+      "label_en": "Algorithms",
+      "icon": "ph-function",
+      "order": 53,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "journal",
+      "label_ru": "Журнал",
+      "label_en": "Journal",
+      "icon": "ph-notebook",
+      "order": 60,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "protocols",
+      "label_ru": "Протоколы",
+      "label_en": "Protocols",
+      "icon": "ph-book-open",
+      "order": 70,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "research",
+      "label_ru": "Research",
+      "label_en": "Research",
+      "icon": "ph-microscope",
+      "order": 71,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "methodology",
+      "label_ru": "Методологии",
+      "label_en": "Methodology",
+      "icon": "ph-function",
+      "order": 72,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "cascade",
+      "label_ru": "Каскад целей",
+      "label_en": "Goal Cascade",
+      "icon": "ph-compass",
+      "order": 73,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "devices",
+      "label_ru": "Девайсы",
+      "label_en": "Devices",
+      "icon": "ph-watch",
+      "order": 74,
+      "metric_ids": [],
+      "kind": "knowledge",
+      "knowledge_view": "devices"
+    },
+    {
+      "id": "sources",
+      "label_ru": "Источники",
+      "label_en": "Sources",
+      "icon": "ph-graduation-cap",
+      "order": 75,
+      "metric_ids": [],
+      "kind": "knowledge",
+      "knowledge_view": "sources"
+    },
+    {
+      "id": "medications",
+      "label_ru": "Препараты и БАДы",
+      "label_en": "Medications",
+      "icon": "ph-pill",
+      "order": 80,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "vaccination",
+      "label_ru": "Вакцинация",
+      "label_en": "Vaccination",
+      "icon": "ph-syringe",
+      "order": 81,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "diagnostics",
+      "label_ru": "Диагностика",
+      "label_en": "Diagnostics",
+      "icon": "ph-pulse",
+      "order": 82,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "reports",
+      "label_ru": "Отчёты",
+      "label_en": "Reports",
+      "icon": "ph-file-text",
+      "order": 83,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "digests",
+      "label_ru": "Дайджесты",
+      "label_en": "Digests",
+      "icon": "ph-bell",
+      "order": 84,
+      "status": "soon",
+      "metric_ids": []
+    },
+    {
+      "id": "sync",
+      "label_ru": "Источники данных",
+      "label_en": "Data Sync",
+      "icon": "ph-plugs-connected",
+      "order": 85,
+      "status": "soon",
+      "metric_ids": []
     },
     {
       "id": "settings",
@@ -111,6 +329,109 @@
       "icon": "ph-gear",
       "order": 99,
       "metric_ids": []
+    }
+  ],
+  "groups": [
+    {
+      "id": "today",
+      "label_ru": "Сегодня",
+      "icon": "ph-house",
+      "order": 1,
+      "section_ids": [
+        "today",
+        "pulse",
+        "habits"
+      ]
+    },
+    {
+      "id": "sleep",
+      "label_ru": "Сон",
+      "icon": "ph-moon",
+      "order": 2,
+      "section_ids": [
+        "sleep"
+      ]
+    },
+    {
+      "id": "activity",
+      "label_ru": "Активность",
+      "icon": "ph-lightning",
+      "order": 3,
+      "section_ids": [
+        "strain",
+        "workouts"
+      ]
+    },
+    {
+      "id": "stress",
+      "label_ru": "Стресс",
+      "icon": "ph-gauge",
+      "order": 4,
+      "section_ids": [
+        "stress"
+      ]
+    },
+    {
+      "id": "body",
+      "label_ru": "Тело и анализы",
+      "icon": "ph-person",
+      "order": 5,
+      "section_ids": [
+        "body",
+        "body_composition",
+        "biomarkers",
+        "dna",
+        "vitals"
+      ]
+    },
+    {
+      "id": "analytics",
+      "label_ru": "Аналитика",
+      "icon": "ph-chart-line-up",
+      "order": 6,
+      "section_ids": [
+        "trends",
+        "timeline",
+        "correlations",
+        "algorithms"
+      ]
+    },
+    {
+      "id": "journal",
+      "label_ru": "Журнал",
+      "icon": "ph-notebook",
+      "order": 7,
+      "section_ids": [
+        "journal"
+      ]
+    },
+    {
+      "id": "knowledge",
+      "label_ru": "Знание и цели",
+      "icon": "ph-book-open",
+      "order": 8,
+      "section_ids": [
+        "protocols",
+        "research",
+        "methodology",
+        "cascade",
+        "devices",
+        "sources"
+      ]
+    },
+    {
+      "id": "medical",
+      "label_ru": "Медкарта",
+      "icon": "ph-first-aid",
+      "order": 9,
+      "section_ids": [
+        "medications",
+        "vaccination",
+        "diagnostics",
+        "reports",
+        "digests",
+        "sync"
+      ]
     }
   ],
   "metrics": [
@@ -1118,6 +1439,394 @@
         2.2
       ],
       "discuss": "Демо-значение. Реальные данные подставляются из data.local.json (вне репозитория)."
+    }
+  ],
+  "personas_schema": {
+    "_doc": "Аудиторные пресеты: под кого перестраивается OpenHealth. Чисто данные — применение опционально (OH.persona*). По умолчанию пресет не активен, скины не меняются.",
+    "fields": {
+      "id": "kebab-case id",
+      "label_ru": "название",
+      "icon": "phosphor-иконка",
+      "tagline": "одна строка: на чём фокус",
+      "priority_groups": "группы навигации в порядке приоритета (из groups[].id)",
+      "focus_metrics": "ключевые метрики этой аудитории (из metrics[].id)",
+      "devices": "рекомендуемые устройства (из knowledge.json devices[].id)",
+      "sources": "рекомендуемые источники протоколов (из knowledge.json protocol_sources[].id)",
+      "note": "честная оговорка/граница",
+      "reference": "true = эталонный полностью прописанный профиль"
+    }
+  },
+  "personas": [
+    {
+      "id": "weight-loss",
+      "label_ru": "Похудение",
+      "icon": "ph-scales",
+      "tagline": "Состав тела, метаболизм и движение — что двигает вес и почему.",
+      "priority_groups": [
+        "today",
+        "body",
+        "activity",
+        "analytics"
+      ],
+      "focus_metrics": [
+        "weight",
+        "body_fat",
+        "lean_body_mass",
+        "steps",
+        "active_calories",
+        "day_strain"
+      ],
+      "devices": [
+        "abbott-lingo",
+        "dexcom-stelo",
+        "apple-watch"
+      ],
+      "sources": [
+        "layne-norton-biolayne",
+        "alan-aragon",
+        "examine"
+      ],
+      "note": "Доказательное питание; вес — тренд, не одна цифра.",
+      "reference": false
+    },
+    {
+      "id": "seniors",
+      "label_ru": "Активное долголетие",
+      "icon": "ph-tree",
+      "tagline": "VO2max, сила и восстановление как опора здоровых лет.",
+      "priority_groups": [
+        "today",
+        "activity",
+        "body",
+        "medical"
+      ],
+      "focus_metrics": [
+        "vo2max",
+        "fitness_age",
+        "steps",
+        "rhr",
+        "lean_body_mass",
+        "recovery"
+      ],
+      "devices": [
+        "apple-watch",
+        "oura-ring-4",
+        "withings-sleep-analyzer"
+      ],
+      "sources": [
+        "peter-attia-the-drive",
+        "gabrielle-lyon",
+        "rhonda-patrick-foundmyfitness"
+      ],
+      "note": "Фокус на функцию и силу; решения по здоровью — с врачом.",
+      "reference": false
+    },
+    {
+      "id": "athlete",
+      "label_ru": "Спортсмен",
+      "icon": "ph-barbell",
+      "tagline": "Восстановление, нагрузка и зоны — пик без перетрена.",
+      "priority_groups": [
+        "today",
+        "activity",
+        "sleep",
+        "stress",
+        "analytics"
+      ],
+      "focus_metrics": [
+        "recovery",
+        "hrv",
+        "day_strain",
+        "vo2max",
+        "hr_zones",
+        "restorative_h",
+        "rhr",
+        "strength_activity_time"
+      ],
+      "devices": [
+        "whoop-5-mg",
+        "polar-h10",
+        "stryd",
+        "lactate-plus",
+        "coros-evolab"
+      ],
+      "sources": [
+        "andy-galpin-perform",
+        "inigo-san-millan",
+        "brad-schoenfeld",
+        "mike-israetel-rp"
+      ],
+      "note": "Баланс нагрузка/восстановление; HRV-тренд как ранний сигнал перетрена.",
+      "reference": true
+    },
+    {
+      "id": "biohacker",
+      "label_ru": "Биохакер",
+      "icon": "ph-flask",
+      "tagline": "Максимум сигналов, n=1 эксперименты, верификация каждой цифры.",
+      "priority_groups": [
+        "today",
+        "analytics",
+        "sleep",
+        "stress",
+        "body",
+        "knowledge"
+      ],
+      "focus_metrics": [
+        "hrv",
+        "recovery",
+        "sleep_stages",
+        "sleep_efficiency_pct",
+        "respiratory_rate",
+        "skin_temperature",
+        "blood_oxygen",
+        "vo2max"
+      ],
+      "devices": [
+        "whoop-5-mg",
+        "oura-ring-4",
+        "abbott-lingo",
+        "muse-s-athena",
+        "apollo-neuro",
+        "eight-sleep-pod-4"
+      ],
+      "sources": [
+        "andrew-huberman-lab",
+        "rhonda-patrick-foundmyfitness",
+        "peter-attia-the-drive",
+        "examine"
+      ],
+      "note": "Любая интерпретация — гипотеза до n=1 проверки; личные паттерны не выше C3.",
+      "reference": true
+    },
+    {
+      "id": "endurance",
+      "label_ru": "Выносливость / айронмен",
+      "icon": "ph-bicycle",
+      "tagline": "Объём, зоны и аэробная база для длинных дистанций.",
+      "priority_groups": [
+        "today",
+        "activity",
+        "sleep",
+        "analytics"
+      ],
+      "focus_metrics": [
+        "vo2max",
+        "day_strain",
+        "hr_zones",
+        "recovery",
+        "restorative_h",
+        "average_hr",
+        "hrv"
+      ],
+      "devices": [
+        "coros-evolab",
+        "stryd",
+        "polar-h10",
+        "lactate-scout-4",
+        "whoop-5-mg"
+      ],
+      "sources": [
+        "inigo-san-millan",
+        "andy-galpin-perform",
+        "peter-attia-the-drive"
+      ],
+      "note": "Zone 2 и пороги индивидуальны; популярные цифры — ориентир, не норма.",
+      "reference": false
+    },
+    {
+      "id": "data-geek",
+      "label_ru": "Гик данных",
+      "icon": "ph-chart-line",
+      "tagline": "Тренды, корреляции и провенанс — данные, которым можно верить.",
+      "priority_groups": [
+        "analytics",
+        "today",
+        "sleep",
+        "knowledge"
+      ],
+      "focus_metrics": [
+        "hrv",
+        "recovery_trend_30",
+        "sleep_duration_trend_7",
+        "sleep_consistency_pct",
+        "respiratory_rate",
+        "skin_temperature"
+      ],
+      "devices": [
+        "oura-ring-4",
+        "whoop-5-mg",
+        "polar-h10",
+        "ultrahuman-m1"
+      ],
+      "sources": [
+        "examine",
+        "peter-attia-the-drive",
+        "andy-galpin-perform"
+      ],
+      "note": "Корреляции n=1 требуют ≥5 дней; eligibility и источник видны на каждой цифре.",
+      "reference": false
+    },
+    {
+      "id": "womens-health",
+      "label_ru": "Женское здоровье",
+      "icon": "ph-flower",
+      "tagline": "Цикл, температура и восстановление в женской физиологии.",
+      "priority_groups": [
+        "today",
+        "body",
+        "sleep",
+        "stress",
+        "medical"
+      ],
+      "focus_metrics": [
+        "skin_temperature",
+        "hrv",
+        "recovery",
+        "sleep_stages",
+        "rhr",
+        "weight"
+      ],
+      "devices": [
+        "oura-ring-4",
+        "apple-watch",
+        "withings-sleep-analyzer"
+      ],
+      "sources": [
+        "stacy-sims",
+        "rhonda-patrick-foundmyfitness"
+      ],
+      "note": "Протоколы по циклу/менопаузе опираются на ограниченные данные — помечаем честно.",
+      "reference": false
+    },
+    {
+      "id": "chronic",
+      "label_ru": "Хронические состояния",
+      "icon": "ph-heartbeat",
+      "tagline": "Базовые сигналы и история для разговора с врачом.",
+      "priority_groups": [
+        "today",
+        "medical",
+        "body",
+        "analytics"
+      ],
+      "focus_metrics": [
+        "rhr",
+        "hrv",
+        "blood_oxygen",
+        "respiratory_rate",
+        "skin_temperature",
+        "sleep_efficiency_pct"
+      ],
+      "devices": [
+        "apple-watch",
+        "withings-sleep-analyzer",
+        "dexcom-stelo"
+      ],
+      "sources": [
+        "peter-attia-the-drive",
+        "examine"
+      ],
+      "note": "Не диагноз и не лечение — трекинг и вопросы для врача. Решения с врачом.",
+      "reference": false
+    },
+    {
+      "id": "low-energy",
+      "label_ru": "Мало энергии",
+      "icon": "ph-battery-low",
+      "tagline": "Что тянет энергию вниз: сон, восстановление, стресс, метаболизм.",
+      "priority_groups": [
+        "today",
+        "sleep",
+        "stress",
+        "body"
+      ],
+      "focus_metrics": [
+        "recovery",
+        "sleep_debt_h",
+        "restorative_h",
+        "sleep_efficiency_pct",
+        "hrv",
+        "rhr",
+        "non_activity_stress"
+      ],
+      "devices": [
+        "oura-ring-4",
+        "apple-watch",
+        "abbott-lingo",
+        "withings-sleep-analyzer"
+      ],
+      "sources": [
+        "andrew-huberman-lab",
+        "peter-attia-the-drive",
+        "rhonda-patrick-foundmyfitness"
+      ],
+      "note": "Сначала база (сон, ритм, восстановление), потом сложные гипотезы; усталость многопричинна.",
+      "reference": true
+    },
+    {
+      "id": "adhd",
+      "label_ru": "СДВГ / фокус",
+      "icon": "ph-target",
+      "tagline": "Регулярность сна и нагрузки как опора внимания.",
+      "priority_groups": [
+        "today",
+        "sleep",
+        "stress",
+        "journal"
+      ],
+      "focus_metrics": [
+        "sleep_consistency_pct",
+        "sleep_debt_h",
+        "recovery",
+        "hrv",
+        "day_strain",
+        "steps"
+      ],
+      "devices": [
+        "oura-ring-4",
+        "apple-watch",
+        "muse-s-athena",
+        "endel"
+      ],
+      "sources": [
+        "andrew-huberman-lab"
+      ],
+      "note": "Опора на ритм и привычки; никаких медицинских утверждений.",
+      "reference": false
+    },
+    {
+      "id": "mental-practice",
+      "label_ru": "Ментальное здоровье и практики",
+      "icon": "ph-brain",
+      "tagline": "Стресс, дыхание и нервная система — медитация и восстановление.",
+      "priority_groups": [
+        "today",
+        "stress",
+        "sleep",
+        "journal"
+      ],
+      "focus_metrics": [
+        "hrv",
+        "stress_monitor",
+        "non_activity_stress",
+        "respiratory_rate",
+        "recovery",
+        "sleep_stress"
+      ],
+      "devices": [
+        "muse-s-athena",
+        "apollo-neuro",
+        "pulsetto",
+        "endel",
+        "braintap"
+      ],
+      "sources": [
+        "andrew-huberman-lab",
+        "rhonda-patrick-foundmyfitness"
+      ],
+      "note": "Вагус/медитация-девайсы сами HRV не меряют — эффект проверяем трекером, n=1.",
+      "reference": false
     }
   ]
 }

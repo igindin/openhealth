@@ -73,6 +73,18 @@ class ImpossibleValueTests(unittest.TestCase):
         report = dq.validate_records(recs, today="2024-06-02")
         self.assertEqual([i for i in report["issues"] if i["kind"] == "impossible_value"], [])
 
+    def test_inclusive_percentage_endpoints_are_valid(self):
+        # 0% and 100% are real WHOOP/Oura readings, not data errors: the bounds
+        # are inclusive, so the endpoints must NOT be flagged.
+        recs = [
+            {"name": "recovery", "value": 100, "date": "2024-06-01"},
+            {"name": "recovery", "value": 0, "date": "2024-06-02"},
+            {"name": "sleep_performance", "value": 100, "date": "2024-06-03"},
+            {"name": "spo2", "value": 100, "date": "2024-06-04"},
+        ]
+        report = dq.validate_records(recs, today="2024-06-05")
+        self.assertEqual([i for i in report["issues"] if i["kind"] == "impossible_value"], [])
+
 
 class GapTests(unittest.TestCase):
     def test_gap_in_series_flagged(self):

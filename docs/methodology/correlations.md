@@ -25,6 +25,7 @@
 | параметр | значение | где в коде | зачем |
 |---|---|---|---|
 | окно анализа, дней | 90 | `openhealth/modules/correlations.py: DEFAULT_WINDOW_DAYS` | личный baseline-период (60-90 дней — баланс свежести и объёма) |
+| лаг, дней | 0 | `correlations.lag_days` (тунабл) | пара «поведение день D → recovery день D+лаг». Recovery меряется утром, поэтому вечернее поведение проявляется в recovery СЛЕДУЮЩЕГО утра — для таких входов ставь лаг = 1. Лаг = 0 сравнивает поведение с recovery того же дня (утро D отражает ночь D-1). |
 | минимум дней «да» | 5 | `openhealth/modules/correlations.py: MIN_YES_DAYS` | ниже — шум, зеркалит порог WHOOP |
 | минимум дней «нет» | 5 | `openhealth/modules/correlations.py: MIN_NO_DAYS` | нужна контрольная группа дней |
 | порог small | 3.0 | `openhealth/modules/correlations.py: SMALL_IMPACT` | < 3 пунктов — в пределах шума, не показываем |

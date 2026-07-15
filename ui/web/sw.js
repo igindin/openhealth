@@ -2,7 +2,7 @@
 // Статика — cache-first; данные (data.local.json, /api/), реестр (registry.json) и
 // движковые скрипты (assets/oh-*.js) — network-first, чтобы значения, определения
 // метрик и код движка не залипали в кэше.
-const CACHE = 'openhealth-shell-v9';
+const CACHE = 'openhealth-shell-v12';
 const SHELL = [
   './',
   './index.html',
@@ -35,7 +35,7 @@ self.addEventListener('fetch', (e) => {
 
   // Реестр и движковые скрипты (oh-registry.js / oh-charts.js) — источник правды
   // определений и кода: всегда свежие, но с офлайн-фолбэком на кэш.
-  if (url.pathname.endsWith('/registry.json') || /\/oh-[\w-]+\.js$/.test(url.pathname)) {
+  if (url.pathname.endsWith('/registry.json') || url.pathname.endsWith('/knowledge.json') || /\/oh-[\w-]+\.js$/.test(url.pathname)) {
     e.respondWith(
       fetch(e.request)
         .then((res) => {
