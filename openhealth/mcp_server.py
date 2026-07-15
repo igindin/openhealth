@@ -284,6 +284,9 @@ def call_tool(engine: Engine, name: str, arguments: Optional[Dict[str, Any]] = N
 # ---------------------------------------------------------------------------
 
 PROTOCOL_VERSION = "2025-06-18"
+# Published MCP lifecycle versions this transport is known to work with — the
+# wire shape (JSON-RPC 2.0, tools/list, tools/call) hasn't changed across them.
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
 
 
 def dispatch(engine: Engine, message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -298,11 +301,13 @@ def dispatch(engine: Engine, message: Dict[str, Any]) -> Optional[Dict[str, Any]
     mid = message.get("id")
 
     if method == "initialize":
-        # Echo back the client's protocol version when it offers one: clients
-        # negotiate, and answering with a different version fails the handshake.
+        # Echo the client's protocol version only when it's one we actually
+        # support — echoing an unsupported version back would mask the
+        # mismatch instead of surfacing it, per the lifecycle spec.
         requested = (message.get("params") or {}).get("protocolVersion")
+        version = requested if requested in SUPPORTED_PROTOCOL_VERSIONS else PROTOCOL_VERSION
         result: Dict[str, Any] = {
-            "protocolVersion": requested or PROTOCOL_VERSION,
+            "protocolVersion": version,
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
         }
@@ -316,21 +321,28 @@ def dispatch(engine: Engine, message: Dict[str, Any]) -> Optional[Dict[str, Any]
         result = {"prompts": []}
     elif method == "tools/call":
         params = message.get("params") or {}
-        try:
-            data = call_tool(engine, params.get("name"), params.get("arguments") or {})
+        name = params.get("name")
+        if not name:
             result = {
-                "content": [
-                    {"type": "text", "text": json.dumps(data, ensure_ascii=False, indent=2)}
-                ],
-                "isError": False,
-            }
-        except Exception as exc:
-            # A failing tool is an in-band result, not a protocol error — the
-            # model is meant to read the message and decide what to do next.
-            result = {
-                "content": [{"type": "text", "text": "%s: %s" % (type(exc).__name__, exc)}],
+                "content": [{"type": "text", "text": "tools/call requires a 'name'"}],
                 "isError": True,
             }
+        else:
+            try:
+                data = call_tool(engine, name, params.get("arguments") or {})
+                result = {
+                    "content": [
+                        {"type": "text", "text": json.dumps(data, ensure_ascii=False, indent=2)}
+                    ],
+                    "isError": False,
+                }
+            except Exception as exc:
+                # A failing tool is an in-band result, not a protocol error —
+                # the model is meant to read the message and decide what's next.
+                result = {
+                    "content": [{"type": "text", "text": "%s: %s" % (type(exc).__name__, exc)}],
+                    "isError": True,
+                }
     elif not has_id:
         return None  # unrecognized notification — nothing to answer
     else:

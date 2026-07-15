@@ -77,6 +77,26 @@ class TestGenotypeFormats(unittest.TestCase):
         vcf = VCF.replace("\tGT\t0/1", "\tGT\t0|1")
         self.assertEqual(_calls(vcf, ".vcf")["rs1815739"], "TC")
 
+    def test_vcf_with_utf8_bom_is_still_detected_as_vcf(self):
+        """A BOM before '##fileformat=VCF' must not make the sniff miss and fall
+        through to the 23andMe reader — that's the exact silent-empty-DNA-block
+        bug this module exists to fix, just moved one format over."""
+        self.assertEqual(_calls("﻿" + VCF, ".vcf"), _calls(VCF, ".vcf"))
+
+    def test_23andme_export_with_utf8_bom(self):
+        self.assertEqual(_calls("﻿" + TWENTY_THREE_AND_ME, ".txt"),
+                         _calls(TWENTY_THREE_AND_ME, ".txt"))
+
+    def test_vcf_gt_not_first_in_format(self):
+        """FORMAT order isn't assumed — GT is located explicitly, not read as
+        the first colon-separated sub-field."""
+        vcf = VCF.replace("\tGT\t0/1", "\tDP:GT\t30:0/1")
+        self.assertEqual(_calls(vcf, ".vcf")["rs1815739"], "TC")
+
+    def test_vcf_record_without_a_gt_field_is_skipped(self):
+        vcf = VCF.replace("\tGT\t0/1", "\tDP\t30")
+        self.assertNotIn("rs1815739", _calls(vcf, ".vcf"))
+
     def test_vcf_skips_no_calls(self):
         vcf = VCF.replace("\tGT\t1/1", "\tGT\t./.")
         calls = _calls(vcf, ".vcf")

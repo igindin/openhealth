@@ -944,7 +944,17 @@ def _genotypes_from_vcf(fh, want: set[str]) -> dict[str, str]:
         rsid = parts[2]
         if rsid not in want:
             continue
-        idx = parts[9].split(":")[0].replace("|", "/").split("/")
+        # The spec mandates GT-first when present, but locate it in FORMAT
+        # explicitly rather than assume position 0 — cheap insurance against a
+        # non-conforming exporter reordering fields.
+        try:
+            gt_pos = parts[8].split(":").index("GT")
+        except ValueError:
+            continue
+        sample = parts[9].split(":")
+        if gt_pos >= len(sample):
+            continue
+        idx = sample[gt_pos].replace("|", "/").split("/")
         if len(idx) != 2 or not all(i.isdigit() for i in idx):
             continue
         alleles = [parts[3]] + parts[4].split(",")
@@ -978,7 +988,10 @@ def build_dna(con: sqlite3.Connection) -> list[dict]:
         return []
     want = {s[0] for s in _DNA_SPEC}
     try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
+        # utf-8-sig: a BOM'd export must not make the sniff below miss and fall
+        # through to the 23andMe reader — that's the exact silent-empty-block
+        # bug this function exists to fix, just moved one format over.
+        with open(path, encoding="utf-8-sig", errors="replace") as fh:
             is_vcf = fh.readline().startswith("##fileformat=VCF")
             fh.seek(0)
             found = (_genotypes_from_vcf if is_vcf else _genotypes_from_23andme)(fh, want)

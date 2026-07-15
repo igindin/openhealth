@@ -41,6 +41,16 @@ class TestDispatchHandshake(unittest.TestCase):
             })
         self.assertEqual(reply["result"]["protocolVersion"], mcp_server.PROTOCOL_VERSION)
 
+    def test_initialize_does_not_echo_an_unsupported_version(self):
+        """Echoing back a version we don't support would mask the mismatch
+        instead of surfacing it — the server must answer with one it knows."""
+        with tempfile.TemporaryDirectory() as tmp:
+            reply = mcp_server.dispatch(_engine(tmp), {
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocolVersion": "1999-01-01"},
+            })
+        self.assertEqual(reply["result"]["protocolVersion"], mcp_server.PROTOCOL_VERSION)
+
     def test_ping(self):
         with tempfile.TemporaryDirectory() as tmp:
             reply = mcp_server.dispatch(_engine(tmp), {"jsonrpc": "2.0", "id": 7, "method": "ping"})
@@ -91,6 +101,16 @@ class TestDispatchTools(unittest.TestCase):
         self.assertNotIn("error", reply)
         self.assertTrue(reply["result"]["isError"])
         self.assertIn("no-such-tool", reply["result"]["content"][0]["text"])
+
+    def test_tools_call_without_a_name_gives_a_clean_message(self):
+        """Missing `name` must read as a clear complaint, not a raw KeyError
+        surfaced from the tool dispatch table."""
+        with tempfile.TemporaryDirectory() as tmp:
+            reply = mcp_server.dispatch(_engine(tmp), {
+                "jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {},
+            })
+        self.assertTrue(reply["result"]["isError"])
+        self.assertEqual(reply["result"]["content"][0]["text"], "tools/call requires a 'name'")
 
     def test_unknown_method_is_a_protocol_error(self):
         with tempfile.TemporaryDirectory() as tmp:
