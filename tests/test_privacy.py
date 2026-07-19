@@ -42,7 +42,7 @@ class PrivacyTests(unittest.TestCase):
             "value": 64, "metadata": {"body": "free text", "flag": "normal"},
             "location": "Budapest",
         }
-        shared = privacy.anonymize_for_share(rec, salt="sprint-2026")
+        shared = privacy.anonymize_for_share(rec, salt="test-salt")
         ok, reasons = privacy.is_anonymized(shared)
         self.assertTrue(ok, reasons)
         self.assertTrue(shared["source_id"].startswith("p_"))

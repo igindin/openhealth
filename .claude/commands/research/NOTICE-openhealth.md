@@ -6,7 +6,7 @@ This `research` skill is **vendored from a third-party project** and adapted for
 
 - **Source:** https://github.com/tonyazhuuki/deep-research-skill
 - **License:** MIT — Copyright (c) 2026 Tonya Zhuuki. Full text preserved at [`./LICENSE`](./LICENSE).
-- Shared publicly by the author for the AI-Mindset health sprint, with an explicit invitation to fork and adapt.
+- Shared publicly by the author, with an explicit invitation to fork and adapt.
 
 The MIT copyright notice above is a license obligation and is retained verbatim. Crediting the
 author in the project-level [`CONTRIBUTORS.md`](../../../CONTRIBUTORS.md) (RFC-002 idea-contributor

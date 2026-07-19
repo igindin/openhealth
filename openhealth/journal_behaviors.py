@@ -2,8 +2,7 @@
 
 The catalog itself lives as a static JSON resource in ``openhealth/data/
 journal_behaviors.json`` — transcribed from the WHOOP Journal "Select Behaviors"
-screens (see ``health-sprint-kit/library/behaviors.md``). This is an
-observational self-tracking reference, not medical guidance.
+screens. This is an observational self-tracking reference, not medical guidance.
 
 Pure stdlib, zero external deps (core rule). The JSON is cached after the first
 read so repeated module calls stay cheap.

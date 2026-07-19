@@ -5,7 +5,7 @@ by hand** — you talk to the agent and it runs them for you. This page is the m
 not a thing to memorize.
 
 - New here? Start with [START-HERE.md](./START-HERE.md) (RU) / [START-HERE.en.md](./START-HERE.en.md) (EN).
-- Sprint participant? [kit/HANDOUT.md](../kit/HANDOUT.md).
+- Want the skill kit? [kit/HANDOUT.md](../kit/HANDOUT.md).
 
 ---
 

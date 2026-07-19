@@ -1,4 +1,4 @@
-# Health Sprint Kit — start here
+# OpenHealth Kit — start here
 
 A small library of skills you drive through **Claude Code / Codex**. You talk; it
 logs your data, finds patterns, and helps you build your own health system. No
@@ -13,11 +13,11 @@ GUI to learn. Your data stays on your machine.
 
 ## Pick your path
 
-You can do the whole sprint on the **light path** — just files and the agent,
+You can get all the way through on the **light path** — just files and the agent,
 nothing installed. The full engine is optional, for when you want real connectors
 and recovery scoring.
 
-- **Light path (default for the sprint).** Open the repo folder in Claude Code /
+- **Light path (default).** Open the repo folder in Claude Code /
   Codex and talk to it. No Python, no `pip`, no `make`. You can draft your goal,
   fill `about-me`, log a journal, and pick one experiment — all in files.
 - **Full engine (optional).** From the repo root: `pip install -e .` then
@@ -25,7 +25,7 @@ and recovery scoring.
   imports, domain modules, recovery scoring, and the live dashboard.
 
 Full command map: [docs/COMMANDS.md](../docs/COMMANDS.md). Step-by-step beginner
-guide: [docs/START-HERE.md](../docs/START-HERE.md).
+guide: [docs/START-HERE.en.md](../docs/START-HERE.en.md).
 
 ## 15-minute start
 

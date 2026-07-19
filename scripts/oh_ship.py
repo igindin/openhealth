@@ -7,7 +7,7 @@ The agent runs this for the person; they never type a git command.
 
 Safety: by default it stays LOCAL (branch + commit). Pushing to the remote
 requires --push AND the maintainer having set OPENHEALTH_ALLOW_PUSH=1, so nothing
-leaves the machine unless explicitly enabled for a sprint.
+leaves the machine unless explicitly enabled.
 
 Usage:
     python scripts/oh_ship.py "add resting-hr metric to pulse"

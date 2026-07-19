@@ -159,7 +159,7 @@ openhealth/
 ├── hypotheses/             # Community experiment templates + examples
 ├── schemas/                # JSON Schemas (canonical record, manifests, intake)
 ├── rfcs/                   # Architecture proposals
-├── kit/                    # Participant onboarding kit
+├── kit/                    # Onboarding kit (skill registry + templates)
 └── tests/                  # pytest suite (synthetic data only)
 ```
 
@@ -216,26 +216,25 @@ seek professional care. Use at your own discretion.
 
 ---
 
-## Для участников AI Mindset Health Sprint
+## New here?
 
-OpenHealth — это local-first система: все данные остаются на вашей машине, а
-интерфейс — это разговор с агентом (Claude Code / Codex), а не приложение.
+OpenHealth is local-first: all your data stays on your machine, and the
+interface is a conversation with an agent (Claude Code / Codex), not an app.
 
-Как начать:
+How to start:
 
-1. `pip install -e .`, затем `python -m openhealth init` (или `make setup`).
-2. Скопируйте `templates/about-me.md` в приватное место и заполните: кто вы,
-   ваша цель по здоровью, где лежат данные. Это контекст, который агент читает
-   первым — без него каждый раз начинаете с нуля.
-3. Дальше просто говорите с агентом: «залогируй, что плохо спал», «как моё
-   восстановление за неделю?». Он сам запускает нужный модуль. Под капотом —
-   тот же цикл: журнал → recovery → корреляции → действие.
+1. `pip install -e .`, then `python -m openhealth init` (or `make setup`).
+2. Copy `templates/about-me.md` somewhere private and fill it in: who you are,
+   your health goal, where your data lives. This is the context the agent reads
+   first — without it, you start from scratch every time.
+3. From there, just talk to the agent: "log that I slept badly", "how's my
+   recovery this week?". It runs the right module for you. Under the hood it's
+   the same loop: journal → recovery → correlations → action.
 
-Все команды, инструменты и быстрые рецепты — в [docs/COMMANDS.md](./docs/COMMANDS.md).
-Пошаговый гид для новичка — [docs/START-HERE.md](./docs/START-HERE.md).
-Памятка для спринта — [kit/HANDOUT.md](./kit/HANDOUT.md).
+All commands, tools and quick recipes are in [docs/COMMANDS.md](./docs/COMMANDS.md).
+A step-by-step beginner guide is in [docs/START-HERE.en.md](./docs/START-HERE.en.md).
 
-Важно: это инструмент самонаблюдения, **не медицинский совет и не диагностика.**
-Любой вывод — гипотеза с оценкой уверенности (C1–C5), а не заключение. Красные
-флаги (боль в груди, обмороки и т.п.) — сразу к врачу. Самый низкий порог входа —
-экспорт Apple Health: нужен только iPhone.
+Remember: this is a self-tracking tool, **not medical advice or diagnosis.**
+Every finding is a hypothesis with a confidence grade (C1–C5), not a conclusion.
+Red flags (chest pain, fainting, etc.) — see a doctor right away. The
+lowest-friction way in is an Apple Health export: all you need is an iPhone.

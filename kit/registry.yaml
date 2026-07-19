@@ -1,4 +1,4 @@
-# Health Sprint Kit — skill registry (the hand-out catalog)
+# OpenHealth Kit — skill registry (the catalog)
 #
 # Each card is one pointed skill/module. The /kit command reads this file, matches
 # a person's plain-language request to cards, and installs the matching skills +
