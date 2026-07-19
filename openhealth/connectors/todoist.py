@@ -1,16 +1,16 @@
 """Todoist connector — completed tasks become health-journal candidates.
 
-Todo services are a low-friction evidence source: when you close "Тренировка"
-or "Morning run" in Todoist, that is a real, dated behavior signal worth a
-journal entry. This connector pulls:
+Todo services are a low-friction evidence source: when you close "Workout" or
+"Morning run" in Todoist, that is a real, dated behavior signal worth a journal
+entry. This connector pulls:
 
 * ``fetch_completed(date)``    — tasks completed on one day (Sync API v9
   ``completed/get_all``, paginated), each as ``{content, completed_at,
   project, labels}``.
 * ``fetch_today_tasks()``      — active tasks due today (REST API v2), as
   schedule-load context.
-* ``health_candidates(tasks)`` — keyword filter (RU + EN word-prefix stems,
-  plus ``health``/``fitness`` labels) that turns raw tasks into journal
+* ``health_candidates(tasks)`` — keyword filter (Russian + English word-prefix
+  stems, plus ``health``/``fitness`` labels) that turns raw tasks into journal
   *candidates* for human review — suggestions, never auto-logged facts.
 
 Auth is the personal API token (PAT — the lowest-friction route, no OAuth app
@@ -21,8 +21,8 @@ token. Set ``OPENHEALTH_TODOIST_TOKEN`` or write the token to
 
 Pure stdlib (urllib), local-first: the only network peer is api.todoist.com.
 Keyword matching is deliberately recall-leaning (word-prefix stems), so a few
-false positives like "анализ данных" can surface — a human decides what
-actually enters the journal.
+false positives (an "analysis" of something non-medical, say) can surface — a
+human decides what actually enters the journal.
 """
 
 import json
@@ -52,49 +52,58 @@ TOKEN_HOWTO = (
     % (TODOIST_TOKEN_ENV, TODOIST_TOKEN_PATH)
 )
 
-# Word-prefix stems → Russian journal labels. Extend freely: a stem matches
-# when any word in the task content *starts with* it (so "тренир" catches
-# "тренировка"/"тренируюсь" but "сон" does not fire on "сезон").
+# Word-prefix stems → journal labels. Extend freely: a stem matches when any
+# word in the task content *starts with* it (so the stem "workout" catches
+# "workouts", and the Russian stem "son" (sleep) does not fire on "sezon").
+#
+# Task titles arrive in whatever language the user writes them in, so the table
+# carries stems for both languages. The Russian stems below are spelled as
+# \uXXXX escapes purely to keep this file ASCII; they are live matching data,
+# not leftover prose, and deleting them drops Russian task support.
 HEALTH_KEYWORDS: Dict[str, str] = {
-    # RU stems
-    "тренир": "тренировка",
-    "спорт": "спорт",
-    "зал": "зал",
-    "бег": "бег",
-    "йог": "йога",
-    "массаж": "массаж",
-    "врач": "врач",
-    "стоматолог": "врач",
-    "анализ": "анализы",
-    "сон": "сон",
-    "медит": "медитация",
-    "прогул": "прогулка",
-    "плаван": "плавание",
-    "витамин": "витамины",
-    "лекарств": "лекарства",
-    "растяж": "растяжка",
-    # EN stems
-    "walk": "прогулка",
-    "run": "бег",
-    "gym": "зал",
-    "workout": "тренировка",
-    "yoga": "йога",
-    "doctor": "врач",
-    "sleep": "сон",
-    "meditat": "медитация",
-    "swim": "плавание",
-    "stretch": "растяжка",
+    # --- Russian word-prefix stems (matched against Cyrillic task titles) ---
+    "\u0442\u0440\u0435\u043d\u0438\u0440": "workout",  # trenir- (train / work out)
+    "\u0441\u043f\u043e\u0440\u0442": "sport",  # sport
+    "\u0437\u0430\u043b": "gym",  # zal (gym)
+    "\u0431\u0435\u0433": "running",  # beg (run)
+    "\u0439\u043e\u0433": "yoga",  # yog- (yoga)
+    "\u043c\u0430\u0441\u0441\u0430\u0436": "massage",  # massazh (massage)
+    "\u0432\u0440\u0430\u0447": "doctor",  # vrach (doctor)
+    "\u0441\u0442\u043e\u043c\u0430\u0442\u043e\u043b\u043e\u0433": "doctor",  # stomatolog (dentist)
+    "\u0430\u043d\u0430\u043b\u0438\u0437": "lab tests",  # analiz (lab test / analysis)
+    "\u0441\u043e\u043d": "sleep",  # son (sleep)
+    "\u043c\u0435\u0434\u0438\u0442": "meditation",  # medit- (meditate)
+    "\u043f\u0440\u043e\u0433\u0443\u043b": "walk",  # progul- (take a walk)
+    "\u043f\u043b\u0430\u0432\u0430\u043d": "swimming",  # plavan- (swim)
+    "\u0432\u0438\u0442\u0430\u043c\u0438\u043d": "vitamins",  # vitamin
+    "\u043b\u0435\u043a\u0430\u0440\u0441\u0442\u0432": "medication",  # lekarstv- (medicine)
+    "\u0440\u0430\u0441\u0442\u044f\u0436": "stretching",  # rastyazh- (stretch)
+    # --- English word-prefix stems ---
+    "walk": "walk",
+    "run": "running",
+    "gym": "gym",
+    "workout": "workout",
+    "yoga": "yoga",
+    "doctor": "doctor",
+    "sleep": "sleep",
+    "meditat": "meditation",
+    "swim": "swimming",
+    "stretch": "stretching",
 }
 
 # Task labels that mark a task as health-relevant even without a keyword hit.
+# The Cyrillic keys are real Todoist label names a Russian-speaking user may
+# have set; same rule as above — escapes for ASCII-cleanliness, not prose.
 HEALTH_LABELS: Dict[str, str] = {
-    "health": "здоровье",
-    "fitness": "фитнес",
-    "здоровье": "здоровье",
-    "спорт": "спорт",
+    "health": "health",
+    "fitness": "fitness",
+    "\u0437\u0434\u043e\u0440\u043e\u0432\u044c\u0435": "health",  # zdorovye (health)
+    "\u0441\u043f\u043e\u0440\u0442": "sport",  # sport
 }
 
-_WORD_RE = re.compile(r"[a-zа-яё0-9]+")
+# Word characters: ASCII letters/digits plus the Cyrillic block a-ya and yo,
+# written as escapes so the pattern stays ASCII while matching Russian words.
+_WORD_RE = re.compile("[a-z\u0430-\u044f\u04510-9]+")
 
 
 class TodoistError(RuntimeError):
@@ -214,8 +223,10 @@ def health_candidates(tasks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Filter tasks down to health-journal candidates (human reviews them).
 
     A task qualifies when any word in its content starts with a
-    ``HEALTH_KEYWORDS`` stem (RU or EN), or when it carries a ``HEALTH_LABELS``
-    label. Keyword hits win over label hits. Returns::
+    ``HEALTH_KEYWORDS`` stem (Russian or English), or when it carries a
+    ``HEALTH_LABELS`` label. Keyword hits win over label hits. The output field
+    keeps its historical ``label_ru`` name for downstream compatibility, even
+    though the label values themselves are English. Returns::
 
         [{"label_ru": str, "source": "todoist", "original": str,
           "matched_keyword": str, "completed_at": str|None}, ...]

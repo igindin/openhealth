@@ -41,166 +41,166 @@ CUSTOM_SUFFIX = "+custom"
 # id -> spec. Keep ids stable: they are persisted in overrides files and in
 # record metadata (params_overrides). ``wired: False`` marks parameters that
 # are registered (visible / editable) but whose consumer module has not been
-# switched to the registry yet — the UI must show them as "пока не подключено".
+# switched to the registry yet — the UI must show them as "not wired yet".
 REGISTRY: Dict[str, Dict[str, Any]] = {
     # --- recovery score (modules/recovery.py) --------------------------------
     "recovery.weights.hrv": {
         "default": 0.60, "min": 0.05, "max": 0.90, "step": 0.05,
-        "label_ru": "Вес HRV в recovery", "unit": "вес",
+        "label_ru": "HRV weight in recovery", "unit": "weight",
         "where": "recovery.recovery_score", "affects": ["recovery_score"],
         "doc": "docs/methodology/recovery.md", "group": "recovery_weights", "wired": True,
     },
     "recovery.weights.rhr": {
         "default": 0.20, "min": 0.0, "max": 0.50, "step": 0.05,
-        "label_ru": "Вес пульса покоя в recovery", "unit": "вес",
+        "label_ru": "Resting heart rate weight in recovery", "unit": "weight",
         "where": "recovery.recovery_score", "affects": ["recovery_score"],
         "doc": "docs/methodology/recovery.md", "group": "recovery_weights", "wired": True,
     },
     "recovery.weights.respiratory": {
         "default": 0.15, "min": 0.0, "max": 0.50, "step": 0.05,
-        "label_ru": "Вес частоты дыхания в recovery", "unit": "вес",
+        "label_ru": "Respiratory rate weight in recovery", "unit": "weight",
         "where": "recovery.recovery_score", "affects": ["recovery_score"],
         "doc": "docs/methodology/recovery.md", "group": "recovery_weights", "wired": True,
     },
     "recovery.weights.sleep": {
         "default": 0.05, "min": 0.0, "max": 0.50, "step": 0.05,
-        "label_ru": "Вес сна в recovery", "unit": "вес",
+        "label_ru": "Sleep weight in recovery", "unit": "weight",
         "where": "recovery.recovery_score", "affects": ["recovery_score"],
         "doc": "docs/methodology/recovery.md", "group": "recovery_weights", "wired": True,
     },
     "recovery.baseline_window_days": {
         "default": 28, "min": 7, "max": 60, "step": 1,
-        "label_ru": "Окно личного baseline", "unit": "дни",
+        "label_ru": "Personal baseline window", "unit": "days",
         "where": "recovery.from_index", "affects": ["recovery_score"],
         "doc": "docs/methodology/recovery.md", "group": "recovery", "wired": True,
     },
     "recovery.hrv_full_swing_sd": {
         "default": 2.0, "min": 1.0, "max": 4.0, "step": 0.25,
-        "label_ru": "Насыщение HRV-компонента", "unit": "SD ln(rMSSD)",
+        "label_ru": "HRV component saturation", "unit": "SD ln(rMSSD)",
         "where": "recovery.hrv_component", "affects": ["recovery_score"],
         "doc": "docs/methodology/recovery.md", "group": "recovery", "wired": True,
     },
     "recovery.sleep_need_h": {
         "default": 8.0, "min": 6.0, "max": 10.0, "step": 0.25,
-        "label_ru": "Личная потребность во сне", "unit": "ч",
+        "label_ru": "Personal sleep need", "unit": "h",
         "where": "recovery.sleep_debt", "affects": ["sleep_debt"],
         "doc": "docs/methodology/recovery.md", "group": "recovery", "wired": True,
     },
     # --- correlations (modules/correlations.py) ------------------------------
     "correlations.min_yes_days": {
         "default": 5, "min": 3, "max": 10, "step": 1,
-        "label_ru": "Минимум дней «да» для анализа", "unit": "дни",
+        "label_ru": "Minimum \"yes\" days for analysis", "unit": "days",
         "where": "correlations.behavior_impact", "affects": ["behavior_impact"],
         "doc": "docs/methodology/correlations.md", "group": "correlations", "wired": True,
     },
     "correlations.min_no_days": {
         "default": 5, "min": 3, "max": 10, "step": 1,
-        "label_ru": "Минимум дней «нет» для анализа", "unit": "дни",
+        "label_ru": "Minimum \"no\" days for analysis", "unit": "days",
         "where": "correlations.behavior_impact", "affects": ["behavior_impact"],
         "doc": "docs/methodology/correlations.md", "group": "correlations", "wired": True,
     },
     "correlations.window_days": {
         "default": 90, "min": 30, "max": 180, "step": 5,
-        "label_ru": "Окно анализа поведения", "unit": "дни",
+        "label_ru": "Behavior analysis window", "unit": "days",
         "where": "correlations.from_index", "affects": ["behavior_impact"],
         "doc": "docs/methodology/correlations.md", "group": "correlations", "wired": True,
     },
     "correlations.lag_days": {
         "default": 0, "min": 0, "max": 3, "step": 1,
-        "label_ru": "Лаг: поведение → recovery через N дней", "unit": "дни",
+        "label_ru": "Lag: behavior → recovery after N days", "unit": "days",
         "where": "correlations.from_index", "affects": ["behavior_impact"],
         "doc": "docs/methodology/correlations.md", "group": "correlations", "wired": True,
     },
     # --- insight detectors (insights.py) --------------------------------------
     "insights.sleep_goal_h": {
         "default": 8.0, "min": 6.0, "max": 10.0, "step": 0.25,
-        "label_ru": "Цель сна для детектора недосыпа", "unit": "ч",
+        "label_ru": "Sleep goal for the sleep-debt detector", "unit": "h",
         "where": "insights.detect_sleep_debt", "affects": ["insight-sleep_debt"],
         "doc": "docs/methodology/insights.md", "group": "insights", "wired": True,
     },
     "insights.sleep_debt_week_attention_h": {
         "default": 5.0, "min": 2.0, "max": 10.0, "step": 0.5,
-        "label_ru": "Недосып за 7 ночей: порог внимания", "unit": "ч",
+        "label_ru": "Sleep debt over 7 nights: attention threshold", "unit": "h",
         "where": "insights.detect_sleep_debt", "affects": ["insight-sleep_debt"],
         "doc": "docs/methodology/insights.md", "group": "insights", "wired": True,
     },
     "insights.sleep_debt_week_warning_h": {
         "default": 10.0, "min": 5.0, "max": 20.0, "step": 0.5,
-        "label_ru": "Недосып за 7 ночей: порог тревоги", "unit": "ч",
+        "label_ru": "Sleep debt over 7 nights: warning threshold", "unit": "h",
         "where": "insights.detect_sleep_debt", "affects": ["insight-sleep_debt"],
         "doc": "docs/methodology/insights.md", "group": "insights", "wired": True,
     },
     "insights.hrv_drop_attention_pct": {
         "default": 8.0, "min": 3.0, "max": 20.0, "step": 1.0,
-        "label_ru": "Падение HRV: порог внимания", "unit": "%",
+        "label_ru": "HRV drop: attention threshold", "unit": "%",
         "where": "insights.detect_hrv_downtrend", "affects": ["insight-hrv_downtrend"],
         "doc": "docs/methodology/insights.md", "group": "insights", "wired": True,
     },
     "insights.hrv_drop_warning_pct": {
         "default": 15.0, "min": 8.0, "max": 30.0, "step": 1.0,
-        "label_ru": "Падение HRV: порог тревоги", "unit": "%",
+        "label_ru": "HRV drop: warning threshold", "unit": "%",
         "where": "insights.detect_hrv_downtrend", "affects": ["insight-hrv_downtrend"],
         "doc": "docs/methodology/insights.md", "group": "insights", "wired": True,
     },
     "insights.rhr_rise_attention_bpm": {
         "default": 3.0, "min": 1.0, "max": 8.0, "step": 0.5,
-        "label_ru": "Рост пульса покоя: порог внимания", "unit": "уд/мин",
+        "label_ru": "Resting heart rate rise: attention threshold", "unit": "bpm",
         "where": "insights.detect_rhr_uptrend", "affects": ["insight-rhr_uptrend"],
         "doc": "docs/methodology/insights.md", "group": "insights", "wired": True,
     },
     "insights.rhr_rise_warning_bpm": {
         "default": 6.0, "min": 3.0, "max": 12.0, "step": 0.5,
-        "label_ru": "Рост пульса покоя: порог тревоги", "unit": "уд/мин",
+        "label_ru": "Resting heart rate rise: warning threshold", "unit": "bpm",
         "where": "insights.detect_rhr_uptrend", "affects": ["insight-rhr_uptrend"],
         "doc": "docs/methodology/insights.md", "group": "insights", "wired": True,
     },
     "insights.red_streak_days": {
         "default": 3, "min": 2, "max": 7, "step": 1,
-        "label_ru": "Длина серии красных дней", "unit": "дни",
+        "label_ru": "Red-day streak length", "unit": "days",
         "where": "insights.detect_recovery_red_streak", "affects": ["insight-recovery_red_streak"],
         "doc": "docs/methodology/insights.md", "group": "insights", "wired": True,
     },
     "insights.weekend_diff_points": {
         "default": 5.0, "min": 2.0, "max": 15.0, "step": 1.0,
-        "label_ru": "Разрыв будни/выходные по recovery", "unit": "пункты",
+        "label_ru": "Weekday/weekend recovery gap", "unit": "points",
         "where": "insights.detect_weekend_pattern", "affects": ["insight-weekend_pattern"],
         "doc": "docs/methodology/insights.md", "group": "insights", "wired": True,
     },
     "insights.sleep_consistency_stdev_h": {
         "default": 1.2, "min": 0.5, "max": 3.0, "step": 0.1,
-        "label_ru": "Допустимый разброс длительности сна", "unit": "ч (SD)",
+        "label_ru": "Allowed spread of sleep duration", "unit": "h (SD)",
         "where": "insights.detect_sleep_consistency", "affects": ["insight-sleep_consistency"],
         "doc": "docs/methodology/insights.md", "group": "insights", "wired": True,
     },
     # --- weather factors (weather_insights.py; consumer not switched yet) -----
     "weather.pressure_change_hpa": {
         "default": 6.0, "min": 3.0, "max": 15.0, "step": 1.0,
-        "label_ru": "Скачок давления за сутки", "unit": "гПа",
+        "label_ru": "Pressure swing over 24 hours", "unit": "hPa",
         "where": "weather_insights._derive_active_factors", "affects": ["weather-insight"],
         "doc": "docs/methodology/weather-flags.md", "group": "weather", "wired": False,
     },
     "weather.heat_apparent_max_c": {
         "default": 28.0, "min": 24.0, "max": 35.0, "step": 1.0,
-        "label_ru": "Порог жаровой нагрузки", "unit": "°C (ощущаемая)",
+        "label_ru": "Heat load threshold", "unit": "°C (apparent)",
         "where": "weather_insights._derive_active_factors", "affects": ["weather-insight"],
         "doc": "docs/methodology/weather-flags.md", "group": "weather", "wired": False,
     },
     # --- calendar day load (connectors/ics_calendar.py; not switched yet) -----
     "day_load.weights.busy_hours": {
         "default": 70, "min": 0, "max": 100, "step": 5,
-        "label_ru": "Вес занятых часов в нагрузке дня", "unit": "пункты",
+        "label_ru": "Weight of busy hours in day load", "unit": "points",
         "where": "ics_calendar.day_load", "affects": ["day_load_score"],
         "doc": "docs/methodology/day-load.md", "group": "day_load", "wired": False,
     },
     "day_load.weights.meetings": {
         "default": 20, "min": 0, "max": 100, "step": 5,
-        "label_ru": "Вес числа встреч в нагрузке дня", "unit": "пункты",
+        "label_ru": "Weight of meeting count in day load", "unit": "points",
         "where": "ics_calendar.day_load", "affects": ["day_load_score"],
         "doc": "docs/methodology/day-load.md", "group": "day_load", "wired": False,
     },
     "day_load.weights.no_recovery_gap": {
         "default": 10, "min": 0, "max": 50, "step": 5,
-        "label_ru": "Надбавка за день без окна отдыха", "unit": "пункты",
+        "label_ru": "Penalty for a day with no rest window", "unit": "points",
         "where": "ics_calendar.day_load", "affects": ["day_load_score"],
         "doc": "docs/methodology/day-load.md", "group": "day_load", "wired": False,
     },

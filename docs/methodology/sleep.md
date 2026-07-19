@@ -1,41 +1,41 @@
-# Сон (долг сна и поведенческие маркеры)
-> algo_version: sleep_debt@v2 · источник данных: движок (из WHOOP-сырого) · редактируемость: параметры в коде
+# Sleep (sleep debt and behavioural markers)
+> algo_version: sleep_debt@v2 · data source: engine (from WHOOP raw) · editability: parameters in code
 
-## Что это
+## What this is
 
-Два слоя. Первый — **долг сна**: насколько фактический сон недотягивает до *персональной* потребности, одной ночью и накопительно за окно ночей (мульти-ночная картина WHOOP/Rise: несколько коротких ночей складываются). Второй — поведенческие маркеры сна из модуля `sleep` (длительность, midsleep, социальный джетлаг).
+Two layers. The first is **sleep debt**: how far actual sleep falls short of your *personal* need, both for a single night and cumulatively across a window of nights (the multi-night picture used by WHOOP/Rise: several short nights add up). The second is the behavioural sleep markers from the `sleep` module (duration, midsleep, social jetlag).
 
-## Формула / алгоритм
+## Formula / algorithm
 
-**Долг сна (`sleep_debt`, `openhealth/modules/recovery.py`):**
+**Sleep debt (`sleep_debt`, `openhealth/modules/recovery.py`):**
 
-- одна ночь: `sleep_debt_h = max(0, need − actual)`; излишек: `surplus_h = max(0, actual − need)`;
-- накопительный (v2): по последним 14 ночам `accumulated_debt_h = Σ max(0, need − ночь_i)` — сумма недоборов каждой ночи против потребности; профицит одной ночи долг других не гасит (осознанный выбор: пересып не «компенсирует» арифметически);
-- фактический сон ночи: `total_in_bed_time_milli − total_awake_time_milli` из WHOOP; если длительности нет, дашборд приближает часы как `need × sleep_performance% / 100` (низкое доверие, помечается).
+- single night: `sleep_debt_h = max(0, need − actual)`; surplus: `surplus_h = max(0, actual − need)`;
+- cumulative (v2): over the last 14 nights, `accumulated_debt_h = Σ max(0, need − night_i)` — the sum of each night's shortfall against need; a surplus on one night does not cancel the debt from others (a deliberate choice: oversleeping does not arithmetically "make up" for it);
+- actual sleep for a night: `total_in_bed_time_milli − total_awake_time_milli` from WHOOP; if duration is missing, the dashboard approximates hours as `need × sleep_performance% / 100` (low confidence, flagged as such).
 
-**Потребность (need) персональная**: параметр `sleep_need_h`, дефолт 8.0 ч, настраивается на пользователя (поле `sleep_need_h` в payload / конфиге). Это оценка, не измерение — записи долга идут с confidence 0.3 (C2).
+**Need is personal**: the `sleep_need_h` parameter, default 8.0 h, configurable per user (the `sleep_need_h` field in the payload / config). It is an estimate rather than a measurement, so debt records carry confidence 0.3 (C2).
 
-**Поведенческие маркеры (`openhealth/modules/sleep.py`):** длительность; midsleep (середина сна, часы суток); прокси циркадной фазы DLMO ~ засыпание − 2 ч (явное допущение, C2); социальный джетлаг = |средний midsleep свободных дней − рабочих| (Wittmann/Roenneberg).
+**Behavioural markers (`openhealth/modules/sleep.py`):** duration; midsleep (the midpoint of sleep, as a time of day); a circadian phase proxy DLMO ~ sleep onset − 2 h (an explicit assumption, C2); social jetlag = |mean midsleep on free days − on work days| (Wittmann/Roenneberg).
 
-## Параметры (константы кода)
+## Parameters (code constants)
 
-| параметр | значение | где в коде | зачем |
+| parameter | value | where in code | why |
 |---|---|---|---|
-| потребность по умолчанию | 8.0 | `openhealth/modules/recovery.py: DEFAULT_SLEEP_NEED_H` | стартовая оценка до персональной настройки |
-| окно накопления, ночей | 14 | `openhealth/modules/recovery.py: DEFAULT_SLEEP_DEBT_WINDOW_NIGHTS` | мульти-ночной долг à la WHOOP/Rise |
-| недельный долг attention | 5.0 | `openhealth/insights.py: SLEEP_DEBT_WEEK_ATTENTION_H` | ~43 мин/ночь — где эффекты недосыпа на восстановление становятся устойчивыми |
-| недельный долг warning | 10.0 | `openhealth/insights.py: SLEEP_DEBT_WEEK_WARNING_H` | ~1.4 ч/ночь — выраженный хронический дефицит |
-| разброс длительности | 1.2 | `openhealth/insights.py: SLEEP_CONSISTENCY_STDEV_H` | SD за 14 ночей выше — нестабильный режим |
-| плаузибельная длительность | 0-16 ч | `openhealth/data_quality.py: PLAUSIBLE_BOUNDS["sleep_h"]` | > 16 ч/сутки — ошибка данных |
+| default need | 8.0 | `openhealth/modules/recovery.py: DEFAULT_SLEEP_NEED_H` | a starting estimate before personal tuning |
+| accumulation window, nights | 14 | `openhealth/modules/recovery.py: DEFAULT_SLEEP_DEBT_WINDOW_NIGHTS` | multi-night debt à la WHOOP/Rise |
+| weekly debt attention | 5.0 | `openhealth/insights.py: SLEEP_DEBT_WEEK_ATTENTION_H` | ~43 min/night — where the effects of short sleep on recovery become consistent |
+| weekly debt warning | 10.0 | `openhealth/insights.py: SLEEP_DEBT_WEEK_WARNING_H` | ~1.4 h/night — a pronounced chronic deficit |
+| duration spread | 1.2 | `openhealth/insights.py: SLEEP_CONSISTENCY_STDEV_H` | an SD above this over 14 nights means an unstable schedule |
+| plausible duration | 0-16 h | `openhealth/data_quality.py: PLAUSIBLE_BOUNDS["sleep_h"]` | more than 16 h/day is a data error |
 
-## Источники и доверие
+## Sources and confidence
 
-- Мульти-ночной долг — публичная методология WHOOP/Rise; накопление против персональной need.
-- Социальный джетлаг — Wittmann et al. / Roenneberg (хронобиология).
-- Need — оценка (C2); долг — производная величина над оценкой, тоже C2. В summary всегда видно «спал X из Y ч потребности».
+- Multi-night debt follows the public WHOOP/Rise methodology, accumulating against a personal need.
+- Social jetlag comes from Wittmann et al. / Roenneberg (chronobiology).
+- Need is an estimate (C2); debt is derived from that estimate, so it is C2 as well. The summary always shows "slept X of Y h of need".
 
-## Известные ограничения
+## Known limitations
 
-- Персональная need пока задаётся, а не выводится из данных (нет автокалибровки по дням «выспался без будильника»).
-- Приближение часов сна из sleep performance % (дашборд) — грубое, помечено низким доверием.
-- DLMO-прокси «засыпание − 2 ч» — допущение; настоящая фаза требует мелатонинового теста.
+- Personal need is still set manually rather than derived from the data (there is no auto-calibration from "woke up rested without an alarm" days).
+- Approximating sleep hours from sleep performance % (in the dashboard) is crude and marked as low confidence.
+- The DLMO proxy "sleep onset − 2 h" is an assumption; the real phase requires a melatonin test.

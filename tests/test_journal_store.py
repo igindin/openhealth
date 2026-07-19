@@ -10,7 +10,7 @@ from openhealth.modules import correlations
 def _day_payload(alcohol=True, notes=""):
     return {
         "habits": {"lifestyle.alcohol": alcohol, "mood_energy": 4},
-        "mood": {"quadrant": "calm", "word": "ровно", "energy": 4},
+        "mood": {"quadrant": "calm", "word": "steady", "energy": 4},
         "survey": {"energy": 4, "stress": 2, "sleep_quality": 5, "pain": 1, "mood": 4, "ts": "2026-06-01T10:00:00Z"},
         "notes": notes,
     }
@@ -39,7 +39,7 @@ def _recovery_record(day, score):
 class SaveLoadDayTests(unittest.TestCase):
     def test_roundtrip_and_atomic_write(self):
         with tempfile.TemporaryDirectory() as home:
-            path = journal_store.save_day("2026-06-01", _day_payload(notes="ок"), home=home)
+            path = journal_store.save_day("2026-06-01", _day_payload(notes="ok"), home=home)
             self.assertTrue(path.is_file())
             self.assertEqual(path.name, "2026-06-01.json")
             # No temp leftovers from the atomic write.
@@ -47,7 +47,7 @@ class SaveLoadDayTests(unittest.TestCase):
             loaded = journal_store.load_day("2026-06-01", home=home)
             self.assertEqual(loaded["habits"]["lifestyle.alcohol"], True)
             self.assertEqual(loaded["mood"]["energy"], 4)
-            self.assertEqual(loaded["notes"], "ок")
+            self.assertEqual(loaded["notes"], "ok")
             self.assertEqual(loaded["date"], "2026-06-01")
 
     def test_private_modes(self):
@@ -99,9 +99,9 @@ class ToObservationsTests(unittest.TestCase):
         recs = journal_store.to_observations(
             {
                 "habits": {"my_custom_thing": True, "mood_energy": 3},
-                "mood": {"quadrant": "tense", "word": "сжато", "energy": 2},
+                "mood": {"quadrant": "tense", "word": "tense-tight", "energy": 2},
                 "survey": {"stress": 5},
-                "notes": "тяжёлый день",
+                "notes": "hard day",
             },
             date="2026-06-02",
         )
@@ -109,11 +109,11 @@ class ToObservationsTests(unittest.TestCase):
         self.assertEqual(by_metric["my_custom_thing"]["metadata"]["category"], "custom")
         self.assertEqual(by_metric["mood_energy"]["value"], 2.0)  # mood section, not the habit slider
         self.assertEqual(by_metric["mood_energy"]["metadata"]["quadrant"], "tense")
-        self.assertEqual(by_metric["mood_energy"]["metadata"]["word"], "сжато")
+        self.assertEqual(by_metric["mood_energy"]["metadata"]["word"], "tense-tight")
         self.assertEqual(by_metric["survey_stress"]["value"], 5.0)
         notes = [r for r in recs if r["record_type"] == "ContextNote"]
         self.assertEqual(len(notes), 1)
-        self.assertEqual(notes[0]["summary"], "тяжёлый день")
+        self.assertEqual(notes[0]["summary"], "hard day")
         self.assertEqual(notes[0]["note_kind"], "journal_note")
 
     def test_date_from_saved_payload(self):
@@ -155,7 +155,7 @@ class CorrelationsPickupTests(unittest.TestCase):
 class WeekFocusTests(unittest.TestCase):
     def test_save_and_load(self):
         with tempfile.TemporaryDirectory() as home:
-            journal_store.save_week_focus(["сон до 23:00", "без алкоголя", "прогулка"], home=home,
+            journal_store.save_week_focus(["sleep by 23:00", "no alcohol", "a walk"], home=home,
                                           week_start="2026-06-08")
             focus = journal_store.load_week_focus(home=home)
             self.assertEqual(len(focus["items"]), 3)
@@ -167,8 +167,8 @@ class WeekFocusTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 journal_store.save_week_focus(["a", "b", "c", "d"], home=home)
             # Blank entries are dropped, not stored.
-            journal_store.save_week_focus(["  ", "сон"], home=home)
-            self.assertEqual(journal_store.load_week_focus(home=home)["items"], ["сон"])
+            journal_store.save_week_focus(["  ", "sleep"], home=home)
+            self.assertEqual(journal_store.load_week_focus(home=home)["items"], ["sleep"])
 
 
 class ExportAllTests(unittest.TestCase):
@@ -176,13 +176,13 @@ class ExportAllTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             journal_store.save_day("2026-06-01", _day_payload(True), home=home)
             journal_store.save_day("2026-06-02", _day_payload(False), home=home)
-            journal_store.save_week_focus(["сон"], home=home)
+            journal_store.save_week_focus(["sleep"], home=home)
             # A foreign file in the mirror dir must not leak into the backup.
             (journal_store.journal_home(home) / "days" / "not-a-date.json").write_text("{}", encoding="utf-8")
             dump = journal_store.export_all(home=home)
             self.assertEqual(dump["version"], 1)
             self.assertEqual(sorted(dump["days"]), ["2026-06-01", "2026-06-02"])
-            self.assertEqual(dump["focus"]["items"], ["сон"])
+            self.assertEqual(dump["focus"]["items"], ["sleep"])
             json.dumps(dump)  # the whole backup must be JSON-serializable
 
     def test_export_empty_home(self):

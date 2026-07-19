@@ -1,47 +1,47 @@
-# Recovery (восстановление)
-> algo_version: recovery_score@v3 · источник данных: движок · редактируемость: параметры в коде
+# Recovery
+> algo_version: recovery_score@v3 · data source: engine · editability: parameters in code
 
-## Что это
+## What this is
 
-Дневной балл восстановления 0-100: взвешенная смесь HRV (якорь), пульса покоя, частоты дыхания и качества сна, каждая компонента нормирована на личный baseline за последние 28 дней. 50 у компоненты значит «как обычно для тебя», выше — лучше baseline, ниже — хуже.
+A daily recovery score from 0 to 100: a weighted blend of HRV (the anchor), resting heart rate, respiratory rate and sleep quality, with each component normalised against your personal baseline over the last 28 days. A component value of 50 means "normal for you", above that is better than baseline, below that is worse.
 
-ВАЖНО: на дашборде в карточке recovery показывается значение WHOOP из выгрузки (сырое число провайдера, C5 как факт измерения). Наш recovery_score@v3 — параллельный, полностью прозрачный расчёт движка: те же входные сигналы, но открытая формула, разложение по компонентам (`components`, `weights_used` в metadata) и версия алгоритма в каждой записи. Это не претензия на паритет с WHOOP, а проверяемая альтернатива.
+IMPORTANT: the recovery card on the dashboard shows the WHOOP value from the export (the provider's raw number, C5 as a fact of measurement). Our recovery_score@v3 is a parallel, fully transparent calculation in the engine: the same input signals, but an open formula, a per-component breakdown (`components`, `weights_used` in metadata) and the algorithm version stamped on every record. It does not claim parity with WHOOP; it is a checkable alternative.
 
-## Формула / алгоритм
+## Formula / algorithm
 
-`score = Σ (component_i × weight_i) / Σ weight_i` — недостающие компоненты выбрасываются, оставшиеся веса перенормируются (HRV обязательна, остальное опционально).
+`score = Σ (component_i × weight_i) / Σ weight_i` — missing components are dropped and the remaining weights renormalised (HRV is required, the rest are optional).
 
-Компоненты (каждая 0-100):
+Components (each 0-100):
 
-- **HRV (ln-rMSSD, метод `ln_rmssd_sd`)**: rMSSD логнормально распределён, поэтому считаем на ln-шкале. `z = (ln(hrv) − ln(baseline)) / ln_SD`, где ln_SD — стандартное отклонение личного ln(rMSSD) за окно baseline. `component = clamp(50 + 50 × z / 2.0, 0, 100)`: ±2 SD от baseline насыщают шкалу (0 или 100). Baseline HRV — геометрическое среднее `exp(mean(ln rMSSD))` за 28 дней. Если в окне < 2 точек, берётся консервативный дефолт ln_SD = 0.15 (флагуется `hrv_ln_sd_is_default`).
-- **RHR**: `component = clamp(50 − 50 × (rhr/baseline − 1) / 0.30, 0, 100)` — пульс покоя ниже baseline лучше; ±30% от baseline насыщают шкалу. Baseline — арифметическое среднее за 28 дней.
-- **Дыхание**: отклонение от baseline в любую сторону — штраф (ранний маркер болезни/стресса). Мёртвая зона 1.0 вдох/мин (ночной шум), дальше линейно до 0 на 3.0 вдох/мин сверх мёртвой зоны.
-- **Сон**: WHOOP sleep performance % как есть (уже 0-100).
+- **HRV (ln-rMSSD, method `ln_rmssd_sd`)**: rMSSD is log-normally distributed, so we work on the ln scale. `z = (ln(hrv) − ln(baseline)) / ln_SD`, where ln_SD is the standard deviation of your personal ln(rMSSD) over the baseline window. `component = clamp(50 + 50 × z / 2.0, 0, 100)`: ±2 SD from baseline saturates the scale (0 or 100). The HRV baseline is the geometric mean `exp(mean(ln rMSSD))` over 28 days. With fewer than 2 points in the window, a conservative default of ln_SD = 0.15 is used (flagged as `hrv_ln_sd_is_default`).
+- **RHR**: `component = clamp(50 − 50 × (rhr/baseline − 1) / 0.30, 0, 100)` — a resting heart rate below baseline is better; ±30% from baseline saturates the scale. The baseline is the arithmetic mean over 28 days.
+- **Respiratory rate**: any deviation from baseline, in either direction, is penalised (an early marker of illness or stress). A dead band of 1.0 breath/min absorbs overnight noise, beyond which the component falls linearly to 0 at 3.0 breaths/min past the dead band.
+- **Sleep**: WHOOP sleep performance % taken as is (already 0-100).
 
-## Параметры (константы кода)
+## Parameters (code constants)
 
-| параметр | значение | где в коде | зачем |
+| parameter | value | where in code | why |
 |---|---|---|---|
-| вес HRV | 0.60 | `openhealth/modules/recovery.py: RECOVERY_WEIGHTS["hrv"]` | HRV — главный сигнал готовности (WHOOP-ballpark: HRV-доминантный) |
-| вес RHR | 0.20 | `openhealth/modules/recovery.py: RECOVERY_WEIGHTS["rhr"]` | второй по силе автономный маркер |
-| вес дыхания | 0.15 | `openhealth/modules/recovery.py: RECOVERY_WEIGHTS["respiratory"]` | ранний маркер болезни/перетренированности |
-| вес сна | 0.05 | `openhealth/modules/recovery.py: RECOVERY_WEIGHTS["sleep"]` | добивка; сон уже частично отражён в HRV/RHR |
-| окно baseline | 28 | `openhealth/modules/recovery.py: DEFAULT_BASELINE_WINDOW_DAYS` | 60 дней слишком инертно, 28 следит за человеком и стабильно (Altini/WHOOP-ballpark) |
-| короткое окно | 7 | `openhealth/modules/recovery.py: SHORT_BASELINE_WINDOW_DAYS` | дневной «нормальный диапазон» |
-| насыщение HRV | 2.0 | `openhealth/modules/recovery.py: _HRV_FULL_SWING_SD` | ±2 SD — конвенциональная граница «нормального диапазона» |
-| дефолт ln-SD | 0.15 | `openhealth/modules/recovery.py: _HRV_DEFAULT_LN_SD` | типичный внутриличностный SD ln(rMSSD) ~0.10-0.20 |
-| насыщение RHR | 0.30 | `openhealth/modules/recovery.py: _RHR_FULL_SWING` | ±30% от baseline = полный размах компоненты |
-| мёртвая зона дыхания | 1.0 | `openhealth/modules/recovery.py: _RESP_DEADBAND` | ночной шум по WHOOP («meaningful shift» floor) |
-| насыщение дыхания | 3.0 | `openhealth/modules/recovery.py: _RESP_FULL_SWING` | +3 вдох/мин сверх зоны → компонента 0 |
+| HRV weight | 0.60 | `openhealth/modules/recovery.py: RECOVERY_WEIGHTS["hrv"]` | HRV is the primary readiness signal (WHOOP ballpark: HRV-dominant) |
+| RHR weight | 0.20 | `openhealth/modules/recovery.py: RECOVERY_WEIGHTS["rhr"]` | the second strongest autonomic marker |
+| respiratory weight | 0.15 | `openhealth/modules/recovery.py: RECOVERY_WEIGHTS["respiratory"]` | early marker of illness or overtraining |
+| sleep weight | 0.05 | `openhealth/modules/recovery.py: RECOVERY_WEIGHTS["sleep"]` | a top-up; sleep is already partly reflected in HRV/RHR |
+| baseline window | 28 | `openhealth/modules/recovery.py: DEFAULT_BASELINE_WINDOW_DAYS` | 60 days is too sluggish; 28 tracks the person and stays stable (Altini/WHOOP ballpark) |
+| short window | 7 | `openhealth/modules/recovery.py: SHORT_BASELINE_WINDOW_DAYS` | the day-to-day "normal range" |
+| HRV saturation | 2.0 | `openhealth/modules/recovery.py: _HRV_FULL_SWING_SD` | ±2 SD is the conventional edge of the "normal range" |
+| ln-SD default | 0.15 | `openhealth/modules/recovery.py: _HRV_DEFAULT_LN_SD` | typical within-person SD of ln(rMSSD) is ~0.10-0.20 |
+| RHR saturation | 0.30 | `openhealth/modules/recovery.py: _RHR_FULL_SWING` | ±30% from baseline covers the component's full range |
+| respiratory dead band | 1.0 | `openhealth/modules/recovery.py: _RESP_DEADBAND` | overnight noise per WHOOP (the "meaningful shift" floor) |
+| respiratory saturation | 3.0 | `openhealth/modules/recovery.py: _RESP_FULL_SWING` | +3 breaths/min past the dead band drives the component to 0 |
 
-## Источники и доверие
+## Sources and confidence
 
-- Ln-нормировка и личный SD — конвенция Altini / HRV4Training (smallest-worthwhile-change), убирает магические пороги 0.9/0.7.
-- Сами веса — задокументированный выбор, не измерение; меняя их, бампни версию.
-- Запись балла идёт с `evidence_class: derived-metric`, confidence 0.9 как факт расчёта; интерпретация — отдельно.
+- Ln normalisation and personal SD follow the Altini / HRV4Training convention (smallest worthwhile change), which removes the magic 0.9/0.7 thresholds.
+- The weights themselves are a documented choice, not a measurement; if you change them, bump the version.
+- The score is written with `evidence_class: derived-metric` and confidence 0.9 as a fact of computation; interpretation is a separate layer.
 
-## Известные ограничения
+## Known limitations
 
-- Потребляем уже агрегированный провайдером ночной rMSSD как есть; точное окно агрегации WHOOP публично неоднозначно (C-grade пометка в коде).
-- При неполных входах балл считается по части компонент (поле `missing`) — сравнивать дни с разным составом компонент нужно осторожно.
-- Ничего здесь не диагностирует; число — приглашение посмотреть на день, не вердикт.
+- We consume the provider's already-aggregated overnight rMSSD as is; WHOOP's exact aggregation window is publicly ambiguous (marked C-grade in the code).
+- With incomplete inputs the score is computed from a subset of components (the `missing` field), so comparing days with different component sets needs care.
+- Nothing here diagnoses anything; the number is an invitation to look at your day, not a verdict.

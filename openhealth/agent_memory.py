@@ -35,11 +35,18 @@ MAX_ENTRIES_READ = 1000
 MAX_MEMORY_BLOCK_CHARS = 1200
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+")
-_WORD_RE = re.compile(r"[0-9A-Za-zА-Яа-яЁё][0-9A-Za-zА-Яа-яЁё-]{2,}")
+# Word token for recall scoring: 3+ chars, Latin or Cyrillic. The \u escapes
+# cover the Cyrillic block (U+0410-U+042F uppercase, U+0430-U+044F lowercase,
+# plus the out-of-range letters YO U+0401 and yo U+0451) - memory summaries may
+# be written in Russian, so tokenization must cover both alphabets.
+_WORD_RE = re.compile(
+    "[0-9A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u0451]"
+    "[0-9A-Za-z\u0410-\u042f\u0430-\u044f\u0401\u0451-]{2,}"
+)
 
 MEMORY_BLOCK_HEADER = (
-    "Память прошлых разборов (что уже находили) — не повторяйся, "
-    "отмечай динамику относительно прошлых выводов:"
+    "Memory of past analyses (what has already been found) — do not repeat "
+    "yourself, note the change relative to earlier conclusions:"
 )
 
 
@@ -119,10 +126,10 @@ def _render_digest(entries: list) -> str:
     """Human-readable MEMORY.md: the last DIGEST_ENTRIES entries grouped by task."""
     recent = entries[-DIGEST_ENTRIES:]
     lines = [
-        "# OpenHealth — память агента",
+        "# OpenHealth — agent memory",
         "",
-        "Автогенерируется из entries.jsonl, не редактировать руками.",
-        "Последние {} записей (всего {}), сгруппированы по задаче.".format(len(recent), len(entries)),
+        "Auto-generated from entries.jsonl, do not edit by hand.",
+        "Last {} entries (of {} total), grouped by task.".format(len(recent), len(entries)),
         "",
     ]
     by_task: dict = {}

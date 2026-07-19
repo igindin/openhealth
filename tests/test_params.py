@@ -238,7 +238,7 @@ class CorrelationsOverrideEffectTests(ParamsHomeMixin):
         self.assertEqual(stats["min_no_required"], 5)
 
     def test_insight_carries_trace_and_override_stamp(self):
-        behaviors = [{"behavior_id": "alcohol", "behavior_name": "Алкоголь", "pairs": self._pairs(6, 6)}]
+        behaviors = [{"behavior_id": "alcohol", "behavior_name": "Alcohol", "pairs": self._pairs(6, 6)}]
         default_meta = correlations.analyze(behaviors)[0]["metadata"]
         self.assertEqual(default_meta["algo_version"], "behavior_impact@v1")
         self.assertNotIn("params_overrides", default_meta)

@@ -584,23 +584,23 @@ Read all files in `<private_health_root>/protocols/` before recommending any foo
 
    **🚨 TL;DR Plain-Language Mandate (added 2026-05-18 after user feedback):** This section is what the user reads in Telegram caption / push notification. The first ~800 characters MUST be SELF-CONTAINED and use:
 
-   - **Common names matching user's original query terminology.** If user asked about "масло чёрного тмина", write "масло чёрного тмина" — NOT "Nigella sativa". If user asked about "коллаген", use that — not "hydrolyzed bovine collagen peptide UC-II". The query phrasing is the canonical name.
+   - **Common names matching user's original query terminology.** If user asked about "black seed oil", write "black seed oil" — NOT "Nigella sativa". If user asked about "collagen", use that — not "hydrolyzed bovine collagen peptide UC-II". The query phrasing is the canonical name.
    - **ZERO agent jargon.** Forbidden in user-facing prose:
      - "Stream A/B/C/D/E" — internal scout names
      - "DD-1/DD-A/DD-B" — deep diver labels
-     - "Gate A/B/C", "Trigger A/B", "Scenario A/B/C/D" — replace with plain conditionals: "если через 6 месяцев X..."
+     - "Gate A/B/C", "Trigger A/B", "Scenario A/B/C/D" — replace with plain conditionals: "if after 6 months X..."
      - "Phase 1/2/3" without context — say what phase = in plain words
-     - "Smart Trial framework" — say "12-недельный пробный курс с правилом остановки"
+     - "Smart Trial framework" — say "a 12-week trial run with a stopping rule"
      - "Bridge Rule", "Universal Landscape", "Claims Map" — skill internals
      - "F1 / F6 / F7" — finding numbers
      - "Lo.Li. cluster", "Iranian cluster", "Grant cluster" — say "[country/lab] cluster" with brief WHY discount applies
-     - "GRADE HIGH/MOD/LOW" — say "сильные доказательства / средние / слабые"
-     - "CYP3A4" — explain on first use ("фермент в печени который перерабатывает многие лекарства")
+     - "GRADE HIGH/MOD/LOW" — say "strong evidence / moderate / weak"
+     - "CYP3A4" — explain on first use ("an enzyme in the liver that processes many medications")
    - **ALWAYS explain WHY** for every verdict / recommendation:
-     - Wrong: "Не покупать инозитол"
-     - Right: "Не покупать инозитол потому что: (а) у тебя нет PCOS — главное показание; (б) Anti-TPO отрицательный — Хашимото исключён; (в) инсулин-чувствительность отличная — третье показание неприменимо"
-   - **Telegram caption test:** First 800 chars must allow user to make decision without opening full file. Headlines should be self-explanatory ("Главный вывод: ..."), action items must have reason attached.
-   - **Section number flexibility:** TL;DR is section 2 in v3.10 layout (after Universal Landscape). Telegram extractor handles "## 2. TL;DR", "## 2. Короткий ответ", "## 2. Что делать", "## 2. Действия для".
+     - Wrong: "Don't buy inositol"
+     - Right: "Don't buy inositol because: (a) you don't have PCOS — the main indication; (b) Anti-TPO is negative — Hashimoto's ruled out; (c) insulin sensitivity is excellent — the third indication doesn't apply"
+   - **Telegram caption test:** First 800 chars must allow user to make decision without opening full file. Headlines should be self-explanatory ("Bottom line: ..."), action items must have reason attached.
+   - **Section number flexibility:** TL;DR is section 2 in v3.10 layout (after Universal Landscape). Telegram extractor handles "## 2. TL;DR", "## 2. Short answer", "## 2. What to do", "## 2. Actions for".
 
 **3. Evidence Landscape — scope, quality, number of sources, GRADE distribution**
 
@@ -635,7 +635,7 @@ Read all files in `<private_health_root>/protocols/` before recommending any foo
 
 **11. Data Quality Notes — limitations, biases, critic findings**
 
-**12. Glossary — NEW v3.10 (MANDATORY at end before "## Связанные файлы")** — every technical term used in this synthesis, sorted alphabetically, with 1-2 sentence definition. Includes medical (CP, ферроксидаза, HEPH, NAC, FCM, AGA, PBAC etc.), statistical (NNT, GRADE, ROB, Bayesian posterior, likelihood ratio), and mechanistic (HIF-1α HRE, IRP1, ferroxidase paradox) terms. Reader can jump here when they forget what a term means.
+**12. Glossary — NEW v3.10 (MANDATORY at end before "## Related files")** — every technical term used in this synthesis, sorted alphabetically, with 1-2 sentence definition. Includes medical (CP, ferroxidase, HEPH, NAC, FCM, AGA, PBAC etc.), statistical (NNT, GRADE, ROB, Bayesian posterior, likelihood ratio), and mechanistic (HIF-1α HRE, IRP1, ferroxidase paradox) terms. Reader can jump here when they forget what a term means.
 
 ### Two-pass mental writing (v3.10 NEW)
 
@@ -695,17 +695,17 @@ Predict what the READER would say to a friend if they read only this document an
 Format (in user's preferred language):
 
 ```
-## Read-back Test — что бы ты сказала подруге
+## Read-back Test — what you would tell a friend
 
-> Если бы ты прочла только этот документ, ты бы сказала:
+> If you had read only this document, you would say:
 >
-> 1. **Про тему в общем (Universal):** [SYNTHESIZER predicts reader's universal-context summary in 1-2 sentences — what the topic IS about, what science knows]
+> 1. **About the topic in general (Universal):** [SYNTHESIZER predicts reader's universal-context summary in 1-2 sentences — what the topic IS about, what science knows]
 >
-> 2. **Про меня конкретно (Personal):** [predicted summary of what's specific to user in 1-2 sentences — which universal facts "activated" for them]
+> 2. **About me specifically (Personal):** [predicted summary of what's specific to user in 1-2 sentences — which universal facts "activated" for them]
 >
-> 3. **Что мне делать (Action):** [predicted summary of top 1-2 actions in 1-2 sentences]
+> 3. **What I should do (Action):** [predicted summary of top 1-2 actions in 1-2 sentences]
 >
-> **Если хотя бы одна фраза не совпадает с твоим пониманием — synthesis провалился. Скажи, где промах.**
+> **If even a single sentence doesn't match your understanding — the synthesis failed. Say where it missed.**
 ```
 
 This forces SYNTHESIZER to compress and test its own coherence. If it can't write a clean 3-bullet read-back, the synthesis is too tangled.
@@ -1109,7 +1109,7 @@ Style: adversarial, rigorous, zero politeness. Your job is to break things. If y
 > **When:** After SYNTHESIZER produces synthesis.md / synthesis_[lang].md, BEFORE FACT-CHECKER.
 > **Why:** Even with v3.10 plain-language SYNTHESIZER rules + memory feedback, syntheses still drift to doctor-tier writing because they integrate doctor-tier streams. Dedicated humanize pass catches: agent jargon ("Stream B", "Gate A", "Smart Trial"), Latin/scientific names where common name is canonical, unexplained acronyms, doctor-style sentence structure, framework terminology surfacing in user-facing prose.
 > **Mandatory:** YES for personalized mode (synthesis_[lang].md output). Skip for pure consensus_reference mode (universal document; technical OK).
-> **Added:** 2026-05-18 after user feedback "выводы все еще нечеловекочитаемые".
+> **Added:** 2026-05-18 after user feedback "the conclusions still aren't human-readable".
 
 ```
 You are HUMANIZER in a swarm research team.
@@ -1127,20 +1127,20 @@ Read first:
 
 ### 1. English / Latin / scientific code-mix in user-facing prose
 Hunt for English phrases or Latin names dropped into target-language text without explanation:
-- Scientific names ("Nigella sativa") → common name from user's original query ("масло чёрного тмина")
+- Scientific names ("Nigella sativa") → common name from user's original query ("black seed oil")
 - Acronyms without expansion (CYP3A4, GLUT4, HOMA-IR, GRADE, ROB, AMSTAR) → explain inline on first use, then OK to abbreviate
 - English phrases mid-sentence ("Smart Trial", "Bridge Rule", "post-hoc analysis") → translate or explain
 
 ### 2. Agent / framework jargon surfacing
 The SYNTHESIZER may surface internal terminology:
 - "Stream A/B/C/D/E", "DD-1", "Scout" — drop, refer to evidence directly
-- "Gate A/B/C", "Trigger A/B", "Scenario A/B/C" — replace with plain conditionals: "если через 6 месяцев X..."
+- "Gate A/B/C", "Trigger A/B", "Scenario A/B/C" — replace with plain conditionals: "if after 6 months X..."
 - "Phase 1/2/3" — say what phase means
-- "Smart Trial framework" — say "12-недельный пробный курс с правилом остановки"
+- "Smart Trial framework" — say "a 12-week trial run with a stopping rule"
 - "Bridge Rule", "Universal Landscape", "Claims Map" — skill internals
 - "F1 / F6 / F7" — finding numbers
 - "Lo.Li. cluster" / "Iranian cluster" / "Grant cluster" — keep cluster framing but explain WHY discount applies briefly
-- "GRADE HIGH/MOD/LOW" → "сильные доказательства / средние / слабые"
+- "GRADE HIGH/MOD/LOW" → "strong evidence / moderate / weak"
 
 ### 3. Unexplained terms (medical / statistical)
 Scan for terms that should have inline explanation on first use:
@@ -1158,12 +1158,12 @@ Look for:
 - "Indirect endpoint extrapolation"
 - "Methodologic rigor"
 
-Rewrite conversationally. Use "ты", acknowledge complexity ("это будет звучать сложно, но потерпи"), use real-world analogies where abstract concepts come up.
+Rewrite conversationally. Address the reader directly as "you", acknowledge complexity ("this is going to sound complicated, but bear with me"), use real-world analogies where abstract concepts come up.
 
 ### 5. Verdict without WHY
 Every verdict / recommendation must have a reason attached:
-- Wrong: "Не покупать инозитол"
-- Right: "Не покупать инозитол потому что: [3 concrete reasons]"
+- Wrong: "Don't buy inositol"
+- Right: "Don't buy inositol because: [3 concrete reasons]"
 
 ## TL;DR section (§2) gets EXTRA attention
 
@@ -1543,7 +1543,7 @@ TODO block format (SMART goals):
 
 ## Personal Data Source Verification (MANDATORY, v3.9 added 2026-05-11)
 
-> **Rule:** Before writing TODOs that reference user's current biomarker values, training state, supplement adherence — PULL the actual current value from data sources, не использовать стейл данные из synthesis.
+> **Rule:** Before writing TODOs that reference user's current biomarker values, training state, supplement adherence — PULL the actual current value from data sources; do not use stale data from the synthesis.
 
 **Verification checklist before writing each TODO:**
 - Latest biomarker value -> check `<private_health_root>/data/labs/last_results.md` + latest reports in `data/labs/`

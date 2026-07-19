@@ -1,96 +1,92 @@
-# С чего начать
+# Start here
 
-OpenHealth можно попробовать за 60 секунд, не устанавливая вообще ничего. Дальше - по желанию: свои данные, AI-агент, Telegram. Каждый уровень самодостаточен: можно остановиться на любом.
-
-[English version](./START-HERE.en.md)
+You can try OpenHealth in 60 seconds without installing anything. Everything beyond that is optional: your own data, an AI agent, Telegram. Each level is self-contained - stop wherever you like.
 
 ---
 
-## Уровень 0. Просто посмотреть (60 секунд, ничего не ставить)
+## Level 0. Just look around (60 seconds, install nothing)
 
-1. На странице репозитория в GitHub нажми зелёную кнопку **Code**, затем **Download ZIP**.
-2. Распакуй архив и открой в нём папку `ui/web`.
-3. Запусти дашборд:
-   - **macOS:** двойной клик по файлу `OpenHealth.command`. Если система скажет «не удаётся открыть, неподтверждённый разработчик» - нажми правой кнопкой по файлу, выбери **Открыть**, потом ещё раз **Открыть**. Это нужно один раз.
-   - **Windows / Linux:** двойной клик по файлу `index.html` - он откроется в браузере.
+1. On the GitHub repository page, click the green **Code** button, then **Download ZIP**.
+2. Unpack the archive and open the `ui/web` folder inside.
+3. Launch the dashboard:
+   - **macOS:** double-click `OpenHealth.command`. If macOS says it "cannot be opened because it is from an unidentified developer" - right-click the file, choose **Open**, then **Open** again. You only need to do this once.
+   - **Windows / Linux:** double-click `index.html` - it opens in your browser.
 
-Дашборд откроется на демо-данных: можно посмотреть, как выглядят восстановление, тренды, корреляции и отчёт. Твоих данных там ещё нет, и ничего никуда не отправляется.
+The dashboard opens with demo data: recovery, trends, correlations and the report, so you can see how everything works. None of your data is there yet, and nothing is sent anywhere.
 
-Понадобится интернет: шрифты и библиотека анимаций подгружаются с CDN при открытии страницы.
+You need an internet connection: fonts and the animation library load from a CDN when the page opens.
 
 ---
 
-## Уровень 1. Свои данные (10 минут)
+## Level 1. Your own data (10 minutes)
 
-Понадобится Терминал, но только на одну команду. На macOS Python уже есть, ставить ничего не нужно.
+You will need the Terminal, but only for one command. On macOS, Python is already there - nothing to install.
 
-1. Открой Терминал (на macOS: Spotlight, набери «Терминал»).
-2. Набери `bash`, поставь пробел и перетащи файл `setup.sh` из папки OpenHealth прямо в окно Терминала. Нажми Enter.
+1. Open Terminal (on macOS: Spotlight, type "Terminal").
+2. Type `bash`, add a space, and drag the `setup.sh` file from the OpenHealth folder into the Terminal window. Press Enter.
 
-Или, если репозиторий ещё не скачан, одной командой:
+Or, if you have not downloaded the repository yet, one command:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/igindin/openhealth/main/setup.sh)
 ```
 
-Скрипт сам:
+The script will:
 
-- проверит Python (и человеческим языком скажет, что делать, если его нет);
-- создаст локальную папку данных (`data/` внутри папки OpenHealth);
-- спросит, есть ли у тебя экспорт Apple Health, и импортирует его (файл можно просто перетащить в окно);
-- соберёт данные для дашборда и запустит его.
+- check Python (and tell you in plain words what to do if it is missing);
+- create a local data folder (`data/` inside the OpenHealth folder);
+- ask whether you have an Apple Health export and import it (just drag the file into the window);
+- build the dashboard data and launch the dashboard.
 
-Скрипт можно запускать сколько угодно раз: он ничего не ломает и не дублирует.
+You can run the script as many times as you want: it never breaks or duplicates anything.
 
-**Откуда взять экспорт Apple Health:** на iPhone открой приложение «Здоровье», нажми на свой аватар справа вверху, внизу «Экспортировать медданные». Получится ZIP - перешли его себе на компьютер (AirDrop, почта) и укажи скрипту.
+**Where to get an Apple Health export:** on your iPhone, open the Health app, tap your avatar in the top right corner, then "Export All Health Data" at the bottom. You get a ZIP - send it to your computer (AirDrop, email) and point the script at it.
 
-**Носишь WHOOP:** подключение идёт через OAuth, команда `python3 -m openhealth whoop-auth-url` (подробнее в README, раздел Run).
+**Wearing WHOOP:** the connection goes through OAuth, run `python3 -m openhealth whoop-auth-url` (see the Run section in the README).
 
 ---
 
-## Уровень 2. AI-агент (по желанию)
+## Level 2. AI agent (optional)
 
-Самое интересное в OpenHealth - это разговор с агентом: «запиши, что я плохо спал и выпил два кофе», «что у меня с восстановлением за неделю?». Для этого нужен один из агентов на компьютере:
+The most interesting part of OpenHealth is talking to an agent: "log that I slept badly and had two coffees", "how is my recovery this week?". You need one of these agents on your machine:
 
 - **Claude Code** - https://claude.com/claude-code
 - **Codex** - https://github.com/openai/codex
 
-После установки кнопки агента в дашборде («сгенерировать инсайт», «пересчитать корреляции», разборы маркеров) оживут сами - дашборд найдёт агента на машине. А в терминале появятся команды вроде `/checkin`, `/log`, `/insights`.
-
-Полный список команд, инструментов и быстрых рецептов - в [docs/COMMANDS.md](./COMMANDS.md).
+Once installed, the agent buttons in the dashboard ("generate insight", "re-run correlations", per-marker deep dives) come alive on their own - the dashboard finds the agent on your machine. In the terminal you get commands like `/checkin`, `/log`, `/insights`.
 
 ---
 
-## Уровень 3. Telegram, календарь и остальное (по желанию)
+## Level 3. Telegram, calendar and the rest (optional)
 
-- **Telegram-бот** (чек-ины и заметки прямо из телефона): [docs/TELEGRAM.md](./TELEGRAM.md)
-- **Google Calendar, Todoist и другие интеграции:** [docs/INTEGRATIONS.md](./INTEGRATIONS.md)
-
----
-
-## Частые вопросы
-
-**У меня Windows. Что будет работать?**
-Демо-дашборд - полностью: открой `ui/web/index.html` двойным кликом. Уровень 1 тоже работает, но лаунчер `OpenHealth.command` сделан для macOS: запусти `bash setup.sh` через Git Bash или WSL, а сервер - командой `python ui/web/server.py`. Если не дружишь с терминалом, на Windows пока комфортнее остаться на демо-уровне.
-
-**macOS не даёт открыть OpenHealth.command («неподтверждённый разработчик»).**
-Это стандартная защита для файлов, скачанных из интернета. Нажми правой кнопкой по файлу, выбери «Открыть», затем подтверди «Открыть». Достаточно одного раза. Если правой кнопки нет - клик с зажатым Control. Запасной вариант: открой `index.html` двойным кликом, демо работает и так.
-
-**macOS предлагает установить «инструменты разработчика командной строки».**
-Так бывает, если Python ещё ни разу не использовался. Это официальный установщик Apple - соглашайся, пара минут. Либо поставь Python с https://www.python.org/downloads/.
-
-**Где лежат мои данные и кто их видит?**
-Всё локально, на твоём компьютере: исходники и база - в папке `data/` внутри папки OpenHealth, выгрузка для дашборда - в `ui/web/data.local.json`. Эти пути закрыты от git, в репозиторий и интернет они не попадают. Сервер дашборда слушает только `127.0.0.1` - снаружи к нему не подключиться. Телеметрии нет.
-
-**У меня нет трекера (WHOOP, Apple Watch). Есть смысл?**
-Да. Ядро системы - журнал: ежедневные чек-ины по каталогу из 200+ привычек, заметки, анализы из PDF. Агент работает поверх любых записей. Корреляции с восстановлением появятся позже, если появится источник HRV/сна, но журнал и гипотезы полезны и без него.
-
-**Как обновляться?**
-Если скачивал ZIP - скачай новый и перенеси папку `data/` (и `ui/web/data.local.json`) из старой папки в новую. Если клонировал через git - просто `git pull`: твои данные лежат в путях, которые git не трогает. После обновления можно ещё раз запустить `bash setup.sh` - это безопасно.
-
-**Это медицинский совет?**
-Нет. OpenHealth - инструмент самонаблюдения. Он не ставит диагнозы и не назначает лечение, а находки формулирует как осторожные гипотезы для проверки. С медицинскими вопросами - к врачу.
+- **Telegram bot** (check-ins and notes straight from your phone): [docs/TELEGRAM.md](./TELEGRAM.md)
+- **Google Calendar, Todoist and other integrations:** [docs/INTEGRATIONS.md](./INTEGRATIONS.md)
 
 ---
 
-Если OpenHealth оказался полезен — поставь звезду на GitHub: это лучший способ помочь другим людям найти проект. [github.com/igindin/openhealth](https://github.com/igindin/openhealth) ⭐
+## FAQ
+
+**I am on Windows. What works?**
+The demo dashboard - fully: double-click `ui/web/index.html`. Level 1 works too, but the `OpenHealth.command` launcher is macOS-only: run `bash setup.sh` from Git Bash or WSL, and start the server with `python ui/web/server.py`. If you are not comfortable with a terminal, the demo level is the smooth path on Windows for now.
+
+**macOS refuses to open OpenHealth.command ("unidentified developer").**
+That is the standard protection for files downloaded from the internet. Right-click the file, choose "Open", then confirm "Open". Once is enough. No right button - click while holding Control. Fallback: double-click `index.html`, the demo works that way too.
+
+**macOS offers to install "command line developer tools".**
+That happens if Python has never been used on this Mac. It is Apple's official installer - accept it, it takes a couple of minutes. Or install Python from https://www.python.org/downloads/.
+
+**Where is my data and who can see it?**
+Everything stays local, on your computer: raw sources and the database live in `data/` inside the OpenHealth folder, the dashboard export in `ui/web/data.local.json`. Both paths are git-ignored - they never reach the repository or the internet. The dashboard server listens on `127.0.0.1` only, so nothing outside your machine can connect. No telemetry.
+
+**I have no tracker (WHOOP, Apple Watch). Is there a point?**
+Yes. The core of the system is the journal: daily check-ins against a catalog of 200+ behaviors, notes, lab PDFs. The agent works on top of any records. Recovery correlations appear later, once you have an HRV/sleep source, but the journal and hypotheses are useful without one.
+
+**How do I update?**
+If you downloaded a ZIP - download a new one and move the `data/` folder (and `ui/web/data.local.json`) from the old folder into the new one. If you cloned with git - just `git pull`: your data lives in paths git never touches. Running `bash setup.sh` again after an update is safe.
+
+**Is this medical advice?**
+No. OpenHealth is a self-tracking tool. It does not diagnose or prescribe, and it phrases findings as cautious hypotheses to test. For medical questions, see a clinician.
+
+---
+
+If OpenHealth turned out useful — a GitHub star is the single best way to help others discover it. [github.com/igindin/openhealth](https://github.com/igindin/openhealth) ⭐

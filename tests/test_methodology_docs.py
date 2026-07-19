@@ -36,11 +36,11 @@ EXPECTED_FILES = [
 ]
 
 REQUIRED_SECTIONS = (
-    "## Что это",
-    "## Формула / алгоритм",
-    "## Параметры (константы кода)",
-    "## Источники и доверие",
-    "## Известные ограничения",
+    "## What this is",
+    "## Formula / algorithm",
+    "## Parameters (code constants)",
+    "## Sources and confidence",
+    "## Known limitations",
 )
 
 
@@ -49,10 +49,10 @@ def _read(name: str) -> str:
 
 
 def _table_value(md_text: str, code_marker: str):
-    """Value cell of the parameter-table row whose 'где в коде' mentions marker.
+    """Value cell of the parameter-table row whose 'where in code' mentions marker.
 
-    Rows look like: | параметр | значение | где в коде | зачем |
-    Returns the first number found in the 'значение' cell, as float.
+    Rows look like: | parameter | value | where in code | why |
+    Returns the first number found in the 'value' cell, as float.
     """
     for line in md_text.splitlines():
         if not line.strip().startswith("|") or code_marker not in line:
@@ -77,7 +77,7 @@ class MethodologyFilesExistTests(unittest.TestCase):
 
 
 class MethodologyFormatTests(unittest.TestCase):
-    """Strict format so the dashboard 'Методологии' page can parse the files."""
+    """Strict format so the dashboard 'Methodology' page can parse the files."""
 
     def test_pages_have_title_and_header_line(self):
         for name in EXPECTED_FILES:
@@ -87,7 +87,7 @@ class MethodologyFormatTests(unittest.TestCase):
                 self.assertTrue(lines[0].startswith("# "), "%s: first line must be '# <title>'" % name)
                 self.assertRegex(
                     text,
-                    r"(?m)^> algo_version: .+ · источник данных: .+ · редактируемость: .+$",
+                    r"(?m)^> algo_version: .+ · data source: .+ · editability: .+$",
                     "%s: missing the '> algo_version: ...' header line" % name,
                 )
 

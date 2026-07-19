@@ -351,7 +351,7 @@ study, year, design, n, population, intervention, outcome, effect_size, ci_95, p
 | Ignoring publication bias | Positive results published 3× more often | Check funnel plots, note if negative results are absent |
 | "Safe and well-tolerated" without dose/duration | Safety depends on dose, duration, and individual profile | Specify dose range, duration tested, population |
 
-## Связанные файлы
+## Related files
 
 - [SKILL.md](../SKILL.md) — main skill overview
 - [prompts.md](../prompts.md) — shared agent prompts (SCOUT, CRITIC, DEEP DIVER, SYNTHESIZER, FACT-CHECKER)

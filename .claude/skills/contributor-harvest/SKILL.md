@@ -1,13 +1,13 @@
 ---
 name: contributor-harvest
-description: Maintainer-side workflow to bring another person's Health-OS work into OpenHealth as an ATTRIBUTED pull request. Review their build, strip every byte of personal data, classify each finding into the RFC-002 contribution streams, diff against the current repo to avoid duplication, and open a DRAFT PR that credits them as a contributor — only with their explicit consent. Use when the maintainer says "harvest from X's health os", "забери наработки контрибьютора в openhealth", "review someone's HealthOS and PR it", "credit X as a contributor", "pull ideas from <their Vercel/repo> with attribution". Sibling of `openhealth-upstream` (which is self-upstreaming); this one is maintainer-side and cross-person, so it INVERTS the name rule — it credits the source by name, by consent, while still never shipping their data. Safety-critical: personal data NEVER enters the PR; nobody is credited without explicit consent.
+description: Maintainer-side workflow to bring another person's Health-OS work into OpenHealth as an ATTRIBUTED pull request. Review their build, strip every byte of personal data, classify each finding into the RFC-002 contribution streams, diff against the current repo to avoid duplication, and open a DRAFT PR that credits them as a contributor — only with their explicit consent. Use when the maintainer says "harvest from X's health os", "bring a contributor's work into openhealth", "review someone's HealthOS and PR it", "credit X as a contributor", "pull ideas from <their Vercel/repo> with attribution". Sibling of `openhealth-upstream` (which is self-upstreaming); this one is maintainer-side and cross-person, so it INVERTS the name rule — it credits the source by name, by consent, while still never shipping their data. Safety-critical: personal data NEVER enters the PR; nobody is credited without explicit consent.
 version: 0.1.0
 ---
 
 # Contributor Harvest — attributed, privacy-safe intake from another Health OS
 
 You are helping the **maintainer** of OpenHealth take valuable work from **someone
-else's** personal Health OS (a sprint partner, another forker, a shared
+else's** personal Health OS (another forker, a shared
 Vercel/repo) and turn it into a clean, **attributed** pull request — so that person
 becomes a real contributor — **without shipping a single byte of their personal
 health data, and without crediting anyone who has not agreed to it.**
@@ -19,8 +19,8 @@ Two differences drive everything:
    **consent** the first gate, not an afterthought.
 2. **Attribution is the point.** `openhealth-upstream` strips the owner's name
    (self-upstreaming → anonymize self). Here we do the opposite: we **credit the
-   source by name**, because the whole goal is to let them "числиться
-   контрибьютором". But we credit only with consent, and we still strip all of
+   source by name**, because the whole goal is to let them be listed as a real
+   contributor. But we credit only with consent, and we still strip all of
    their **data**.
 
 Reuse, do not reinvent, the detection machinery in
@@ -30,12 +30,12 @@ diff-against-repo step, and the mapping to RFC-002.
 
 ## When to Use
 
-- Ilya wants to bring ideas/patterns from another person's Health OS into OpenHealth
-  and have them credited (the originating motivation: "я забрал идеи других билдеров,
-  но хочу чтобы они числились контрибьюторами").
-- A sprint participant shared their HealthOS (repo, Vercel deploy, exported files,
+- The maintainer wants to bring ideas/patterns from another person's Health OS into
+  OpenHealth and have them credited (the originating motivation: "I took ideas from
+  other builders, but I want them listed as contributors").
+- Someone shared their HealthOS (repo, Vercel deploy, exported files,
   screenshots) and there's something worth adopting.
-- The maintainer says "harvest", "забери наработки", "credit X", "PR their ideas".
+- The maintainer says "harvest", "credit X", "PR their ideas".
 
 Do **not** use this for the contributor upstreaming their *own* repo — that's
 `openhealth-upstream`. Do **not** use it to scrape work nobody shared.

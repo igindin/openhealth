@@ -28,8 +28,8 @@ Privacy (non-negotiable):
   * the token comes from ``OPENHEALTH_TG_TOKEN`` or ``~/.openhealth/telegram.token``
     — never from the repo, never logged;
   * an allowlist of chat ids is mandatory (``OPENHEALTH_TG_CHAT_ID`` or
-    ``~/.openhealth/telegram.allowlist``); strangers get «доступ не настроен»
-    and *nothing* of theirs is ever stored;
+    ``~/.openhealth/telegram.allowlist``); strangers get an "access is not
+    configured" reply and *nothing* of theirs is ever stored;
   * message bodies are never written to the log — only chat ids, kinds and
     submission ids.
 
@@ -75,21 +75,23 @@ MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024  # Bot API itself caps getFile at 20 MB
 MAX_MESSAGE_CHARS = 4000  # Telegram hard limit is 4096; keep headroom
 AGENT_TIMEOUT_S = 120
 
-DENIED_TEXT = "Доступ не настроен. Этот бот — личный канал OpenHealth; сообщения чужих чатов не сохраняются."
+DENIED_TEXT = (
+    "Access is not configured. This bot is a personal OpenHealth channel; messages from other chats are not stored."
+)
 
 HELP_TEXT = (
-    "Я — локальный intake-канал OpenHealth. Всё, что ты присылаешь, остаётся на твоей машине.\n"
+    "I am the local OpenHealth intake channel. Everything you send stays on your machine.\n"
     "\n"
-    "Просто пиши текстом, голосом или фото — я сохраню это в локальную health-папку.\n"
+    "Just write text, send a voice message or a photo — I will save it into your local health folder.\n"
     "\n"
-    "Команды:\n"
-    "/checkin — чек-ин дня: 4 коротких вопроса по одному\n"
-    "/today — краткая сводка дня (recovery / HRV / сон)\n"
-    "/ask <вопрос> — спросить локального агента по твоим данным\n"
-    "/cancel — прервать текущий чек-ин\n"
-    "/help — эта справка\n"
+    "Commands:\n"
+    "/checkin — daily check-in: 4 short questions, one at a time\n"
+    "/today — short summary of the day (recovery / HRV / sleep)\n"
+    "/ask <question> — ask the local agent about your data\n"
+    "/cancel — stop the current check-in\n"
+    "/help — this help\n"
     "\n"
-    "Я не врач: не ставлю диагнозов и не назначаю лечение."
+    "I am not a doctor: I do not make diagnoses and I do not prescribe treatment."
 )
 
 # Mirrors GREEN/YELLOW recovery zones in ui/web/build_dashboard_data.py.
@@ -97,12 +99,12 @@ RECOVERY_GREEN, RECOVERY_YELLOW = 67, 34
 
 _SECRET_RE = re.compile(r"(bot\d+:[A-Za-z0-9_\-]+|sk-[A-Za-z0-9_\-]{10,}|Bearer\s+\S+)", re.IGNORECASE)
 
-PROMPT_INTRO = "Ты — агент OpenHealth, локальный ассистент по личным данным здоровья."
+PROMPT_INTRO = "You are the OpenHealth agent, a local assistant for personal health data."
 PROMPT_SAFETY = (
-    "Правила: ты не врач, не ставь диагнозов и не назначай лечение. Каждому выводу "
-    "давай уровень доверия C1-C5; вывод C3 и ниже формулируй как вопрос-гипотезу. "
-    "Red flags (боль в груди, обморок, мысли о причинении себе вреда, критические "
-    "значения) — не интерпретируй, сразу советуй обратиться к врачу."
+    "Rules: you are not a doctor, do not make diagnoses and do not prescribe treatment. Give every "
+    "conclusion a confidence level of C1-C5; phrase any conclusion at C3 or below as a hypothesis question. "
+    "Red flags (chest pain, fainting, thoughts of self-harm, critical "
+    "values) — do not interpret them, advise seeing a doctor right away."
 )
 
 
@@ -206,7 +208,7 @@ class TelegramAPI:
                 if payload is None:
                     if exc.code in (401, 404):
                         raise TelegramAPIError(
-                            "HTTP {}: токен не принят Telegram (проверь OPENHEALTH_TG_TOKEN)".format(exc.code),
+                            "HTTP {}: Telegram rejected the token (check OPENHEALTH_TG_TOKEN)".format(exc.code),
                             exc.code,
                         )
                     last_error = "HTTP {}".format(exc.code)
@@ -233,7 +235,7 @@ class TelegramAPI:
                 continue
             if error_code in (401, 404):
                 raise TelegramAPIError(
-                    "{}: токен не принят Telegram (проверь OPENHEALTH_TG_TOKEN)".format(error_code), error_code
+                    "{}: Telegram rejected the token (check OPENHEALTH_TG_TOKEN)".format(error_code), error_code
                 )
             raise TelegramAPIError("{}: {}".format(error_code, description), error_code)
 
@@ -280,7 +282,7 @@ class TelegramAPI:
         info = self.call("getFile", {"file_id": file_id})
         file_path = (info or {}).get("file_path")
         if not file_path:
-            raise TelegramAPIError("getFile вернул пустой file_path")
+            raise TelegramAPIError("getFile returned an empty file_path")
         dest = Path(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         request = urllib.request.Request(self._file_url(file_path))
@@ -294,7 +296,7 @@ class TelegramAPI:
                         break
                     written += len(chunk)
                     if written > max_bytes:
-                        raise TelegramAPIError("файл больше лимита {} байт".format(max_bytes))
+                        raise TelegramAPIError("file exceeds the {} byte limit".format(max_bytes))
                     out.write(chunk)
             os.replace(tmp_name, str(dest))
         except Exception:
@@ -309,13 +311,13 @@ class TelegramAPI:
 # --- /checkin finite-state machine ------------------------------------------------
 
 CHECKIN_QUESTIONS = (
-    ("sleep", "1/4 Сколько часов ты спал(а) этой ночью?"),
-    ("workout", "2/4 Была сегодня тренировка? (да/нет, какая)"),
-    ("alcohol", "3/4 Вчера был алкоголь? (да/нет, сколько)"),
-    ("wellbeing", "4/4 Самочувствие сейчас, от 1 до 5?"),
+    ("sleep", "1/4 How many hours did you sleep last night?"),
+    ("workout", "2/4 Did you work out today? (yes/no, what kind)"),
+    ("alcohol", "3/4 Any alcohol yesterday? (yes/no, how much)"),
+    ("wellbeing", "4/4 How do you feel right now, from 1 to 5?"),
 )
 
-CHECKIN_DONE_TEXT = "Чек-ин записан в журнал. Спасибо!"
+CHECKIN_DONE_TEXT = "Check-in saved to the journal. Thank you!"
 
 
 class CheckinFlow:
@@ -394,20 +396,20 @@ def _fmt_num(value: Any) -> str:
 
 def _recovery_zone(recovery: float) -> str:
     if recovery >= RECOVERY_GREEN:
-        return "зелёная зона"
+        return "green zone"
     if recovery >= RECOVERY_YELLOW:
-        return "жёлтая зона"
-    return "красная зона"
+        return "yellow zone"
+    return "red zone"
 
 
 def today_summary(data: Optional[Dict[str, Any]]) -> str:
     """4-5 honest lines out of the dashboard's data.local.json."""
     if not data:
         return (
-            "Локальной сводки нет: data.local.json не найден.\n"
-            "Собери его скриптом ui/web/build_dashboard_data.py или укажи путь через --today-file."
+            "No local summary: data.local.json not found.\n"
+            "Build it with the ui/web/build_dashboard_data.py script or point at it with --today-file."
         )
-    lines = ["Сводка{}:".format(" за {}".format(data["date"]) if data.get("date") else "")]
+    lines = ["Summary{}:".format(" for {}".format(data["date"]) if data.get("date") else "")]
     recovery = data.get("recovery")
     if recovery is not None:
         lines.append("Recovery {}% — {}.".format(_fmt_num(recovery), _recovery_zone(float(recovery))))
@@ -421,12 +423,12 @@ def today_summary(data: Optional[Dict[str, Any]]) -> str:
     if data.get("sleep") is not None:
         need = data.get("sleepNeeded")
         lines.append(
-            "Сон {} ч{}.".format(_fmt_num(data["sleep"]), " (цель {} ч)".format(_fmt_num(need)) if need else "")
+            "Sleep {} h{}.".format(_fmt_num(data["sleep"]), " (target {} h)".format(_fmt_num(need)) if need else "")
         )
     if data.get("strain") is not None:
         lines.append("Strain {}.".format(_fmt_num(data["strain"])))
     if len(lines) == 1:
-        return "data.local.json найден, но в нём нет recovery/HRV/сна — сводку построить не из чего."
+        return "data.local.json was found, but has no recovery/HRV/sleep — nothing to build a summary from."
     return "\n".join(lines[:5])
 
 
@@ -436,17 +438,17 @@ def summarize_for_prompt(data: Optional[Dict[str, Any]]) -> str:
         return ""
     parts = []
     for key, label, unit in (
-        ("date", "Дата", ""),
+        ("date", "Date", ""),
         ("recovery", "Recovery", "%"),
         ("hrv", "HRV", " ms"),
         ("rhr", "RHR", " bpm"),
-        ("sleep", "Сон", " ч"),
+        ("sleep", "Sleep", " h"),
         ("strain", "Strain", ""),
     ):
         if data.get(key) is not None:
             parts.append("{}: {}{}".format(label, _fmt_num(data[key]), unit))
     if isinstance(data.get("readiness"), str):
-        parts.append("Готовность: {}".format(data["readiness"]))
+        parts.append("Readiness: {}".format(data["readiness"]))
     return "\n".join("- " + p for p in parts)[:1500]
 
 
@@ -454,14 +456,14 @@ def summarize_for_prompt(data: Optional[Dict[str, Any]]) -> str:
 
 
 def build_ask_prompt(question: str, data_summary: str) -> str:
-    blocks = [PROMPT_INTRO, PROMPT_SAFETY, "Вопрос: {}".format(question)]
+    blocks = [PROMPT_INTRO, PROMPT_SAFETY, "Question: {}".format(question)]
     if data_summary:
-        blocks.append("ДАННЫЕ (выжимка из data.local.json):\n" + data_summary)
+        blocks.append("DATA (digest of data.local.json):\n" + data_summary)
     else:
         blocks.append(
-            "ДАННЫЕ: data.local.json не найден — реальных данных нет. Скажи это честно, не выдумывай значения."
+            "DATA: data.local.json not found — there is no real data. Say so honestly, do not invent values."
         )
-    blocks.append("Отвечай по-русски, кратко (это сообщение в Telegram), обычным текстом.")
+    blocks.append("Answer in Russian, briefly (this is a Telegram message), in plain text.")
     return "\n\n".join(blocks)
 
 
@@ -480,7 +482,7 @@ def ask_agent(
     """
     agents = [name for name in ("codex", "claude") if which(name)]
     if not agents:
-        return "Агент не подключён: на этой машине нет codex CLI (и claude тоже). /ask требует локального агента."
+        return "Agent is not connected: this machine has no codex CLI (and no claude either). /ask needs a local agent."
 
     prompt = build_ask_prompt(question, data_summary)
     last_error = ""
@@ -517,9 +519,9 @@ def ask_agent(
                         answer = clean
                 except OSError:
                     pass
-            return answer or "{} вернул пустой ответ.".format(agent)
+            return answer or "{} returned an empty answer.".format(agent)
         except subprocess.TimeoutExpired:
-            last_error = "{}: не уложился в {} секунд".format(agent, timeout_s)
+            last_error = "{}: did not finish within {} seconds".format(agent, timeout_s)
         except OSError as exc:
             last_error = "{}: {}".format(agent, _redact(str(exc)))
         finally:
@@ -528,7 +530,7 @@ def ask_agent(
                     os.unlink(last_message_path)
                 except OSError:
                     pass
-    return "Агент не ответил. {}".format(last_error).strip()
+    return "The agent did not answer. {}".format(last_error).strip()
 
 
 # --- the bot ------------------------------------------------------------------------
@@ -553,7 +555,7 @@ class BotConfig:
         self.agent_timeout_s = agent_timeout_s
         # When set (e.g. http://127.0.0.1:8770), a plain intake is ALSO POSTed to
         # the bridge's /api/intake so it lands in the health index in real time
-        # ("внёс в телеге — сразу видно в вебе"). Without it, envelopes stay on
+        # ("logged it in Telegram, see it in the web UI right away"). Without it, envelopes stay on
         # disk and reach the index via the batch import parser.
         self.bridge_url = bridge_url.rstrip("/") if bridge_url else None
         self.state_dir = self.data_dir / "state"
@@ -603,27 +605,27 @@ class Bot:
         if command in ("/start", "/help"):
             self.api.send_message(chat_id, HELP_TEXT)
         elif command == "/checkin":
-            self.api.send_message(chat_id, "Чек-ин дня. " + self.checkin.start(chat_id))
+            self.api.send_message(chat_id, "Daily check-in. " + self.checkin.start(chat_id))
         elif command == "/cancel":
             cancelled = self.checkin.cancel(chat_id)
-            self.api.send_message(chat_id, "Чек-ин отменён." if cancelled else "Сейчас нечего отменять.")
+            self.api.send_message(chat_id, "Check-in cancelled." if cancelled else "Nothing to cancel right now.")
         elif command == "/today":
             self.api.send_message(chat_id, today_summary(load_today_data(self.config.today_file)))
         elif command == "/ask":
             self._handle_ask(chat_id, argument)
         else:
-            self.api.send_message(chat_id, "Не знаю такой команды. /help — список того, что умею.")
+            self.api.send_message(chat_id, "I don't know that command. /help lists what I can do.")
 
     def _handle_ask(self, chat_id: int, question: str) -> None:
         if not self.config.enable_ask:
             self.api.send_message(
-                chat_id, "Агентный мост выключен. Запусти бота с флагом --enable-ask, чтобы включить /ask."
+                chat_id, "The agent bridge is off. Start the bot with the --enable-ask flag to turn /ask on."
             )
             return
         if not question:
-            self.api.send_message(chat_id, "Использование: /ask <вопрос>. Например: /ask что сегодня с HRV?")
+            self.api.send_message(chat_id, "Usage: /ask <question>. For example: /ask what about my HRV today?")
             return
-        self.api.send_message(chat_id, "Думаю над вопросом локальным агентом…")
+        self.api.send_message(chat_id, "Thinking it over with the local agent…")
         digest = summarize_for_prompt(load_today_data(self.config.today_file))
         answer = ask_agent(question, digest, timeout_s=self.config.agent_timeout_s)
         self.api.send_message(chat_id, answer)
@@ -655,7 +657,7 @@ class Bot:
         envelope = intake.update_to_envelope(update)
         if envelope is None:
             self.api.send_message(
-                chat_id, "Пока понимаю только текст, голосовые и фото. Это сообщение я не сохранил."
+                chat_id, "For now I only understand text, voice messages and photos. I did not save this message."
             )
             return
         download_failed = False
@@ -711,13 +713,13 @@ class Bot:
     def _confirmation(envelope: Dict[str, Any], download_failed: bool) -> str:
         kind = envelope.get("type")
         if kind == intake.KIND_VOICE:
-            base = "Голос сохранён (.oga). Транскрипция появится позже — пока это TODO-hook."
+            base = "Voice message saved (.oga). Transcription will come later — for now it is a TODO hook."
         elif kind == intake.KIND_PHOTO:
-            base = "Фото сохранено{}.".format(" вместе с подписью" if envelope.get("text") else "")
+            base = "Photo saved{}.".format(" together with the caption" if envelope.get("text") else "")
         else:
-            base = "Записал в журнал."
+            base = "Saved to the journal."
         if download_failed:
-            base += " Файл скачать не удалось — пришли его ещё раз, когда сеть появится."
+            base += " The file could not be downloaded — send it again once the network is back."
         return base
 
 
@@ -830,7 +832,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
     print("agent CLIs for /ask: {}".format(", ".join(agents) if agents else "none (codex/claude not on PATH)"))
     if not token or not allowlist:
         ok = False
-        print("verdict: NOT READY — см. docs/TELEGRAM.md")
+        print("verdict: NOT READY — see docs/TELEGRAM.md")
     else:
         print("verdict: ready — python3 -m openhealth.telegram_bot run")
     return 0 if ok else 1
@@ -840,15 +842,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
     token = load_token(path=args.token_file)
     if not token:
         logger.error(
-            "токен не найден: положи его в env %s или в файл %s (см. docs/TELEGRAM.md)",
+            "token not found: put it in env %s or in the file %s (see docs/TELEGRAM.md)",
             ENV_TOKEN, args.token_file,
         )
         return 2
     allowlist = intake.load_allowlist(path=args.allowlist_file)
     if not allowlist:
         logger.error(
-            "allowlist пуст — это обязательный privacy-щит. Добавь свой chat_id в env %s "
-            "или в файл %s (см. docs/TELEGRAM.md)",
+            "allowlist is empty — it is a mandatory privacy shield. Add your chat_id to env %s "
+            "or to the file %s (see docs/TELEGRAM.md)",
             intake.ENV_ALLOWLIST, args.allowlist_file,
         )
         return 2

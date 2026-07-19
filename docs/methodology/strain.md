@@ -1,33 +1,33 @@
-# Strain (дневная нагрузка)
-> algo_version: strain@v1 · источник данных: WHOOP-сырое (passthrough) · редактируемость: только описание
+# Strain (daily load)
+> algo_version: strain@v1 · data source: WHOOP raw (passthrough) · editability: description only
 
-## Что это
+## What this is
 
-Кардионагрузка дня по шкале WHOOP 0-21. Мы её **не вычисляем** — значение провайдера передаётся как есть (passthrough), движок только валидирует и зажимает в диапазон.
+The day's cardiovascular load on WHOOP's 0-21 scale. We do **not** compute it: the provider's value is passed through as is, and the engine only validates and clamps it to range.
 
-## Формула / алгоритм
+## Formula / algorithm
 
-`strain = clamp(raw_whoop_strain, 0.0, 21.0)` — всё. Если значение пришлось зажать, в metadata ставится `clamped: true`.
+`strain = clamp(raw_whoop_strain, 0.0, 21.0)` — that is all. If the value had to be clamped, `clamped: true` is set in metadata.
 
-C-пометка (важно для чтения числа): шкала WHOOP — **логарифмическая, производная от Borg RPE** (Borg ~ HR/10), не линейная. Сдвиг 16 → 17 требует заметно больше нагрузки, чем 4 → 5. Сравнивать дни вычитанием строго нельзя; «strain 18 вдвое тяжелее 9» — неверно.
+A C-note that matters when reading the number: the WHOOP scale is **logarithmic and derived from Borg RPE** (Borg ~ HR/10), not linear. Moving from 16 to 17 takes noticeably more load than moving from 4 to 5. Comparing days by subtraction is simply invalid, and "strain 18 is twice as hard as 9" is wrong.
 
-Для источников без WHOOP-шкалы (Apple Health, Garmin) strain не производится вовсе — честнее, чем перерисовывать чужие метрики в чужую шкалу.
+For sources without the WHOOP scale (Apple Health, Garmin) strain is not produced at all, which is more honest than redrawing someone else's metrics onto someone else's scale.
 
-## Параметры (константы кода)
+## Parameters (code constants)
 
-| параметр | значение | где в коде | зачем |
+| parameter | value | where in code | why |
 |---|---|---|---|
-| минимум шкалы | 0.0 | `openhealth/modules/recovery.py: STRAIN_MIN` | нижняя граница шкалы WHOOP |
-| максимум шкалы | 21.0 | `openhealth/modules/recovery.py: STRAIN_MAX` | верхняя граница шкалы WHOOP |
-| «тяжёлый день» | 14.0 | `openhealth/insights.py: STRAIN_HIGH` | порог для детектора strain/recovery mismatch |
+| scale minimum | 0.0 | `openhealth/modules/recovery.py: STRAIN_MIN` | the lower bound of the WHOOP scale |
+| scale maximum | 21.0 | `openhealth/modules/recovery.py: STRAIN_MAX` | the upper bound of the WHOOP scale |
+| "hard day" | 14.0 | `openhealth/insights.py: STRAIN_HIGH` | threshold for the strain/recovery mismatch detector |
 
-## Источники и доверие
+## Sources and confidence
 
-- Шкала и семантика — публичная документация WHOOP (Borg RPE-derived, логарифмическая).
-- Записывается с `evidence_class: personal` (факт от провайдера), `scale_note` в metadata фиксирует логарифмичность.
+- The scale and its semantics come from WHOOP's public documentation (Borg RPE-derived, logarithmic).
+- Written with `evidence_class: personal` (a fact from the provider); `scale_note` in metadata records the logarithmic nature.
 
-## Известные ограничения
+## Known limitations
 
-- Формула WHOOP закрыта — мы наследуем её вслепую и не можем воспроизвести.
-- Нет собственной версии strain для не-WHOOP источников (осознанный отказ, см. выше).
-- Версия strain@v1 бампается, только если поменяется наша обработка (clamp/пометки), не сама шкала WHOOP.
+- WHOOP's formula is closed, so we inherit it sight unseen and cannot reproduce it.
+- There is no in-house strain for non-WHOOP sources (a deliberate omission, see above).
+- strain@v1 is bumped only when our handling changes (clamping, notes), not when the WHOOP scale itself changes.

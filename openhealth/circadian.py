@@ -41,38 +41,39 @@ ENERGY_DEBT_SATURATION_H = 8.0  # debt hours at which the debt effect saturates
 DEFAULT_DAY_LENGTH_H = 16.5  # fallback wake->bed span when no usable anchor
 ENERGY_PHASE_INFO = {
     "grogginess": (
-        "Инерция сна",
-        "Свет в глаза и стакан воды; разгоняйся медленно — не решай важное в первые 60-90 минут.",
+        "Sleep inertia",
+        "Light in your eyes and a glass of water; ease into it - avoid big decisions "
+        "in the first 60-90 minutes.",
         "C4",
     ),
     "morning-peak": (
-        "Утренний пик",
-        "Лучшее окно дня: глубокая работа или тренировка.",
+        "Morning peak",
+        "The best window of the day: deep work or a workout.",
         "C3",
     ),
     "afternoon-dip": (
-        "Дневной спад",
-        "Прогулка, лёгкие задачи, короткий сон до 20 минут; кофе после 15:00 лучше не пить.",
+        "Afternoon dip",
+        "A walk, light tasks, a nap of up to 20 minutes; better to skip coffee after 15:00.",
         "C3",
     ),
     "evening-peak": (
-        "Вечерний пик",
-        "Вторая волна продуктивности: творческие и социальные задачи.",
+        "Evening peak",
+        "A second wave of productivity: creative and social tasks.",
         "C3",
     ),
     "wind-down": (
-        "Замедление",
-        "Экраны вниз, тёплый свет, без интенсивной нагрузки и тяжёлой еды.",
+        "Wind-down",
+        "Screens down, warm light, no intense exercise and no heavy food.",
         "C3",
     ),
     "melatonin-window": (
-        "Окно мелатонина",
-        "Лучшее окно отбоя: уснуть в нём проще всего.",
+        "Melatonin window",
+        "The best window for lights-out: falling asleep is easiest here.",
         "C3",
     ),
     "sleep-window": (
-        "Окно сна",
-        "Сон: держи целевые ~8 часов от привычного отбоя.",
+        "Sleep window",
+        "Sleep: aim for the target ~8 hours from your habitual bedtime.",
         "C3",
     ),
 }
@@ -397,8 +398,9 @@ def energy_schedule(
         "melatonin_window": {"start_iso": melatonin["start_iso"], "end_iso": melatonin["end_iso"]},
         "personal_fit": "C2",
         "evidence_note": (
-            "Two-process model (Borbely) и Rise-смещения фаз — устоявшаяся наука (C3-C4); "
-            "личная подгонка окон идёт только от анкора сна и накопленного долга (C2)."
+            "The two-process model (Borbely) and the Rise phase offsets are established "
+            "science (C3-C4); the personal fit of these windows comes only from the sleep "
+            "anchor and the accumulated debt (C2)."
         ),
     }
 

@@ -20,6 +20,45 @@ TOKEN = "test-token-123"
 
 
 # --------------------------------------------------------------------------- #
+# Russian task titles under test
+#
+# The connector matches Cyrillic task titles via word-prefix stems, so these
+# fixtures have to stay Russian — they are what proves Russian support works
+# and, just as importantly, that the stems do not fire on look-alike words.
+# Written as \uXXXX escapes to keep this file ASCII; the comment on each line
+# gives the English meaning.
+# --------------------------------------------------------------------------- #
+
+RU_WORKOUT_LEGS      = "\u0422\u0440\u0435\u043d\u0438\u0440\u043e\u0432\u043a\u0430: \u043d\u043e\u0433\u0438"  # "Workout: legs"
+RU_PAY_BILLS         = "\u041e\u043f\u043b\u0430\u0442\u0438\u0442\u044c \u0441\u0447\u0435\u0442\u0430"  # "Pay the bills"
+RU_PROJECT_HEALTH    = "\u0417\u0434\u043e\u0440\u043e\u0432\u044c\u0435"  # "Health" (project name)
+RU_PROJECT_HOUSEHOLD = "\u0411\u044b\u0442"  # "Household" (project name)
+RU_EVENING_YOGA      = "\u0412\u0435\u0447\u0435\u0440\u043d\u044f\u044f \u0439\u043e\u0433\u0430"  # "Evening yoga"
+RU_APPROVE_CONTRACT  = "\u0421\u043e\u0433\u043b\u0430\u0441\u043e\u0432\u0430\u0442\u044c \u0434\u043e\u0433\u043e\u0432\u043e\u0440"  # "Approve the contract"
+RU_RUN_5K            = "\u0411\u0435\u0433 5\u043a"  # "Run 5k"
+RU_BUY_MILK          = "\u041a\u0443\u043f\u0438\u0442\u044c \u043c\u043e\u043b\u043e\u043a\u043e"  # "Buy milk"
+RU_EVENING_PLAN      = "\u0412\u0435\u0447\u0435\u0440\u043d\u0438\u0439 \u043f\u043b\u0430\u043d"  # "Evening plan" - health only via its label
+RU_GO_TO_CLASS       = "\u0421\u0445\u043e\u0434\u0438\u0442\u044c \u043d\u0430 \u0437\u0430\u043d\u044f\u0442\u0438\u0435"  # "Go to a class" - health only via its label
+RU_YOGA_TONIGHT      = "\u0419\u043e\u0433\u0430 \u0432\u0435\u0447\u0435\u0440\u043e\u043c"  # "Yoga tonight"
+
+# Inflected forms: the stem must still match the declined Russian word.
+RU_BOOK_DOCTOR       = "\u0417\u0430\u043f\u0438\u0441\u0430\u0442\u044c\u0441\u044f \u043a \u0432\u0440\u0430\u0447\u0443"  # "Book a doctor visit" - "vrachu" starts with stem "vrach"
+RU_BLOOD_TESTS       = "\u0421\u0434\u0430\u0442\u044c \u0430\u043d\u0430\u043b\u0438\u0437\u044b \u043a\u0440\u043e\u0432\u0438"  # "Get blood tests done" - "analizy" starts with stem "analiz"
+RU_WALK_IN_PARK      = "\u041f\u0440\u043e\u0433\u0443\u043b\u044f\u0442\u044c\u0441\u044f \u0432 \u043f\u0430\u0440\u043a\u0435"  # "Take a walk in the park" - "progulyatsya" starts with stem "progul"
+
+# Near misses: a stem appears *inside* a word but not at its start, so a
+# substring match would produce a false positive and a prefix match must not.
+RU_SEASONAL_SALE     = "\u0421\u0435\u0437\u043e\u043d\u043d\u0430\u044f \u0440\u0430\u0441\u043f\u0440\u043e\u0434\u0430\u0436\u0430"  # "Seasonal sale" - "sezonnaya" contains "son" (sleep)
+RU_PERSONAL_REPORT   = "\u041f\u0435\u0440\u0441\u043e\u043d\u0430\u043b\u044c\u043d\u044b\u0439 \u043e\u0442\u0447\u0451\u0442"  # "Personal report" - "personalnyy" contains "son" (sleep)
+RU_MEET_AT_STATION   = "\u0412\u0441\u0442\u0440\u0435\u0442\u0438\u0442\u044c \u0443 \u0432\u043e\u043a\u0437\u0430\u043b\u0430"  # "Meet at the station" - "vokzala" contains "zal" (gym)
+
+# Stems, as reported back in the ``matched_keyword`` field.
+STEM_WORKOUT  = "\u0442\u0440\u0435\u043d\u0438\u0440"  # "trenir-"
+STEM_YOGA     = "\u0439\u043e\u0433"  # "yog-"
+STEM_MEDITATE = "\u043c\u0435\u0434\u0438\u0442"  # "medit-"
+
+
+# --------------------------------------------------------------------------- #
 # Fake urlopen plumbing
 # --------------------------------------------------------------------------- #
 
@@ -57,38 +96,38 @@ def _fake_urlopen(responses, calls):
 COMPLETED_PAGE = {
     "items": [
         {
-            "content": "Тренировка: ноги",
+            "content": RU_WORKOUT_LEGS,
             "completed_at": "2026-06-10T07:30:00.000000Z",
             "project_id": "2203",
             "item_object": {"labels": ["fitness"]},
         },
         {
-            "content": "Оплатить счета",
+            "content": RU_PAY_BILLS,
             "completed_at": "2026-06-10T10:00:00.000000Z",
             "project_id": "2204",
         },
     ],
     "projects": {
-        "2203": {"name": "Здоровье"},
-        "2204": {"name": "Быт"},
+        "2203": {"name": RU_PROJECT_HEALTH},
+        "2204": {"name": RU_PROJECT_HOUSEHOLD},
     },
 }
 
 REST_PROJECTS = [
-    {"id": "2203", "name": "Здоровье"},
-    {"id": "2204", "name": "Быт"},
+    {"id": "2203", "name": RU_PROJECT_HEALTH},
+    {"id": "2204", "name": RU_PROJECT_HOUSEHOLD},
 ]
 
 REST_TASKS_TODAY = [
     {
-        "content": "Вечерняя йога",
+        "content": RU_EVENING_YOGA,
         "project_id": "2203",
         "labels": ["health"],
         "priority": 3,
         "due": {"date": "2026-06-10"},
     },
     {
-        "content": "Согласовать договор",
+        "content": RU_APPROVE_CONTRACT,
         "project_id": "2204",
         "labels": [],
         "priority": 1,
@@ -143,9 +182,9 @@ class FetchCompletedTests(unittest.TestCase):
             items = todoist.fetch_completed("2026-06-10", token=TOKEN)
         self.assertEqual(len(items), 2)
         first = items[0]
-        self.assertEqual(first["content"], "Тренировка: ноги")
+        self.assertEqual(first["content"], RU_WORKOUT_LEGS)
         self.assertEqual(first["completed_at"], "2026-06-10T07:30:00.000000Z")
-        self.assertEqual(first["project"], "Здоровье")
+        self.assertEqual(first["project"], RU_PROJECT_HEALTH)
         self.assertEqual(first["labels"], ["fitness"])
         self.assertEqual(items[1]["labels"], [])
         # Projects resolved from the sync payload itself — no extra REST call.
@@ -163,11 +202,11 @@ class FetchCompletedTests(unittest.TestCase):
                 {"content": "task %d" % i, "completed_at": "2026-06-10T06:00:00Z", "project_id": "2203"}
                 for i in range(limit)
             ],
-            "projects": {"2203": {"name": "Здоровье"}},
+            "projects": {"2203": {"name": RU_PROJECT_HEALTH}},
         }
         tail_page = {
             "items": [{"content": "tail", "completed_at": "2026-06-10T23:00:00Z", "project_id": "2203"}],
-            "projects": {"2203": {"name": "Здоровье"}},
+            "projects": {"2203": {"name": RU_PROJECT_HEALTH}},
         }
         calls = []
         with patch.object(todoist, "urlopen", _fake_urlopen([full_page, tail_page], calls)):
@@ -179,13 +218,13 @@ class FetchCompletedTests(unittest.TestCase):
 
     def test_project_name_falls_back_to_rest_projects(self):
         sync_page = {
-            "items": [{"content": "Бег 5к", "completed_at": "2026-06-10T07:00:00Z", "project_id": "2203"}],
+            "items": [{"content": RU_RUN_5K, "completed_at": "2026-06-10T07:00:00Z", "project_id": "2203"}],
             # no "projects" map in the sync payload
         }
         calls = []
         with patch.object(todoist, "urlopen", _fake_urlopen([sync_page, REST_PROJECTS], calls)):
             items = todoist.fetch_completed("2026-06-10", token=TOKEN)
-        self.assertEqual(items[0]["project"], "Здоровье")
+        self.assertEqual(items[0]["project"], RU_PROJECT_HEALTH)
         self.assertEqual(len(calls), 2)
         self.assertIn("rest/v2/projects", calls[1]["url"])
 
@@ -226,9 +265,9 @@ class FetchTodayTasksTests(unittest.TestCase):
         self.assertEqual(
             tasks[0],
             {
-                "content": "Вечерняя йога",
+                "content": RU_EVENING_YOGA,
                 "due": "2026-06-10",
-                "project": "Здоровье",
+                "project": RU_PROJECT_HEALTH,
                 "labels": ["health"],
                 "priority": 3,
             },
@@ -244,61 +283,62 @@ class FetchTodayTasksTests(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
-# health_candidates: RU + EN keywords, labels, non-matches
+# health_candidates: Russian + English keywords, labels, non-matches
 # --------------------------------------------------------------------------- #
 
 
 class HealthCandidatesTests(unittest.TestCase):
     def test_russian_keyword_match(self):
         out = todoist.health_candidates(
-            [{"content": "Тренировка: ноги", "labels": [], "completed_at": "2026-06-10T07:30:00Z"}]
+            [{"content": RU_WORKOUT_LEGS, "labels": [], "completed_at": "2026-06-10T07:30:00Z"}]
         )
         self.assertEqual(len(out), 1)
-        self.assertEqual(out[0]["label_ru"], "тренировка")
+        self.assertEqual(out[0]["label_ru"], "workout")
         self.assertEqual(out[0]["source"], "todoist")
-        self.assertEqual(out[0]["original"], "Тренировка: ноги")
-        self.assertEqual(out[0]["matched_keyword"], "тренир")
+        self.assertEqual(out[0]["original"], RU_WORKOUT_LEGS)
+        self.assertEqual(out[0]["matched_keyword"], STEM_WORKOUT)
         self.assertEqual(out[0]["completed_at"], "2026-06-10T07:30:00Z")
 
     def test_english_keyword_match(self):
         out = todoist.health_candidates([{"content": "Morning run 5k", "labels": []}])
         self.assertEqual(len(out), 1)
-        self.assertEqual(out[0]["label_ru"], "бег")
+        self.assertEqual(out[0]["label_ru"], "running")
         self.assertEqual(out[0]["matched_keyword"], "run")
 
     def test_label_match_without_keyword(self):
-        out = todoist.health_candidates([{"content": "Вечерний план", "labels": ["Health"]}])
+        out = todoist.health_candidates([{"content": RU_EVENING_PLAN, "labels": ["Health"]}])
         self.assertEqual(len(out), 1)
-        self.assertEqual(out[0]["label_ru"], "здоровье")
+        self.assertEqual(out[0]["label_ru"], "health")
         self.assertEqual(out[0]["matched_keyword"], "label:health")
 
     def test_fitness_label(self):
-        out = todoist.health_candidates([{"content": "Сходить на занятие", "labels": ["fitness"]}])
-        self.assertEqual(out[0]["label_ru"], "фитнес")
+        out = todoist.health_candidates([{"content": RU_GO_TO_CLASS, "labels": ["fitness"]}])
+        self.assertEqual(out[0]["label_ru"], "fitness")
         self.assertEqual(out[0]["matched_keyword"], "label:fitness")
 
     def test_keyword_wins_over_label(self):
-        out = todoist.health_candidates([{"content": "Йога вечером", "labels": ["health"]}])
-        self.assertEqual(out[0]["label_ru"], "йога")
-        self.assertEqual(out[0]["matched_keyword"], "йог")
+        out = todoist.health_candidates([{"content": RU_YOGA_TONIGHT, "labels": ["health"]}])
+        self.assertEqual(out[0]["label_ru"], "yoga")
+        self.assertEqual(out[0]["matched_keyword"], STEM_YOGA)
 
     def test_non_health_tasks_are_excluded(self):
         out = todoist.health_candidates(
             [
-                {"content": "Купить молоко", "labels": []},
-                {"content": "Согласовать договор", "labels": ["work"]},
+                {"content": RU_BUY_MILK, "labels": []},
+                {"content": RU_APPROVE_CONTRACT, "labels": ["work"]},
                 {"content": "", "labels": []},
             ]
         )
         self.assertEqual(out, [])
 
     def test_word_prefix_not_substring(self):
-        # "сон" must not fire inside "сезон"/"персональный"; "зал" not inside "вокзала".
+        # The "son" (sleep) stem must not fire inside "sezonnaya"/"personalnyy",
+        # and the "zal" (gym) stem must not fire inside "vokzala".
         out = todoist.health_candidates(
             [
-                {"content": "Сезонная распродажа", "labels": []},
-                {"content": "Персональный отчёт", "labels": []},
-                {"content": "Встретить у вокзала", "labels": []},
+                {"content": RU_SEASONAL_SALE, "labels": []},
+                {"content": RU_PERSONAL_REPORT, "labels": []},
+                {"content": RU_MEET_AT_STATION, "labels": []},
             ]
         )
         self.assertEqual(out, [])
@@ -306,20 +346,20 @@ class HealthCandidatesTests(unittest.TestCase):
     def test_word_prefix_matches_inflections(self):
         out = todoist.health_candidates(
             [
-                {"content": "Записаться к врачу", "labels": []},
-                {"content": "Сдать анализы крови", "labels": []},
-                {"content": "Прогуляться в парке", "labels": []},
+                {"content": RU_BOOK_DOCTOR, "labels": []},
+                {"content": RU_BLOOD_TESTS, "labels": []},
+                {"content": RU_WALK_IN_PARK, "labels": []},
             ]
         )
-        self.assertEqual([c["label_ru"] for c in out], ["врач", "анализы", "прогулка"])
+        self.assertEqual([c["label_ru"] for c in out], ["doctor", "lab tests", "walk"])
 
     def test_missing_labels_key_is_fine(self):
         out = todoist.health_candidates([{"content": "Meditate 10 min"}])
-        self.assertEqual(out[0]["label_ru"], "медитация")
+        self.assertEqual(out[0]["label_ru"], "meditation")
 
     def test_keyword_dictionary_is_extensible_constant(self):
         self.assertIsInstance(todoist.HEALTH_KEYWORDS, dict)
-        for stem in ("тренир", "медит", "walk", "gym", "sleep"):
+        for stem in (STEM_WORKOUT, STEM_MEDITATE, "walk", "gym", "sleep"):
             self.assertIn(stem, todoist.HEALTH_KEYWORDS)
 
 

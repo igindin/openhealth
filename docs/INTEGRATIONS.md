@@ -305,8 +305,8 @@ Honest note: no official public API; community projects reverse-engineer the app
 ## Tasks (todo)
 
 Why todo services belong in a health knowledge base: a completed task is a
-dated behavior signal. Closing "Тренировка", "Morning run" or "Записаться к
-врачу" is real evidence of something the journal should know about. The
+dated behavior signal. Closing "Workout", "Morning run" or "Book a doctor's
+appointment" is real evidence of something the journal should know about. The
 connector therefore turns **completed tasks of the day into journal
 candidates** — keyword-filtered suggestions a human reviews, never auto-logged
 facts — and reads today's active tasks as schedule-load context.
@@ -329,9 +329,11 @@ Create a token (personal API token — the lowest-friction PAT route, no OAuth a
 What we pull: `fetch_completed(date)` reads the day's completed tasks via Sync
 v9 `completed/get_all` (the REST API has no completed history), paginated;
 `fetch_today_tasks()` reads active tasks due today via REST v2;
-`health_candidates(tasks)` filters by RU + EN word-prefix stems (тренир, спорт,
-зал, бег, йог, массаж, врач, анализ, сон, медит, прогул / walk, run, gym,
-workout, yoga, doctor, sleep, meditat, …) plus `health` / `fitness` labels.
+`health_candidates(tasks)` filters by word-prefix stems in English (walk, run,
+gym, workout, yoga, doctor, sleep, meditat, …) and in Russian (the Cyrillic
+stems for train, sport, gym, run, yoga, massage, doctor, lab test, sleep,
+meditate and walk, defined in `connectors/todoist.py`) plus `health` /
+`fitness` labels.
 Without a token the connector raises `TodoistNotConfigured` with these same
 steps instead of returning silent empties.
 

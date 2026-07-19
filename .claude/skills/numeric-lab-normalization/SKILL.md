@@ -1,42 +1,42 @@
 ---
 name: numeric-lab-normalization
 description: >-
-  Приводит числовые значения анализов к каноническому виду ДО интерпретации:
-  единицы (ммоль/л ↔ mg/dL, SI ↔ conventional), десятичная запятая, префиксы
-  "<" / ">", кириллические и латинские написания единиц. Включай, когда в
-  анализе значения в непривычных единицах (российские лаборатории часто SI),
-  когда надо сравнить два анализа в разных единицах, или перед расчётом флага
-  по reference_ranges. Обёртка над модулем openhealth.lab_normalization.
-  Триггеры: "приведи единицы", "переведи ммоль в mg/dL", "нормализуй анализ",
-  "разные единицы", "normalize lab units", "convert units".
+  Brings numeric lab values to a canonical form BEFORE interpretation: units
+  (mmol/L ↔ mg/dL, SI ↔ conventional), decimal comma, "<" / ">" prefixes,
+  Cyrillic and Latin spellings of units. Use it when a lab result carries values
+  in unfamiliar units (Russian laboratories often use SI), when two lab results
+  in different units need comparing, or before computing a reference_ranges
+  flag. A wrapper around the openhealth.lab_normalization module. Triggers:
+  "fix the units", "convert mmol to mg/dL", "normalize this lab result",
+  "different units", "normalize lab units", "convert units".
 ---
 
 # numeric-lab-normalization
 
-Рамка-обёртка над модулем `openhealth.lab_normalization`. Её работа - сделать значение **сравнимым**, а не интерпретировать его. Интерпретация - это `lab-interpretation-guardrails`. Нормализация идёт строго первой: иначе сравнение с референсом врёт.
+A framework wrapping the `openhealth.lab_normalization` module. Its job is to make a value **comparable**, not to interpret it. Interpretation belongs to `lab-interpretation-guardrails`. Normalization strictly comes first: otherwise the comparison against a reference range lies.
 
-Зачем это нужно: одна и та же глюкоза - это `99 mg/dL` или `5.5 mmol/L`. Холестерин, B12, креатинин, витамин D - у российских лабораторий обычно SI-единицы. Таблица `reference_ranges` сравнивает в conventional-единицах маркера. Значит SI надо привести к conventional до того, как считать флаг.
+Why this matters: the same glucose reading is either `99 mg/dL` or `5.5 mmol/L`. Cholesterol, B12, creatinine, vitamin D - Russian laboratories usually report these in SI units. The `reference_ranges` table compares in the marker's conventional units. So SI has to be converted to conventional before any flag is computed.
 
-## Что умеет модуль
+## What the module does
 
-Чистый stdlib, опирается на идентичности маркеров и SI-факторы из `reference_ranges` (единый источник правды), добавляет обратное направление и терпимый парсинг.
+Pure stdlib; it builds on the marker identities and SI factors from `reference_ranges` (the single source of truth), adding the reverse direction and tolerant parsing.
 
-- `parse_numeric(raw)` → `(value, qualifier)`. Понимает десятичную запятую (`"13,5"`), префиксы `<` `>` `≤` `≥` (сохраняет отдельно, чтобы "<0.01" не считалось точным значением), пробел как разделитель тысяч.
-- `canonical_unit(unit)` → канонический токен. Понимает кириллицу и латиницу (`ммоль/л` → `mmol/L`, `мг/дл` → `mg/dL`). Неизвестную единицу возвращает как есть - решает вызывающий, не функция.
-- `to_conventional(spec, value, unit_token)` → `(value_в_conventional, converted)`. Обратное к `reference_ranges.to_si`: если единица - это SI маркера, делит на фактор.
-- `normalize_marker(name, raw_value, unit)` → канонический dict (готов для `assess_marker`), либо `None` если маркер не распознан.
-- `normalize_panel(markers)` → список; нераспознанные маркеры не теряются, помечаются `marker_key=None`, `unit_recognised=False`, `raw=True`.
+- `parse_numeric(raw)` → `(value, qualifier)`. Understands a decimal comma (`"13,5"`), the prefixes `<` `>` `≤` `≥` (kept separately, so that "<0.01" isn't treated as an exact value), and a space as a thousands separator.
+- `canonical_unit(unit)` → a canonical token. Understands Cyrillic and Latin spellings alike (the Russian spelling of `mmol/L` → `mmol/L`, of `mg/dL` → `mg/dL`). An unknown unit is returned as-is - the caller decides, not the function.
+- `to_conventional(spec, value, unit_token)` → `(value_in_conventional, converted)`. The inverse of `reference_ranges.to_si`: if the unit is the marker's SI unit, it divides by the factor.
+- `normalize_marker(name, raw_value, unit)` → a canonical dict (ready for `assess_marker`), or `None` if the marker isn't recognized.
+- `normalize_panel(markers)` → a list; unrecognized markers are not lost, they're marked `marker_key=None`, `unit_recognised=False`, `raw=True`.
 
-## Как звать
+## How to call it
 
 ```
 python3 -c "from openhealth import lab_normalization as ln; import json; \
-print(json.dumps(ln.normalize_marker('Glucose', '5,55', 'ммоль/л'), ensure_ascii=False))"
+print(json.dumps(ln.normalize_marker('Glucose', '5,55', 'mmol/L'), ensure_ascii=False))"
 ```
 
-Возврат: `value` уже в `mg/dL` (≈100), `value_si` обратно в ммоль/л, `converted_from` хранит исходник - провенанс не теряется.
+Returns: `value` already in `mg/dL` (≈100), `value_si` back in mmol/L, and `converted_from` holding the original - provenance is not lost.
 
-Целый набор маркеров:
+A whole set of markers:
 
 ```
 python3 -c "from openhealth import lab_normalization as ln; import json; \
@@ -44,16 +44,16 @@ print(json.dumps(ln.normalize_panel([{'name':'Glucose','value':'5,55','unit':'mm
 {'name':'Hemoglobin','value':'145','unit':'g/L'}]), ensure_ascii=False))"
 ```
 
-## Жёсткие правила
+## Hard rules
 
-1. **Не выдумывай конверсию.** Если единица не распознана для этого маркера - значение проходит без изменений, помечается `unit_recognised=False`. Дальше об этом честно говоришь человеку.
-2. **Не теряй провенанс.** Сконвертированное значение несёт `converted_from` с исходными значением и единицей.
-3. **Не интерпретируй здесь.** Нормализация заканчивается на каноническом числе. Флаги, референсы, грейды доверия - следующая рамка (`lab-interpretation-guardrails`).
-4. **Сомневаешься в единице - спроси человека**, что напечатано на бланке. Не угадывай между ммоль/л и mg/dL: для глюкозы это разница в ~18 раз.
+1. **Don't invent a conversion.** If the unit isn't recognized for that marker, the value passes through unchanged and is marked `unit_recognised=False`. You then say so honestly to the person.
+2. **Don't lose provenance.** A converted value carries `converted_from` with the original value and unit.
+3. **Don't interpret here.** Normalization ends at the canonical number. Flags, reference ranges and confidence grades belong to the next framework (`lab-interpretation-guardrails`).
+4. **If you're unsure about a unit, ask the person** what's printed on their report. Don't guess between mmol/L and mg/dL: for glucose that's a factor of roughly 18.
 
-## Связки
+## Connections
 
-- → `lab-interpretation-guardrails`: после нормализации.
-- ← вызывается из `/openhealth` (режим `lab-interpreter`) и из `doctor-note-intake`, когда в выписке есть числовые маркеры.
+- → `lab-interpretation-guardrails`: after normalization.
+- ← called from `/openhealth` (the `lab-interpreter` mode) and from `doctor-note-intake`, when a summary contains numeric markers.
 
-Это не медицинская интерпретация - только приведение чисел к сравнимому виду.
+This is not a medical interpretation - only bringing numbers to a comparable form.

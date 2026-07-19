@@ -1,89 +1,90 @@
 ---
 name: doctor-note-intake
 description: >-
-  Заносит заметку, выписку, заключение или рекомендацию врача в структуру:
-  markdown с frontmatter (дата + источник), факты отдельно от гипотез, сырьё
-  неизменно. Включай, когда человек приносит выписку из стационара, заключение
-  специалиста, протокол приёма, фото/скан медицинского документа, или говорит
-  "запиши что сказал врач", "занеси выписку", "сохрани заключение". Не
-  интерпретирует и не спорит с врачом - фиксирует факты с провенансом. Числовые
-  маркеры в документе уводит в numeric-lab-normalization. Триггеры: "выписка",
-  "заключение врача", "что сказал врач", "занеси приём", "doctor note",
-  "discharge summary", "clinic note".
+  Files a doctor's note, discharge summary, specialist report or recommendation
+  into a structure: markdown with frontmatter (date + source), facts separate
+  from hypotheses, raw source immutable. Use it when someone brings a hospital
+  discharge summary, a specialist's report, a visit note, a photo/scan of a
+  medical document, or says "write down what the doctor said", "file this
+  discharge summary", "save this report". It does not interpret and does not
+  argue with the doctor - it records facts with provenance. Numeric markers in
+  the document are handed off to numeric-lab-normalization. Triggers: "discharge
+  summary", "doctor's report", "what the doctor said", "file this visit",
+  "doctor note", "clinic note".
 ---
 
 # doctor-note-intake
 
-Рамка, как аккуратно занести медицинский документ или сказанное врачом в локальную health-структуру. Ты архивариус, а не рецензент: фиксируешь что сказано, кем и когда. **Не интерпретируешь, не оспариваешь рекомендации врача, не ставишь свой диагноз.**
+A framework for carefully filing a medical document, or something a doctor said, into a local health structure. You are an archivist, not a reviewer: you record what was said, by whom and when. **You do not interpret, you do not dispute the doctor's recommendations, and you do not offer a diagnosis of your own.**
 
-Цель - чтобы через полгода человек (и агент) могли поднять, что именно говорил врач и на каком основании, без искажений.
+The point is that six months later the person (and the agent) can pull up exactly what the doctor said and on what basis, undistorted.
 
-## Жёсткие правила
+## Hard rules
 
-1. **Сырьё неизменно.** Оригинал (фото, PDF, скан) копируется в архив и больше не редактируется (core rule репозитория: archived sources immutable). Только добавляешь, не переписываешь.
-2. **Факты отдельно от гипотез.** В заметке физически разделены: что сказал/написал врач (факт, источник) ↔ что из этого гипотеза или твоё наблюдение. Не смешивать (core rule: separate facts / extractions / hypotheses).
-3. **Каждый факт несёт дату и источник.** "Кто сказал" (врач, специальность, учреждение если есть) и "когда". Нет даты - ставь диапазон или помечай undated, не выдумывай (core rule: do not invent dates).
-4. **Не интерпретируй рекомендации.** Записал "врач назначил X 2 раза в день" - и всё. Не "значит у тебя Y", не "можно снизить". Это рамка фиксации, не интерпретации.
-5. **Тревожный симптом в тексте → к врачу.** Прогон через `evidence.scan_text_red_flags`; если флаг - подсветить, не разбирать.
-6. **Локально.** Документ никуда не уходит.
+1. **Raw sources are immutable.** The original (photo, PDF, scan) is copied into the archive and never edited again (repository core rule: archived sources immutable). You only add, you never rewrite.
+2. **Facts separate from hypotheses.** The note physically separates what the doctor said or wrote (fact, source) ↔ what is a hypothesis or your own observation drawn from it. Never mix them (core rule: separate facts / extractions / hypotheses).
+3. **Every fact carries a date and a source.** "Who said it" (doctor, specialty, institution if available) and "when". No date - use a range or mark it undated; don't invent one (core rule: do not invent dates).
+4. **Do not interpret recommendations.** You record "the doctor prescribed X twice a day" - and that's it. Not "so you have Y", not "you could lower that". This is a framework for recording, not interpreting.
+5. **An alarming symptom in the text → to a physician.** Run it through `evidence.scan_text_red_flags`; if a flag comes up, surface it and don't analyze it.
+6. **Local.** The document goes nowhere.
 
-## Порядок работы
+## How to work
 
-### 1. Прими как есть, спроси минимум
+### 1. Take it as it comes, ask the minimum
 
-Возьми текст/фото. Один вопрос, если не очевидно из документа: **когда** это было и **кто** сказал (какой специалист/учреждение). Больше не допрашивай.
+Take the text/photo. One question, if it isn't obvious from the document: **when** this happened and **who** said it (which specialist/institution). Don't interrogate beyond that.
 
-### 2. Собери структурированную заметку
+### 2. Assemble a structured note
 
-Markdown с frontmatter. Факты и гипотезы - разными секциями:
+Markdown with frontmatter. Facts and hypotheses go in separate sections:
 
 ```markdown
 ---
-title: Приём эндокринолога
+title: Endocrinologist visit
 date: 2026-05-20
-source: эндокринолог, городская поликлиника
+source: endocrinologist, city clinic
 note_kind: doctor_note
 tags: [doctor-note, endocrinology]
 ---
 
-## Факты (со слов / из документа врача)
-- Жалобы со слов человека: <...>
-- Осмотр / заключение врача: <дословно или близко к тексту>
-- Назначения: <препарат, доза, режим - как написано>
-- Что врач просил пересдать / проконтролировать: <...>
+## Facts (as stated / from the doctor's document)
+- Complaints as described by the person: <...>
+- Examination / doctor's conclusion: <verbatim or close to the text>
+- Prescriptions: <drug, dose, regimen - exactly as written>
+- What the doctor asked to retest / monitor: <...>
 
-## Числовые маркеры (если есть в документе)
-- <маркер>: <значение> <единица>   # пойдут в numeric-lab-normalization
+## Numeric markers (if present in the document)
+- <marker>: <value> <unit>   # these go to numeric-lab-normalization
 
-## Открытые вопросы / гипотезы (НЕ от врача)
-- <твоё наблюдение или вопрос на следующий приём>, помечено грейдом C1-C5
+## Open questions / hypotheses (NOT from the doctor)
+- <your observation or a question for the next visit>, tagged with a C1-C5 grade
 ```
 
-Дословные назначения и заключение - в "Факты". Любое "возможно это связано с..." - только в "Открытые вопросы / гипотезы", с грейдом доверия из `openhealth.evidence` (C3 и ниже - вопросом).
+Verbatim prescriptions and the doctor's conclusion go under "Facts". Anything along the lines of "this might be related to..." goes only under "Open questions / hypotheses", with a confidence grade from `openhealth.evidence` (C3 and below is phrased as a question).
 
-### 3. Числовые маркеры - в нормализацию
+### 3. Numeric markers go to normalization
 
-Если в выписке есть анализы (значения с единицами) - не интерпретируй их здесь. Передай в рамку `numeric-lab-normalization` (модуль `openhealth.lab_normalization`), а интерпретацию, если нужна, - в `lab-interpretation-guardrails`. Российские выписки часто в SI-единицах.
+If the summary contains lab values (numbers with units) - don't interpret them here. Hand them to the `numeric-lab-normalization` framework (module `openhealth.lab_normalization`), and the interpretation, if needed, to `lab-interpretation-guardrails`. Russian discharge summaries are often in SI units.
 
-### 4. Занеси в систему (сырьё + запись)
+### 4. File it into the system (raw source + record)
 
-Скопируй оригинал и заметку, заведи через ingest, чтобы документ попал в таймлайн неизменным сырьём:
+Copy the original and the note, and register them through ingest so the document lands in the timeline as an immutable raw source:
 
 ```
-python3 -m openhealth ingest --source document-tests --path <файл-или-папка> \
-  --label "Приём эндокринолога 2026-05-20"
+python3 -m openhealth ingest --source document-tests --path <file-or-folder> \
+  --label "Endocrinologist visit 2026-05-20"
 ```
 
-Для произвольной текстовой заметки подойдёт `--source manual-notes`. Ingest архивирует оригинал в неизменный архив и строит запись. Дата и источник из frontmatter попадают в запись.
+For a free-form text note, `--source manual-notes` works. Ingest archives the original into the immutable archive and builds a record. The date and source from the frontmatter carry into the record.
 
-### 5. Подтверди коротко
+### 5. Confirm briefly
 
-Одной строкой: что занёс, с какой датой и источником, куда легло. Без пересказа диагноза, без оценки.
+One line: what you filed, with what date and source, and where it landed. No retelling of the diagnosis, no assessment.
 
-## Куда писать
+## Where to write
 
-В структуру конкретной health-папки человека / openhealth-репозитория (sources + ingest). **Никогда** не редактируй уже заархивированное сырьё. Никогда не пиши в чужие источники календаря/данных - только в производные записи.
+Into the structure of the person's own health folder / the openhealth repository (sources + ingest). **Never** edit raw material that has already been archived. Never write into someone else's calendar/data sources - only into derived records.
 
-## Дисклеймер
+## Disclaimer
 
-Я фиксирую, что сказал врач, а не интерпретирую и не оспариваю это. Диагнозы и схемы лечения - зона лечащего врача. Тревожные симптомы - к живому врачу. Эта запись - архив с провенансом, не медицинское заключение.
+I record what the doctor said; I do not interpret it and do not dispute it. Diagnoses and treatment regimens are the treating physician's domain. Alarming symptoms go to a real doctor. This record is a provenance archive, not a medical conclusion.

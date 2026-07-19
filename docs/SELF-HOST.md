@@ -1,107 +1,107 @@
-# Self-host: OpenHealth + Hermes на сервере
+# Self-host: OpenHealth + Hermes on a server
 
-OpenHealth умеет жить в двух режимах:
+OpenHealth runs in two modes:
 
-- **Локальный (по умолчанию):** мост на `127.0.0.1`, `OpenHealth.command` или `.app`, данные не уходят с машины. Ничего из этого документа для него не нужно.
-- **Self-host (этот документ):** OpenHealth и [Hermes](https://github.com/NousResearch/hermes) на твоём сервере. Смотришь через веб-UI или через Telegram, обе точки пишут одну базу здоровья.
+- **Local (the default):** the bridge on `127.0.0.1`, `OpenHealth.command` or the `.app`, and data never leaves the machine. Nothing in this document is needed for it.
+- **Self-host (this document):** OpenHealth and [Hermes](https://github.com/NousResearch/hermes) on your own server. You read it through the web UI or through Telegram, and both entry points write to the same health database.
 
-Оба режима работают из одного кода. Self-host это отдельный профиль, локальный ничего не теряет.
+Both modes run from the same code. Self-host is a separate profile; the local mode loses nothing.
 
-## Роли
+## Roles
 
-- **OpenHealth** несёт здоровье: движок (recovery/HRV/инсайты/протоколы), health-базу (`health_os.sqlite3`: sources / artifacts / records), веб-UI, журнал.
-- **Hermes** несёт платформу: мессенджер-gateway (Telegram и др.), cron (планировщик), session-память, identity через pairing, OpenAI-совместимый LLM-proxy.
+- **OpenHealth** owns health: the engine (recovery/HRV/insights/protocols), the health database (`health_os.sqlite3`: sources / artifacts / records), the web UI, the journal.
+- **Hermes** owns the platform: the messenger gateway (Telegram and others), cron (scheduling), session memory, identity via pairing, and an OpenAI-compatible LLM proxy.
 
-Они общаются только по HTTP. Health-база OpenHealth это единственный источник правды по здоровью; у Hermes своя session-база (`state.db`) для переписки. Их не сливают.
+They talk over HTTP only. The OpenHealth health database is the single source of truth for health; Hermes keeps its own session database (`state.db`) for conversations. The two are never merged.
 
-## Топология
+## Topology
 
 ```
-                       ┌──────────────── твой сервер (docker compose) ─────────────────┐
-   браузер ── :443 ──▶ │  Caddy  (TLS + Basic Auth)                                     │
-                       │    └── reverse_proxy ──▶ openhealth:8770  (веб-UI + /api)      │
-                       │                              └── health_os.sqlite3  ◀── одна база│
-   Telegram ─────────▶ │  hermes-gateway  (бот + cron)                                  │
-                       │    └── входящее ──▶ POST openhealth:8770/api/intake ──▶ база    │
-                       │  hermes-proxy :8645  (OpenAI-совместимый LLM)                   │
-                       │    └── OpenHealth берёт его как движок LLM                      │
-                       │  тома: health_data (/data)   hermes_data (/opt/data)           │
-                       └───────────────────────────────────────────────────────────────┘
+                       ┌───────────────── your server (docker compose) ─────────────────┐
+   browser ── :443 ──▶ │  Caddy  (TLS + Basic Auth)                                     │
+                       │    └── reverse_proxy ──▶ openhealth:8770  (web UI + /api)      │
+                       │                              └── health_os.sqlite3  ◀── one DB │
+   Telegram ─────────▶ │  hermes-gateway  (bot + cron)                                  │
+                       │    └── incoming ──▶ POST openhealth:8770/api/intake ──▶ DB     │
+                       │  hermes-proxy :8645  (OpenAI-compatible LLM)                   │
+                       │    └── OpenHealth uses it as its LLM engine                    │
+                       │  volumes: health_data (/data)   hermes_data (/opt/data)        │
+                       └────────────────────────────────────────────────────────────────┘
 ```
 
-## Одна база
+## One database
 
-Любой источник (веб-чек-ин, Telegram через Hermes, вебхук) шлёт **IntakeEnvelope** на `POST /api/intake`. Мост валидирует его, кладёт запись `ContextNote` в health-базу и зеркалит сырой конверт на диск (`data/intake/<channel>/…`, неизменяемая провенанс-копия). Поэтому «внёс в телеге - видно в вебе»: обе точки пишут один индекс.
+Any source (a web check-in, Telegram through Hermes, a webhook) posts an **IntakeEnvelope** to `POST /api/intake`. The bridge validates it, writes a `ContextNote` record into the health database and mirrors the raw envelope to disk (`data/intake/<channel>/…`, an immutable provenance copy). That is why "entered in Telegram, visible on the web" holds: both entry points write the same index.
 
-Контракт конверта: `schemas/intake-envelope.schema.json` (обязательные поля: `submission_id`, `submitted_at`, `channel`, `author`; опционально `text`, `location`, `attachments`, `tags`, `metadata`).
+The envelope contract is `schemas/intake-envelope.schema.json` (required fields: `submission_id`, `submitted_at`, `channel`, `author`; optional `text`, `location`, `attachments`, `tags`, `metadata`).
 
-## Быстрый старт
+## Quick start
 
-Нужен сервер с Docker, доменом (A-запись на сервер) и открытыми портами 80/443.
+You need a server with Docker, a domain (an A record pointing at the server) and ports 80/443 open.
 
 ```bash
-# 1. Собрать образ Hermes один раз (у Hermes свой Dockerfile).
+# 1. Build the Hermes image once (Hermes ships its own Dockerfile).
 docker build -t hermes-agent /path/to/hermes-agent
 
-# 2. Настроить Hermes: провайдер LLM и (опц.) Telegram-бот.
-#    Делается внутри тома hermes_data — см. доку Hermes (hermes login / setup).
+# 2. Configure Hermes: the LLM provider and (optionally) the Telegram bot.
+#    Done inside the hermes_data volume — see the Hermes docs (hermes login / setup).
 
-# 3. Заполнить конфиг OpenHealth.
+# 3. Fill in the OpenHealth config.
 cp deploy/.env.example deploy/.env
-#    домен, Basic-Auth логин + ХЕШ пароля, токен бота. Хеш пароля:
-docker run --rm caddy:2 caddy hash-password --plaintext 'сильный-пароль'
+#    domain, Basic Auth login + password HASH, bot token. To hash the password:
+docker run --rm caddy:2 caddy hash-password --plaintext 'strong-password'
 
-# 4. Поднять стек.
+# 4. Bring the stack up.
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
-Открой `https://<домен>`, введи Basic-Auth логин и пароль. Готово.
+Open `https://<domain>` and enter the Basic Auth login and password. Done.
 
-### Локальный тест на Mac (без Docker Desktop)
+### Testing locally on a Mac (without Docker Desktop)
 
-Реальный сервер под self-host это Linux (VPS): там Docker (или Podman) с `docker compose` работают нативно, ничего ставить сверх пакета не нужно. Docker Desktop и подобное для сервера не требуются.
+A real self-host server is Linux (a VPS): Docker (or Podman) with `docker compose` runs natively there, and nothing beyond the package is needed. Docker Desktop and similar tools are not required for the server.
 
-Если просто хочешь прогнать образ OpenHealth локально на Mac перед выкатыванием, Docker Desktop тоже не обязателен, бери лёгкий рантайм:
+If you only want to run the OpenHealth image locally on a Mac before rolling out, Docker Desktop is not required either — pick a lightweight runtime:
 
-- **colima** (`brew install colima docker`) - обычный Docker-демон в лёгкой VM;
-- **Apple `container`** (open source с WWDC 2025) - энергоэффективнее на Apple Silicon, отдельная лёгкая VM на контейнер.
+- **colima** (`brew install colima docker`) - an ordinary Docker daemon in a light VM;
+- **Apple `container`** (open sourced at WWDC 2025) - more power-efficient on Apple Silicon, with a separate light VM per container.
 
-Пример прогона одного образа (colima):
+Running a single image (colima):
 
 ```bash
 colima start
 docker build -f deploy/openhealth.Dockerfile -t openhealth-bridge .
 docker run --rm -p 8770:8770 -v "$PWD/oh-data:/data" openhealth-bridge
-# открой http://localhost:8770  (health: http://localhost:8770/api/health)
+# open http://localhost:8770  (health: http://localhost:8770/api/health)
 ```
 
-Оговорка: Apple `container` хорошо гоняет одиночные OCI-образы; полный многосервисный `docker compose` (Caddy + OpenHealth + Hermes) держится на Docker/Podman, то есть на том же рантайме, что и на Linux-сервере. Локальный прогон одного образа OpenHealth без внешнего TLS-домена и LLM-провайдера ожидаемо не поднимет Caddy и Hermes целиком, это нормально: те два сервиса настраиваются под конкретный сервер.
+One caveat: Apple `container` handles single OCI images well, but a full multi-service `docker compose` (Caddy + OpenHealth + Hermes) relies on Docker/Podman, the same runtime you get on a Linux server. Running the single OpenHealth image locally without an external TLS domain and an LLM provider will not bring up Caddy and Hermes in full, and that is expected: those two services are configured for a specific server.
 
-## Безопасность (читать обязательно)
+## Security (required reading)
 
-Это медицинские данные. Модель безопасности простая и жёсткая:
+This is medical data. The security model is simple and strict:
 
-- **Мост OpenHealth не имеет своей авторизации.** Его локальный режим полагался на `127.0.0.1`. На сервере он поднят на `0.0.0.0`, но **порт не публикуется** (в compose нет `ports:` у `openhealth`), поэтому снаружи он недостижим. Единственный вход это Caddy.
-- **Caddy даёт TLS + Basic Auth.** Без валидного логина внутрь не попасть. Никогда не добавляй `ports:` сервису `openhealth` и не открывай 8770 наружу.
-- **Секреты не в репозитории.** `deploy/.env` в gitignore; пароль хранится хешем; токены проходят через env.
-- **Мультиюзера нет.** Self-host рассчитан на одного человека (тебя). Раздавать доступ нескольким людям с изоляцией данных это отдельная большая задача, здесь её нет.
-- Хочешь строже: добавь IP-allowlist в Caddy, ключ-клиентский сертификат (mTLS) или доступ только через VPN/SSH-туннель.
+- **The OpenHealth bridge has no authentication of its own.** Its local mode relied on `127.0.0.1`. On a server it binds `0.0.0.0`, but **the port is not published** (there is no `ports:` entry for `openhealth` in the compose file), so it is unreachable from outside. Caddy is the only way in.
+- **Caddy provides TLS + Basic Auth.** Without valid credentials there is no way through. Never add `ports:` to the `openhealth` service and never expose 8770.
+- **No secrets in the repository.** `deploy/.env` is gitignored; the password is stored as a hash; tokens are passed through the environment.
+- **No multi-user support.** Self-host is built for one person (you). Handing access to several people with data isolation is a large separate task and is not covered here.
+- Want it stricter: add an IP allowlist in Caddy, client certificates (mTLS), or access through a VPN/SSH tunnel only.
 
-## LLM через Hermes
+## LLM through Hermes
 
-OpenHealth ходит в Hermes-proxy как в OpenAI-совместимый эндпоинт (`/v1/chat/completions`), а не через `hermes -z` (тот интерактивный one-shot может подвисать на старте gateway). Настройка:
+OpenHealth talks to the Hermes proxy as an OpenAI-compatible endpoint (`/v1/chat/completions`) rather than through `hermes -z` (that interactive one-shot can hang while the gateway is starting). Configuration:
 
-- `OPENHEALTH_LLM_BASE_URL=http://hermes-proxy:8645` (уже в `.env.example`);
-- в UI: **Настройки → Агент → Hermes** (или `POST /api/config {"agent":"hermes","base_url":"http://hermes-proxy:8645"}`).
+- `OPENHEALTH_LLM_BASE_URL=http://hermes-proxy:8645` (already in `.env.example`);
+- in the UI: **Settings → Agent → Hermes** (or `POST /api/config {"agent":"hermes","base_url":"http://hermes-proxy:8645"}`).
 
-Любой bearer-токен подходит: proxy подставляет реальные креды провайдера из `hermes_data`. Если провайдер Hermes не настроен (`hermes proxy status` показывает «not logged in»), LLM-разбор не поедет; OpenHealth тогда использует свой агент (claude/codex), если он есть в образе. LLM через Hermes это опциональный слой, не обязательный.
+Any bearer token works: the proxy substitutes the provider's real credentials from `hermes_data`. If the Hermes provider is not configured (`hermes proxy status` reports "not logged in"), LLM parsing will not run; OpenHealth then falls back to its own agent (claude/codex) if one is present in the image. LLM through Hermes is an optional layer, not a requirement.
 
-## Что уже есть и что дальше
+## What exists and what comes next
 
-Фаза 0 (сделано и проверено): `--host` у моста, `POST /api/intake` (шов «одна база») — round-trip проверен: telegram-конверт ложится в health-индекс как `ContextNote` (`indexed: true`); режим LLM через hermes-proxy; этот deploy-скелет (`docker compose config` валиден). Образ OpenHealth (`deploy/openhealth.Dockerfile`) собирается чисто и, поднятый контейнером со смонтированным томом `/data`, реально отдаёт веб-UI (`<title>OpenHealth</title>`), статику и `/api/*` (health возвращает build-штамп) — смоук-тест пройден локально. Telegram-бот движка (`python3 -m openhealth.telegram_bot run`) уже несёт `/checkin`, `/today`, `/ask`; с `--bridge-url http://openhealth:8770` plain-intake индексируется в реальном времени. Для живого запуска нужны: bot-токен (`~/.openhealth/telegram.token`), запущенный Docker для `up`, и рабочий LLM-провайдер (для `/ask`).
+Phase 0 (done and verified): `--host` on the bridge, `POST /api/intake` (the "one database" seam) — the round trip is verified: a telegram envelope lands in the health index as a `ContextNote` (`indexed: true`); LLM mode via hermes-proxy; and this deploy skeleton (`docker compose config` is valid). The OpenHealth image (`deploy/openhealth.Dockerfile`) builds cleanly and, run as a container with the `/data` volume mounted, really does serve the web UI (`<title>OpenHealth</title>`), static assets and `/api/*` (health returns a build stamp) — smoke-tested locally. The engine's Telegram bot (`python3 -m openhealth.telegram_bot run`) already carries `/checkin`, `/today`, `/ask`; with `--bridge-url http://openhealth:8770` plain intake is indexed in real time. A live run needs: a bot token (`~/.openhealth/telegram.token`), Docker running for `up`, and a working LLM provider (for `/ask`).
 
-Дальше по фазам:
-1. Telegram через Hermes-gateway как альтернатива своему боту: входящее → `/api/intake`; команды `/today`, `/ask` → data/agent API OpenHealth → ответ в чат (нужен bot-токен + конфиг gateway).
-2. cron через Hermes: ежедневный rebuild/sync и утренний инсайт в Telegram.
-3. Мост identity/pairing (пользователь Hermes → контекст OpenHealth) + audit-лог доступа.
-4. Полировка: backup/restore, healthchecks, one-command installer.
+The phases ahead:
+1. Telegram through the Hermes gateway as an alternative to our own bot: incoming → `/api/intake`; the `/today` and `/ask` commands → the OpenHealth data/agent API → a reply in chat (needs a bot token + gateway config).
+2. cron through Hermes: a daily rebuild/sync and a morning insight in Telegram.
+3. An identity/pairing bridge (Hermes user → OpenHealth context) + an access audit log.
+4. Polish: backup/restore, healthchecks, a one-command installer.

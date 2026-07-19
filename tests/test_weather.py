@@ -224,13 +224,13 @@ class ContextTest(unittest.TestCase):
         flag = self._flags(pressure_change_24h=-9.0)["pressure_drop"]
         self.assertEqual(flag["grade"], "C3")
         self.assertFalse(flag["personal"])
-        self.assertIn("слабые", flag["message_ru"])
+        self.assertIn("weak", flag["message_ru"])
 
     def test_heat_boundary_and_grade(self):
         self.assertNotIn("heat", self._flags(t_max=29.9))
         flag = self._flags(t_max=30.0)["heat"]
         self.assertEqual(flag["grade"], "C4")  # heat vs sleep is established
-        self.assertIn("сон", flag["message_ru"].lower())
+        self.assertIn("sleep", flag["message_ru"].lower())
 
     def test_cold_humidity_rain_boundaries(self):
         self.assertIn("cold", self._flags(t_min=0.0))
@@ -255,7 +255,7 @@ class ContextTest(unittest.TestCase):
         validated = weather.weather_context(day, susceptibility={"pressure_drop": "validated"})[0]
         self.assertEqual(validated["grade"], "C3")  # survived switches -> hypothesis
         self.assertTrue(validated["personal"])
-        self.assertIn("повторялся", validated["message_ru"])
+        self.assertIn("repeated", validated["message_ru"])
 
 
 # --------------------------------------------------------------------------- #
@@ -266,15 +266,15 @@ class ContextTest(unittest.TestCase):
 class SummaryTest(unittest.TestCase):
     def test_pressure_drop_line(self):
         line = weather.day_summary_ru(make_day(t_mean=18.0, pressure_change_24h=-9.0))
-        self.assertEqual(line, "18°, давление падает -9 гПа — следи за самочувствием")
+        self.assertEqual(line, "18°, pressure falling -9 hPa — keep an eye on how you feel")
 
     def test_calm_day(self):
-        self.assertEqual(weather.day_summary_ru(make_day()), "16°, спокойная погода — без погодных флагов")
+        self.assertEqual(weather.day_summary_ru(make_day()), "16°, calm weather — no weather flags")
 
     def test_combined_flags(self):
         line = weather.day_summary_ru(make_day(t_mean=31.0, t_max=33.0, precipitation_mm=4.2))
-        self.assertIn("жара 33°", line)
-        self.assertIn("осадки 4.2 мм", line)
+        self.assertIn("heat 33°", line)
+        self.assertIn("precipitation 4.2 mm", line)
 
 
 # --------------------------------------------------------------------------- #

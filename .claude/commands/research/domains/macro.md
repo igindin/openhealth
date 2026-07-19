@@ -364,7 +364,7 @@ Single most important unanswered question.
 
 ---
 
-## Связанные файлы
+## Related files
 - [links to related research in vault]
 ```
 

@@ -1,127 +1,127 @@
 # Plan: UI/UX audit fixes + sync integration (2026-07-07)
 
-**Goal:** Закрыть все 15 пунктов UI/UX аудита (Chrome, живые данные) и 4 разрыва интеграции-синхронизации веб-аппа с движком.
+**Goal:** Close all 15 items from the UI/UX audit (Chrome, live data) and the 4 gaps between the web app's sync integration and the engine.
 
-**Architecture:** Всё в `~/Projects/openhealth`: V1 `ui/web/dashboard.html` (основной скин), `ui/web/assets/oh-i18n.js`, V2 `ui/web/dashboard-v2.html`, мост `ui/web/server.py`. Данные уже общие через bridge (`/api/journal/*`, `/api/sync`, `/api/data`); чиним читающую сторону UI и подачу состояния.
+**Architecture:** Everything in `~/Projects/openhealth`: V1 `ui/web/dashboard.html` (the main skin), `ui/web/assets/oh-i18n.js`, V2 `ui/web/dashboard-v2.html`, bridge `ui/web/server.py`. The data is already shared through the bridge (`/api/journal/*`, `/api/sync`, `/api/data`); we are fixing the UI's reading side and how it presents state.
 
 **Tech Stack:** vanilla JS single-file + GSAP, Python stdlib bridge, pytest.
 
 **Created:** 2026-07-07
 
-**Success Signals:** повторный проход аудита не находит P0; отметка за 6 июля видна в Day Feed на чистом origin; при открытии с данными >24ч дашборд сам синкается; 654+ тестов зелёные.
+**Success Signals:** a second audit pass finds no P0; the July 6 entry is visible in the Day Feed on a clean origin; opening the dashboard with data older than 24h triggers a self-sync; 654+ tests green.
 
-**DON'T DO:** не трогаем V2-миграцию разделов, движок расчётов (кроме avg-бага тренда), Hermes-фазу 1, мультиюзер. Никаких коммитов без отдельной команды.
+**DON'T DO:** we are not touching the V2 section migration, the calculation engine (apart from the trend avg bug), Hermes phase 1, or multi-user. No commits without a separate instruction.
 
-**Verify First:** сервер 8770 — старый процесс (без `/api/intake`); проверки, требующие нового моста, гонять на скретч-порту.
+**Verify First:** the server on 8770 is the old process (no `/api/intake`); run any check that needs the new bridge on a scratch port.
 
 ---
 
-## Волна 1 — доверие к данным и синхронизация (P0 + разрывы A-D)
+## Wave 1 — data trust and synchronization (P0 + gaps A-D)
 
-### Task 1: Добивать анимации при возврате видимости вкладки
+### Task 1: Finish animations when tab visibility returns
 **File:** `ui/web/dashboard.html`
-**Action:** Рядом с блоком `REDUCED_MOTION` добавить: на `visibilitychange→visible` и `focus` пробегать активные GSAP-твины и `progress(1)`. Кольцо/каунтеры перестанут застревать на «5» вместо 22 в фоновом/перекрытом окне.
-**Verify:** Chrome: открыть вкладку в фоне, сфокусировать — цифры и opacity сразу финальные.
+**Action:** Next to the `REDUCED_MOTION` block, add: on `visibilitychange→visible` and `focus`, walk the active GSAP tweens and call `progress(1)`. The ring and counters will stop getting stuck at "5" instead of 22 in a backgrounded or covered window.
+**Verify:** Chrome: open the tab in the background, then focus it — numbers and opacity are immediately final.
 
-### Task 2: Чип свежести данных в топбаре
+### Task 2: Data-freshness chip in the top bar
 **File:** `ui/web/dashboard.html`
-**Action:** Возле recovery-пилюли чип возраста данных из `DATA._meta.generatedAt`/`DATA.date`: «сегодня» тихий; «N дн назад» янтарный, клик → `go('sync')`. Данные старше 24ч больше не молчат.
-**Verify:** подменить generatedAt в консоли → чип янтарный; клик ведёт в Data Sources.
+**Action:** Next to the recovery pill, a data-age chip driven by `DATA._meta.generatedAt`/`DATA.date`: "today" is quiet; "N days ago" is amber, and clicking it calls `go('sync')`. Data older than 24h no longer stays silent.
+**Verify:** override generatedAt in the console → the chip turns amber; clicking it leads to Data Sources.
 
-### Task 3: Авто-синк при открытии
+### Task 3: Auto-sync on open
 **File:** `ui/web/dashboard.html`
-**Action:** На загрузке: bridge online && дата данных < сегодня && антидребезг (`openhealth.autosync.last` > 6ч назад) → `POST /api/sync?days=3`; успех → перезагрузка DATA + тост «Данные обновлены»; ошибка → тихий фолбэк `POST /api/rebuild`. Использовать `OHNotify.toast`.
-**Verify:** со старым снапшотом открыть страницу — в Network уходит /api/sync, после — свежая дата в футере.
+**Action:** On load: bridge online && data date < today && debounce satisfied (`openhealth.autosync.last` more than 6h ago) → `POST /api/sync?days=3`; on success reload DATA + show a "Data updated" toast; on error fall back quietly to `POST /api/rebuild`. Use `OHNotify.toast`.
+**Verify:** open the page with a stale snapshot — /api/sync goes out in Network, and the footer shows a fresh date afterwards.
 
-### Task 4: Day Feed читает серверный журнал (разрыв №1)
+### Task 4: Day Feed reads the server journal (gap #1)
 **File:** `ui/web/dashboard.html` (`renderTimeline`, `tlDayEventsHTML`)
-**Action:** Рендерить ленту сразу из localStorage, параллельно `GET /api/journal/range?start=&end=` за окно ленты; серверные дни мержить в localStorage (`setIfEmpty`-семантика по дням) и перерисовать чипы. Отметка, сделанная с другого устройства/из Telegram, становится видимой.
-**Verify:** очистить localStorage → Timeline: 6 июля показывает чип «Лечь до 23:30» (лежит на сервере), не «без отметок».
+**Action:** Render the feed from localStorage immediately, and in parallel `GET /api/journal/range?start=&end=` for the feed's window; merge server days into localStorage (`setIfEmpty` semantics per day) and redraw the chips. An entry made on another device or from Telegram becomes visible.
+**Verify:** clear localStorage → Timeline: July 6 shows the "In bed by 23:30" chip (it lives on the server), not "no entries".
 
-### Task 5: Окно ленты до реального «сегодня» (разрыв №2)
+### Task 5: Feed window runs to the real "today" (gap #2)
 **File:** `ui/web/dashboard.html` (`renderTimeline`)
-**Action:** Ряды строить от `todayKey()` назад на 14 дней; recovery-значение искать по смещению от даты выгрузки, где данных нет — нейтральный чип «—». Внести за вчера и увидеть вчера — работает даже до синка трекера.
-**Verify:** при снапшоте от 5 июля лента начинается с 7 июля (сегодня), 6-7 без recovery, но с отметками.
+**Action:** Build rows from `todayKey()` backwards over 14 days; look up the recovery value by offset from the export date, and where there is no data show a neutral "—" chip. Log something for yesterday and see yesterday — this works even before the tracker syncs.
+**Verify:** with a July 5 snapshot the feed starts at July 7 (today), and the 6th and 7th have no recovery but do carry entries.
 
-### Task 6: Глушение демо-данных (аудит №1)
-**Files:** `ui/web/dashboard.html`, `ui/web/assets/oh-registry.js` (если чип там)
-**Action:** Плиткам с провенансом «демо» — класс `is-demo` (CSS: desaturate + opacity .55); секции, где все плитки демо, — один баннер «Раздел на демо-данных — нужен intraday-синк» + CTA в Data Sources. Демо перестаёт маскироваться под реальное.
-**Verify:** Sleep/Stress: плитки приглушены, баннер есть; Workouts (реальные) не тронут.
+### Task 6: Mute demo data (audit #1)
+**Files:** `ui/web/dashboard.html`, `ui/web/assets/oh-registry.js` (if the chip lives there)
+**Action:** Tiles with "demo" provenance get an `is-demo` class (CSS: desaturate + opacity .55); sections where every tile is demo get a single banner ("Section on demo data — needs an intraday sync") plus a CTA to Data Sources. Demo stops passing itself off as real.
+**Verify:** Sleep/Stress: tiles are muted and the banner is present; Workouts (real) are untouched.
 
-### Task 7: Trends — оси, зоны, честное среднее (аудит №4)
-**File:** `ui/web/dashboard.html` (рендер трендов)
-**Action:** (а) подписи min/mid/max по Y у recovery/HRV; (б) зонные полосы фоном recovery (≥67 зел., 34-66 янт., <34 красн.); (в) среднее считать только по реальным точкам (пропуски с forward-fill исключить — сейчас HRV «120 мс» при сегодняшних 62); (г) смягчить сглаживание (ложные плато).
-**Verify:** avg HRV совпадает с ручным расчётом по данным `/api/data`; на графике видны значения оси.
+### Task 7: Trends — axes, zones, an honest average (audit #4)
+**File:** `ui/web/dashboard.html` (trend rendering)
+**Action:** (a) min/mid/max labels on the Y axis for recovery/HRV; (b) zone bands behind recovery (≥67 green, 34-66 amber, <34 red); (c) compute the average from real points only (exclude forward-filled gaps — right now HRV reads "120 ms" while today's is 62); (d) soften the smoothing (it creates false plateaus).
+**Verify:** avg HRV matches a manual calculation over the `/api/data` values; axis values are visible on the chart.
 
-### Task 8: Methodologies — честная загрузка (аудит №5)
+### Task 8: Methodologies — honest loading (audit #5)
 **File:** `ui/web/dashboard.html` (`renderMethodology`)
-**Action:** Таймаут 4с → 10с; по catch — состояние ошибки с кнопкой «Повторить» вместо вечного спиннера.
-**Verify:** заблокировать эндпоинт (devtools offline) → через 10с ошибка с retry.
+**Action:** Timeout 4s → 10s; on catch, show an error state with a "Retry" button instead of an eternal spinner.
+**Verify:** block the endpoint (devtools offline) → after 10s an error with retry.
 
-### Task 9: Версия моста в /api/health (разрыв №3)
+### Task 9: Bridge version in /api/health (gap #3)
 **Files:** `ui/web/server.py`, `ui/web/dashboard.html`, `tests/test_bridge_server.py`
-**Action:** `BUILD = "YYYY-MM-DD"` константа → `/api/health {..., build}`; UI при расхождении мажорных возможностей (нет build либо старее ожидаемого) показывает бейдж «bridge устарел — перезапусти OpenHealth.command» в Diagnostics и футере. Тест на поле build.
-**Verify:** `curl /api/health` содержит build; pytest зелёный.
+**Action:** A `BUILD = "YYYY-MM-DD"` constant → `/api/health {..., build}`; when major capabilities diverge (no build, or older than expected) the UI shows a "bridge is out of date — restart OpenHealth.command" badge in Diagnostics and the footer. Add a test for the build field.
+**Verify:** `curl /api/health` includes build; pytest green.
 
-## Волна 2 — язык и консистентность (P1)
+## Wave 2 — language and consistency (P1)
 
-### Task 10: i18n-добивка EN + фикс артефакта
-**File:** `ui/web/assets/oh-i18n.js` (+bump `?v=4` в обоих скинах)
-**Action:** Добавить: зонные фразы word() (красная/зелёная), ярлыки колец Vitals («Восстановление»→Recovery), базовые строки Day Pulse, ярлыки формы Meds (НАЗВАНИЕ/ВАКЦИНА и RU-плейсхолдеры «утро», «сам назначил»), футер («данные на», «Локально · твои данные…» уже есть — сверить). Исправить «Daily strain (Strain)» → «Daily strain».
-**Verify:** EN-режим: Today красная/зелёная зона на английском; кольца Vitals одноязычны; Meds-форма одноязычна.
+### Task 10: Finish the EN i18n pass + fix an artifact
+**File:** `ui/web/assets/oh-i18n.js` (+ bump `?v=4` in both skins)
+**Action:** Add: zone phrases from word() (red/green), Vitals ring labels (the Russian label for recovery → Recovery), the base Day Pulse strings, Meds form labels (NAME/VACCINE and the untranslated Russian placeholders for "morning" and "self-prescribed"), the footer ("data as of", "Local · your data…" already exist — verify them). Fix "Daily strain (Strain)" → "Daily strain".
+**Verify:** EN mode: the Today red/green zone reads in English; Vitals rings are monolingual; the Meds form is monolingual.
 
-### Task 11: Biomarkers — слить дубль-колонки (аудит №7)
-**File:** `ui/web/dashboard.html` (рендер таблицы биомаркеров)
-**Action:** Одна колонка «Диапазон»: референс, и рядом «опт. X-Y» только когда оптимум отличается. Освободившуюся ширину — названию и шкале.
-**Verify:** в строках с равными диапазонами значение не дублируется; High/Optimal статусы не сломаны.
+### Task 11: Biomarkers — merge the duplicate columns (audit #7)
+**File:** `ui/web/dashboard.html` (biomarker table rendering)
+**Action:** One "Range" column: the reference range, with "opt. X-Y" next to it only when the optimum differs. Give the freed width to the name and the scale.
+**Verify:** rows with identical ranges no longer repeat the value; High/Optimal statuses still work.
 
-### Task 12: Workouts — автовыбор и аффорданс (аудит №8)
+### Task 12: Workouts — auto-selection and affordance (audit #8)
 **File:** `ui/web/dashboard.html`
-**Action:** При входе автоselect последнего дня (деталь заполнена сразу), `selected`-состояние строки, hover, подпись шкалы бара «strain 0-21».
-**Verify:** вход в Workouts — правая панель сразу с метриками последнего дня.
+**Action:** On entry, auto-select the latest day (the detail pane is filled immediately), add a `selected` row state, hover, and a "strain 0-21" label on the bar scale.
+**Verify:** entering Workouts — the right panel already shows the latest day's metrics.
 
-## Волна 3 — полировка (P2)
+## Wave 3 — polish (P2)
 
-### Task 13: Day Pulse — поле ICS вместо инструкции про POST (аудит №9)
+### Task 13: Day Pulse — an ICS field instead of POST instructions (audit #9)
 **File:** `ui/web/dashboard.html`
-**Action:** Инпут «ICS-ссылка» + кнопка «Подключить» → `POST /api/calendar {ics_url}` (эндпоинт есть); шаги Google/Apple оставить как подсказку, строку про «POST /api/calendar с JSON» убрать.
-**Verify:** ввод ссылки → 200, карточка переключается в состояние «подключён».
+**Action:** An "ICS link" input + a "Connect" button → `POST /api/calendar {ics_url}` (the endpoint exists); keep the Google/Apple steps as a hint and remove the line about "POST /api/calendar with JSON".
+**Verify:** entering a link → 200, and the card switches to the "connected" state.
 
-### Task 14: Research — state-aware empty (аудит №10)
+### Task 14: Research — state-aware empty (audit #10)
 **File:** `ui/web/dashboard.html`
-**Action:** Если `BRIDGE.ok` — текст «Запусти дип-ресёрч с экрана Биомаркеры», упоминание «нужен запущенный bridge» только при офлайне.
-**Verify:** при онлайн-bridge противоречия в копи нет.
+**Action:** If `BRIDGE.ok`, the text reads "Start deep research from the Biomarkers screen"; the "needs a running bridge" mention appears only when offline.
+**Verify:** with the bridge online there is no contradiction in the copy.
 
-### Task 15: Journal — чек-ин выше настройки (аудит №11)
+### Task 15: Journal — check-in above settings (audit #11)
 **File:** `ui/web/dashboard.html`
-**Action:** Блок сегодняшнего чек-ина перенести первым, «Настройка отслеживания» — ниже. Action-first.
-**Verify:** вход в Journal — сверху отметки за выбранный день.
+**Action:** Move today's check-in block to the top and put "Tracking setup" below it. Action-first.
+**Verify:** entering Journal — the entries for the selected day are at the top.
 
-### Task 16: Protocols — дедуп дисклеймера (аудит №12)
+### Task 16: Protocols — dedupe the disclaimer (audit #12)
 **File:** `ui/web/dashboard.html`
-**Action:** Дисклеймер «самонаблюдение, не лечение» рендерить один раз под сеткой, из карточек убрать.
-**Verify:** на экране один дисклеймер при двух карточках.
+**Action:** Render the "self-observation, not treatment" disclaimer once below the grid and remove it from the cards.
+**Verify:** one disclaimer on screen with two cards present.
 
-### Task 17: Timeline — схлопывать пустые серии (аудит №13)
+### Task 17: Timeline — collapse empty runs (audit #13)
 **File:** `ui/web/dashboard.html` (`renderTimeline`)
-**Action:** ≥3 подряд дней без отметок → одна строка «N дней без отметок» (раскрывается кликом).
-**Verify:** на текущих данных лента ужимается, дни с отметками не свёрнуты.
+**Action:** 3+ consecutive days with no entries → a single "N days with no entries" row (expandable on click).
+**Verify:** on current data the feed compresses, and days with entries stay expanded.
 
-### Task 18: V2 — плавающий бар и дата (аудит №14)
+### Task 18: V2 — floating bar and date (audit #14)
 **File:** `ui/web/dashboard-v2.html`
-**Action:** `padding-bottom` контенту под бар; в шапке подпись «данные за <дата>» вместо подачи даты выгрузки как сегодняшней.
-**Verify:** «Срочное сегодня» не перекрыто; дата подписана как дата данных.
+**Action:** `padding-bottom` on the content under the bar; in the header, label it "data for <date>" instead of presenting the export date as today.
+**Verify:** "Urgent today" is not covered; the date is labeled as the data date.
 
-### Task 19: Мелочи — Stress-деления, Meds-шеврон (аудит №15)
+### Task 19: Small items — Stress ticks, Meds chevron (audit #15)
 **File:** `ui/web/dashboard.html`
-**Action:** Гейджи Stress: риски зон на дуге + диапазон под значением; select'ам Meds-формы — стрелка (CSS `background-image` chevron) и `cursor:pointer`.
-**Verify:** визуально: гейджи читаются при малых значениях, селекты отличимы от инпутов.
+**Action:** Stress gauges: zone risks on the arc + the range under the value; give the Meds form selects an arrow (CSS `background-image` chevron) and `cursor:pointer`.
+**Verify:** visually: gauges stay readable at small values, and selects are distinguishable from inputs.
 
 ---
 
-## Финальная проверка (VERIFY волна)
+## Final check (VERIFY wave)
 
-1. `python3 -m pytest -q` — всё зелёное (654+).
+1. `python3 -m pytest -q` — all green (654+).
 2. `node -c assets/oh-i18n.js`; `python3 -c "ast.parse(server.py)"`.
-3. Chrome-проход: Today (обе зоны), Timeline (серверные отметки+сегодня), Trends (оси/зоны/avg), Sleep (демо приглушено), Biomarkers, Workouts, Day Pulse, Journal, Protocols, Methodologies, V2 — на свежих данных, светлая+тёмная.
-4. Паритет-тест скинов (`tests/test_dashboard_parity.py`) не сломан.
+3. Chrome pass: Today (both zones), Timeline (server entries + today), Trends (axes/zones/avg), Sleep (demo muted), Biomarkers, Workouts, Day Pulse, Journal, Protocols, Methodologies, V2 — on fresh data, light and dark.
+4. The skin parity test (`tests/test_dashboard_parity.py`) is not broken.

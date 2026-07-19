@@ -1,53 +1,53 @@
-# Качество данных
-> algo_version: n/a (модуль data_quality, границы-константы) · источник данных: движок · редактируемость: параметры в коде
+# Data quality
+> algo_version: n/a (data_quality module, boundary constants) · data source: engine · editability: parameters in code
 
-## Что это
+## What this is
 
-Прежде чем рассуждать над данными, система проверяет, насколько им можно верить: дубликаты, даты из будущего, физиологически невозможные значения, разрывы в дневных сериях, подозрение на перепутанные единицы. Всё — **вопросы к ревью, никогда не «тихие фиксы»**: модуль ничего не правит и не выбрасывает, только репортит.
+Before reasoning over the data, the system checks how far it can be trusted: duplicates, dates in the future, physiologically impossible values, gaps in the daily series, suspected unit mix-ups. Everything is raised as a **question for review, never as a silent fix**: the module changes nothing and drops nothing, it only reports.
 
-## Формула / алгоритм
+## Formula / algorithm
 
-Пять проверок (`validate_records`):
+Five checks (`validate_records`):
 
-1. **future_date** (high): дата записи строго позже «сегодня».
-2. **duplicate** (medium): одна метрика на одну дату с *разными* значениями — только для метрик из `DAILY_UNIQUE_METRICS` (recovery, hrv, rhr, лабораторные маркеры...); пер-событийные (strain тренировки, наппы) легитимно повторяются и не флагуются.
-3. **impossible_value** (high): значение вне жёстких физиологичных границ `PLAUSIBLE_BOUNDS` (см. таблицу).
-4. **series_gap** (low): разрыв > 4 дней в датированной серии ключевой дневной метрики (recovery, hrv, rhr).
-5. **unit_suspect** (medium): глюкоза/холестерин, похожие на ммоль/л, записанные без единиц (значение нереалистично низко как мг/дл, но ×18 попадает в норму) — флаг на ревью, не автоконвертация.
+1. **future_date** (high): the record's date is strictly later than "today".
+2. **duplicate** (medium): one metric on one date with *different* values — only for metrics in `DAILY_UNIQUE_METRICS` (recovery, hrv, rhr, lab markers, and so on); per-event metrics (workout strain, naps) legitimately repeat and are not flagged.
+3. **impossible_value** (high): a value outside the hard physiological bounds in `PLAUSIBLE_BOUNDS` (see the table).
+4. **series_gap** (low): a gap of more than 4 days in the dated series of a key daily metric (recovery, hrv, rhr).
+5. **unit_suspect** (medium): glucose or cholesterol that looks like mmol/L but was recorded without units (the value is unrealistically low for mg/dL, but ×18 lands in the normal range) — flagged for review, not auto-converted.
 
-**Балл качества** (`quality_score`): `score = max(0, 100 − Σ штрафов)`; штраф за issue по severity: **high −12, medium −6, low −2**. Разложение по severity возвращается в breakdown — число объяснимо. Вердикты: >= 90 «данные чистые», >= 70 «мелкие вопросы», >= 40 «заметные проблемы», ниже — «выводам доверять рано».
+**Quality score** (`quality_score`): `score = max(0, 100 − Σ penalties)`; the penalty per issue by severity is **high −12, medium −6, low −2**. The per-severity breakdown is returned alongside, so the number is explainable. Verdicts: >= 90 "clean data", >= 70 "minor questions", >= 40 "noticeable problems", below that "too early to trust conclusions".
 
-## Параметры (константы кода)
+## Parameters (code constants)
 
-Таблица `PLAUSIBLE_BOUNDS` (`openhealth/data_quality.py`), значение на границе или за ней — почти наверняка ошибка ввода:
+The `PLAUSIBLE_BOUNDS` table (`openhealth/data_quality.py`); a value at or beyond a boundary is almost certainly an entry error:
 
-| метрика | границы | единица / комментарий |
+| metric | bounds | unit / comment |
 |---|---|---|
-| hrv | 1.0 - 300.0 | мс rMSSD |
-| rhr | 25.0 - 120.0 | уд/мин в покое |
-| recovery | 0.0 - 100.0 | % (шкала WHOOP) |
-| strain | 0.0 - 21.0 | шкала WHOOP |
-| sleep_h | 0.0 - 16.0 | часов за сутки |
-| spo2 | 50.0 - 100.0 | % сатурации |
-| glucose | 1.0 - 40.0 | ммоль/л (заодно ловит низкие мг/дл) |
-| temperature | 30.0 - 45.0 | °C тела |
-| weight_kg | 20.0 - 400.0 | кг |
+| hrv | 1.0 - 300.0 | ms rMSSD |
+| rhr | 25.0 - 120.0 | bpm at rest |
+| recovery | 0.0 - 100.0 | % (WHOOP scale) |
+| strain | 0.0 - 21.0 | WHOOP scale |
+| sleep_h | 0.0 - 16.0 | hours per day |
+| spo2 | 50.0 - 100.0 | % saturation |
+| glucose | 1.0 - 40.0 | mmol/L (also catches low mg/dL values) |
+| temperature | 30.0 - 45.0 | °C body |
+| weight_kg | 20.0 - 400.0 | kg |
 
-| параметр | значение | где в коде | зачем |
+| parameter | value | where in code | why |
 |---|---|---|---|
-| штраф high | 12 | `openhealth/data_quality.py: _SEVERITY_PENALTY` | почти наверняка ошибка — бьёт по доверию сильно |
-| штраф medium | 6 | `openhealth/data_quality.py: _SEVERITY_PENALTY` | вероятная проблема |
-| штраф low | 2 | `openhealth/data_quality.py: _SEVERITY_PENALTY` | стоит взгляда |
-| порог разрыва | 4 дня | `openhealth/data_quality.py: DEFAULT_GAP_DAYS` | короче — обычный пропуск синка |
-| множитель единиц | ×18 | `openhealth/data_quality.py: _check_unit_suspicion` | мг/дл ↔ ммоль/л для глюкозы/холестерина |
+| high penalty | 12 | `openhealth/data_quality.py: _SEVERITY_PENALTY` | almost certainly an error, so it hits trust hard |
+| medium penalty | 6 | `openhealth/data_quality.py: _SEVERITY_PENALTY` | a probable problem |
+| low penalty | 2 | `openhealth/data_quality.py: _SEVERITY_PENALTY` | worth a look |
+| gap threshold | 4 days | `openhealth/data_quality.py: DEFAULT_GAP_DAYS` | anything shorter is an ordinary missed sync |
+| unit multiplier | ×18 | `openhealth/data_quality.py: _check_unit_suspicion` | mg/dL ↔ mmol/L for glucose and cholesterol |
 
-## Источники и доверие
+## Sources and confidence
 
-- Границы — консервативная физиологическая плаузибельность для живого человека, не клинические нормы.
-- Сообщения и предложения — по-русски, всегда «проверить источник», никогда «исправили за тебя».
+- The bounds are conservative physiological plausibility for a living person, not clinical norms.
+- Messages and suggestions always say "check the source", never "we fixed it for you".
 
-## Известные ограничения
+## Known limitations
 
-- Алиасы метрик — подстрочный матч имён; экзотические названия метрик проверки не поймают.
-- Балл линейный по числу issues: 9 low-разрывов уронят его сильнее, чем одна high-ошибка — читай breakdown, не только число.
-- Unit-подозрение покрывает только глюкозу/холестерин (пары ×18); другие пары единиц не детектятся.
+- Metric aliases are matched as substrings of the name, so exotic metric names will slip past the checks.
+- The score is linear in the number of issues: nine low-severity gaps will push it down further than one high-severity error — read the breakdown, not just the number.
+- Unit suspicion covers only glucose and cholesterol (the ×18 pairs); other unit pairs are not detected.

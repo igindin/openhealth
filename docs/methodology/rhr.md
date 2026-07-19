@@ -1,38 +1,38 @@
-# RHR (пульс покоя)
-> algo_version: recovery_score@v3 (компонента) · источник данных: WHOOP-сырое + движок · редактируемость: параметры в коде
+# RHR (resting heart rate)
+> algo_version: recovery_score@v3 (component) · data source: WHOOP raw + engine · editability: parameters in code
 
-## Что это
+## What this is
 
-Resting heart rate, уд/мин — ночной пульс покоя из WHOOP. На дашборде показывается сырое значение провайдера. Движок использует его дважды: как компоненту recovery_score@v3 и как самостоятельный детектор тренда (insights).
+Resting heart rate, bpm — the overnight resting pulse from WHOOP. The dashboard shows the provider's raw value. The engine uses it twice: as a component of recovery_score@v3 and as a standalone trend detector (insights).
 
-## Формула / алгоритм
+## Formula / algorithm
 
-**Компонента recovery (`rhr_component`, `openhealth/modules/recovery.py`):**
+**Recovery component (`rhr_component`, `openhealth/modules/recovery.py`):**
 
 `component = clamp(50 − 50 × (rhr / baseline − 1) / 0.30, 0, 100)`
 
-Ниже baseline — лучше (знак инвертирован относительно HRV). Отклонение ±30% от baseline насыщает компоненту (0 или 100). Baseline — арифметическое среднее RHR за 28 дней (ln-трансформация не нужна: RHR распределён почти симметрично, в отличие от rMSSD).
+Below baseline is better (the sign is inverted relative to HRV). A deviation of ±30% from baseline saturates the component (0 or 100). The baseline is the arithmetic mean RHR over 28 days (no ln transform needed: RHR is distributed almost symmetrically, unlike rMSSD).
 
-**Детектор тренда (`detect_rhr_uptrend`, `openhealth/insights.py`):**
+**Trend detector (`detect_rhr_uptrend`, `openhealth/insights.py`):**
 
-среднее за последние 7 дней сравнивается с личным baseline за 14-28 дней назад (окно 7-28 дней, исключая свежую неделю). Рост на >= 3 уд/мин — attention, на >= 6 — warning (с дисклеймером «при симптомах — к врачу»).
+the mean over the last 7 days is compared against your personal baseline from 14-28 days ago (a 7-28 day window, excluding the most recent week). A rise of >= 3 bpm is attention, >= 6 bpm is warning (with the disclaimer "if you have symptoms, see a doctor").
 
-## Параметры (константы кода)
+## Parameters (code constants)
 
-| параметр | значение | где в коде | зачем |
+| parameter | value | where in code | why |
 |---|---|---|---|
-| насыщение компоненты | 0.30 | `openhealth/modules/recovery.py: _RHR_FULL_SWING` | ±30% от baseline = полный размах 0-100 |
-| окно baseline | 28 | `openhealth/modules/recovery.py: DEFAULT_BASELINE_WINDOW_DAYS` | общее окно личных baseline движка |
-| порог attention | 3.0 | `openhealth/insights.py: RHR_RISE_ATTENTION_BPM` | устойчивые +3 уд/мин — классический ранний маркер |
-| порог warning | 6.0 | `openhealth/insights.py: RHR_RISE_WARNING_BPM` | +6 уд/мин — громкий сигнал |
-| плаузибельные границы | 25-120 | `openhealth/data_quality.py: PLAUSIBLE_BOUNDS["rhr"]` | вне диапазона — ошибка данных, не измерение |
+| component saturation | 0.30 | `openhealth/modules/recovery.py: _RHR_FULL_SWING` | ±30% from baseline covers the full 0-100 range |
+| baseline window | 28 | `openhealth/modules/recovery.py: DEFAULT_BASELINE_WINDOW_DAYS` | the engine's shared personal baseline window |
+| attention threshold | 3.0 | `openhealth/insights.py: RHR_RISE_ATTENTION_BPM` | a sustained +3 bpm is a classic early marker |
+| warning threshold | 6.0 | `openhealth/insights.py: RHR_RISE_WARNING_BPM` | +6 bpm is a loud signal |
+| plausible bounds | 25-120 | `openhealth/data_quality.py: PLAUSIBLE_BOUNDS["rhr"]` | outside this range it is a data error, not a measurement |
 
-## Источники и доверие
+## Sources and confidence
 
-- Устойчивый рост пульса покоя как ранний маркер стресса/болезни/перетренированности — классика спортивной физиологии (cap C2 на личном паттерне, формулируется вопросом).
-- Сырое значение WHOOP — факт измерения (C5 как данные), интерпретация тренда — отдельный, осторожный слой.
+- A sustained rise in resting heart rate as an early marker of stress, illness or overtraining is standard sports physiology (capped at C2 as a personal pattern, phrased as a question).
+- The raw WHOOP value is a fact of measurement (C5 as data); interpreting the trend is a separate, cautious layer.
 
-## Известные ограничения
+## Known limitations
 
-- RHR реагирует с задержкой (алкоголь и поздняя еда видны на следующую ночь).
-- Пороги 3/6 уд/мин — прагматичные личные полосы, не популяционная норма; правишь — обнови и этот файл.
+- RHR responds with a lag (alcohol and late meals show up the following night).
+- The 3/6 bpm thresholds are pragmatic personal bands, not a population norm; if you change them, update this file too.

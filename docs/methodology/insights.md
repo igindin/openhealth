@@ -1,51 +1,51 @@
-# Инсайты (детекторы паттернов)
-> algo_version: n/a (модуль insights, пороги-константы) · источник данных: движок · редактируемость: параметры в коде
+# Insights (pattern detectors)
+> algo_version: n/a (insights module, threshold constants) · data source: engine · editability: parameters in code
 
-## Что это
+## What this is
 
-Слой «найди настоящую проблему» поверх дневных серий (recovery, hrv, rhr, sleep_h, strain). 7 детекторов, каждый превращает числовое наблюдение в осторожный вывод: факты → вопрос себе → один конкретный шаг. `severity` (info/attention/warning) — громкость сигнала в данных; `confidence` (C1/C2) — уверенность в причине. Это разные оси: громкий необъяснённый сигнал = высокая severity + низкая confidence.
+The "find the real problem" layer on top of the daily series (recovery, hrv, rhr, sleep_h, strain). Seven detectors, each turning a numerical observation into a cautious conclusion: facts → a question to ask yourself → one concrete step. `severity` (info/attention/warning) is how loud the signal is in the data; `confidence` (C1/C2) is how sure we are of the cause. These are separate axes: a loud unexplained signal means high severity and low confidence.
 
-## Формула / алгоритм
+## Formula / algorithm
 
-Общая механика трендовых детекторов: среднее за последние 7 дней против личного baseline 14-28 дней назад (окно 7-28, свежая неделя исключена). Минимум 5 свежих и 7 baseline-точек. Конфиденс: C2 при достатке данных, C1 при скудных (через `cap_personal_pattern`). Каждый warning несёт дисклеймер «при симптомах — к врачу».
+The shared mechanic of the trend detectors: the mean over the last 7 days against a personal baseline from 14-28 days ago (a 7-28 window, with the most recent week excluded). At least 5 recent and 7 baseline points are required. Confidence: C2 when data is sufficient, C1 when it is sparse (via `cap_personal_pattern`). Every warning carries the disclaimer "if you have symptoms, see a doctor".
 
-7 детекторов и их пороги:
+The seven detectors and their thresholds:
 
-1. **Накопленный недосып** (`detect_sleep_debt`): недобор к цели за 7 ночей >= 5 ч → attention, >= 10 ч → warning. Цель — персональная (`goals.sleep_h`, дефолт 8.0).
-2. **HRV ниже baseline** (`detect_hrv_downtrend`): 7д среднее ниже baseline на >= 8% → attention, >= 15% → warning.
-3. **Пульс покоя выше baseline** (`detect_rhr_uptrend`): рост >= 3 уд/мин → attention, >= 6 → warning.
-4. **Серия красных дней** (`detect_recovery_red_streak`): >= 3 дня подряд recovery < 34 (красная зона дашборда) → warning.
-5. **Нагрузка на низком восстановлении** (`detect_strain_recovery_mismatch`): дни, где strain >= 14 при recovery < 50, за окно 14 дней; 2 раза → attention, 3 → warning.
-6. **Паттерн выходных** (`detect_weekend_pattern`): |среднее recovery будни − выходные| >= 5 пунктов; просадка в выходные → attention, наоборот → info.
-7. **Нестабильный сон** (`detect_sleep_consistency`): SD длительности сна за 14 ночей > 1.2 ч → attention.
+1. **Accumulated sleep loss** (`detect_sleep_debt`): a shortfall against the goal over 7 nights of >= 5 h is attention, >= 10 h is warning. The goal is personal (`goals.sleep_h`, default 8.0).
+2. **HRV below baseline** (`detect_hrv_downtrend`): the 7-day mean below baseline by >= 8% is attention, >= 15% is warning.
+3. **Resting heart rate above baseline** (`detect_rhr_uptrend`): a rise of >= 3 bpm is attention, >= 6 is warning.
+4. **Streak of red days** (`detect_recovery_red_streak`): >= 3 consecutive days with recovery < 34 (the dashboard's red zone) is warning.
+5. **Load on low recovery** (`detect_strain_recovery_mismatch`): days with strain >= 14 while recovery < 50, over a 14-day window; twice is attention, three times is warning.
+6. **Weekend pattern** (`detect_weekend_pattern`): |mean recovery on weekdays − on weekends| >= 5 points; a weekend dip is attention, the reverse is info.
+7. **Unstable sleep** (`detect_sleep_consistency`): an SD of sleep duration over 14 nights above 1.2 h is attention.
 
-Сортировка вывода: warning → attention → info, внутри — по убыванию confidence. Падение одного детектора не валит проход (исключения глотаются).
+Output ordering: warning → attention → info, and within each, by descending confidence. One detector failing does not fail the pass (exceptions are swallowed).
 
-## Параметры (константы кода)
+## Parameters (code constants)
 
-| параметр | значение | где в коде | зачем |
+| parameter | value | where in code | why |
 |---|---|---|---|
-| цель сна дефолт | 8.0 | `openhealth/insights.py: DEFAULT_SLEEP_GOAL_H` | если пользователь не задал свою |
-| недосып attention / warning | 5.0 / 10.0 | `openhealth/insights.py: SLEEP_DEBT_WEEK_*_H` | ~43 мин и ~1.4 ч за ночь соответственно |
-| падение HRV attention / warning | 8.0 / 15.0 (%) | `openhealth/insights.py: HRV_DROP_*_PCT` | прагматичные личные полосы тренда |
-| рост RHR attention / warning | 3.0 / 6.0 (уд/мин) | `openhealth/insights.py: RHR_RISE_*_BPM` | классический ранний маркер |
-| красная зона recovery | 34 | `openhealth/insights.py: RECOVERY_RED_MAX` | синхронизирована с цветами дашборда |
-| длина красной серии | 3 | `openhealth/insights.py: RED_STREAK_DAYS` | три подряд — уже не случайность |
-| высокий strain / низкий recovery | 14.0 / 50 | `openhealth/insights.py: STRAIN_HIGH, RECOVERY_LOW_FOR_STRAIN` | определение mismatch-дня |
-| mismatch окно / attention / warning | 14 / 2 / 3 | `openhealth/insights.py: MISMATCH_*` | повторяемость = паттерн |
-| разница выходных | 5.0 | `openhealth/insights.py: WEEKEND_DIFF_POINTS` | меньше — шум календарного среза |
-| SD сна | 1.2 | `openhealth/insights.py: SLEEP_CONSISTENCY_STDEV_H` | регулярность важнее разовой длительности |
-| окна тренда | 7 / 7-28 | `openhealth/insights.py: RECENT_WINDOW, BASELINE_LO, BASELINE_HI` | свежая неделя против личного фона |
-| минимум точек | 5 / 7 | `openhealth/insights.py: MIN_RECENT_POINTS, MIN_BASELINE_POINTS` | ниже — не считаем |
+| default sleep goal | 8.0 | `openhealth/insights.py: DEFAULT_SLEEP_GOAL_H` | used when the user has not set their own |
+| sleep loss attention / warning | 5.0 / 10.0 | `openhealth/insights.py: SLEEP_DEBT_WEEK_*_H` | ~43 min and ~1.4 h per night respectively |
+| HRV drop attention / warning | 8.0 / 15.0 (%) | `openhealth/insights.py: HRV_DROP_*_PCT` | pragmatic personal trend bands |
+| RHR rise attention / warning | 3.0 / 6.0 (bpm) | `openhealth/insights.py: RHR_RISE_*_BPM` | a classic early marker |
+| recovery red zone | 34 | `openhealth/insights.py: RECOVERY_RED_MAX` | kept in sync with the dashboard colours |
+| red streak length | 3 | `openhealth/insights.py: RED_STREAK_DAYS` | three in a row is no longer chance |
+| high strain / low recovery | 14.0 / 50 | `openhealth/insights.py: STRAIN_HIGH, RECOVERY_LOW_FOR_STRAIN` | the definition of a mismatch day |
+| mismatch window / attention / warning | 14 / 2 / 3 | `openhealth/insights.py: MISMATCH_*` | repetition makes a pattern |
+| weekend difference | 5.0 | `openhealth/insights.py: WEEKEND_DIFF_POINTS` | below this it is noise from the calendar split |
+| sleep SD | 1.2 | `openhealth/insights.py: SLEEP_CONSISTENCY_STDEV_H` | regularity matters more than any single night's duration |
+| trend windows | 7 / 7-28 | `openhealth/insights.py: RECENT_WINDOW, BASELINE_LO, BASELINE_HI` | the recent week against your personal background |
+| minimum points | 5 / 7 | `openhealth/insights.py: MIN_RECENT_POINTS, MIN_BASELINE_POINTS` | below this we do not compute |
 
-## Источники и доверие
+## Sources and confidence
 
-- Канон — `openhealth/evidence.py`: личный паттерн capped C2 до n-of-1 валидации; всё на C3 и ниже — вопрос, не утверждение.
-- Только личные baseline, никаких популяционных норм.
-- Пороги — задокументированные, тюнябельные константы с обоснованием в комментариях кода.
+- The canon lives in `openhealth/evidence.py`: a personal pattern is capped at C2 until n-of-1 validation; anything at C3 or below is a question, not a claim.
+- Personal baselines only, no population norms.
+- The thresholds are documented, tunable constants with the rationale in code comments.
 
-## Известные ограничения
+## Known limitations
 
-- Детекторы независимы и могут описывать одно событие с разных сторон (болезнь поднимет и RHR, и красную серию).
-- Календарный срез будни/выходные груб — не учитывает реальный график.
-- Ничего не диагностируется; warning — это «громко в данных», не «опасно медицински».
+- The detectors are independent and may describe the same event from different angles (illness will raise RHR and produce a red streak).
+- The weekday/weekend split is crude and ignores your actual schedule.
+- Nothing is diagnosed; a warning means "loud in the data", not "medically dangerous".

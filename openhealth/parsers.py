@@ -279,17 +279,18 @@ def parse_lab_panel(
         report_low = _to_float(marker.get("reference_low"))
         report_high = _to_float(marker.get("reference_high"))
 
-        # Gate правдоподобия для нестрогого извлечения (текст/PDF): значение
-        # дальше чем в 8x за напечатанным референсом почти наверняка ошибка парса
-        # (не тот столбец/число), как 'натрий 11' при норме 135-145. Не заносим мусор.
+        # Plausibility gate for loose extraction (text/PDF): a value more than 8x
+        # outside the printed reference range is almost certainly a parsing error
+        # (wrong column or wrong number), e.g. 'sodium 11' against a 135-145 range.
+        # Do not record garbage.
         if (extraction_quality != "structured" and value is not None
                 and (report_low is not None or report_high is not None)):
             if ((report_high is not None and report_high > 0 and value > report_high * 8)
                     or (report_low is not None and report_low > 0 and value < report_low / 8)):
                 dropped_implausible += 1
                 parser_notes.append(
-                    "Маркер '%s'=%s отброшен как неправдоподобный (далеко за референсом) "
-                    "— вероятна ошибка извлечения из PDF; нужен vision-парс." % (name, value)
+                    "Marker '%s'=%s dropped as implausible (far outside the reference range) "
+                    "— likely a PDF extraction error; a vision-based parse is needed." % (name, value)
                 )
                 continue
 
@@ -338,8 +339,9 @@ def parse_lab_panel(
 
     if dropped_implausible:
         parser_notes.append(
-            "Извлечение PDF низкого качества: отброшено %d неправдоподобных маркеров "
-            "— рекомендуется vision-парс файла, иначе данные неполные." % dropped_implausible
+            "Low-quality PDF extraction: dropped %d implausible marker(s) "
+            "— a vision-based parse of the file is recommended, otherwise the data is incomplete."
+            % dropped_implausible
         )
 
     # Surface abnormal / critical findings as a review prompt, never a diagnosis.

@@ -43,8 +43,9 @@ _SEVERITY_RANK = {WARNING: 0, ATTENTION: 1, INFO: 2}
 # Appended to the action of any WARNING finding. The system never diagnoses;
 # a loud signal that could be illness must point at a human clinician.
 WARNING_DISCLAIMER = (
-    "Если это сопровождается симптомами (жар, боль, одышка, затяжная слабость) - "
-    "это повод показаться врачу, а не экспериментировать."
+    "If this comes together with symptoms (fever, pain, shortness of breath, "
+    "lasting weakness), that is a reason to see a doctor rather than to run an "
+    "experiment on yourself."
 )
 
 # --- thresholds (documented, tunable) ---------------------------------------
@@ -102,7 +103,7 @@ class Insight:
     title_ru: str
     severity: str                       # info | attention | warning
     confidence: evidence.Confidence     # capped at C2 for personal patterns
-    evidence_text: str                  # the numbers, in plain Russian
+    evidence_text: str                  # the numbers, in plain language
     question_ru: str                    # "what to ask yourself"
     action_ru: str                      # one concrete next step
     metric: str = ""                    # primary metric this is about
@@ -227,16 +228,16 @@ def detect_sleep_debt(
     mean7 = statistics.mean(last7)
     return Insight(
         id="insight-sleep_debt",
-        title_ru="Накопленный недосып",
+        title_ru="Accumulated sleep debt",
         severity=severity,
         confidence=_grade(len(last7) >= 6),
         evidence_text=(
-            "За последние %d ночей с данными недобор сна к цели %sч составил %sч "
-            "(в среднем %sч за ночь). За 14 дней - %sч."
+            "Over the last %d nights with data, the shortfall against your %sh goal "
+            "added up to %sh (on average %sh per night). Over 14 days - %sh."
             % (len(last7), _fmt(goal, 1), _fmt(debt7, 1), _fmt(mean7, 1), _fmt(debt14, 1))
         ),
-        question_ru="Что мешает ложиться вовремя на этой неделе - поздние экраны, работа, стресс?",
-        action_ru="Сегодня начните подготовку ко сну на 30-45 минут раньше обычного.",
+        question_ru="What is getting in the way of going to bed on time this week - late screens, work, stress?",
+        action_ru="Tonight, start winding down for bed 30-45 minutes earlier than usual.",
         metric="sleep_h",
         data=_with_trace(
             {
@@ -255,8 +256,8 @@ def detect_sleep_debt(
                 "insights.sleep_debt_week_warning_h",
             ),
         ),
-        refs=["Дефицит сна снижает парасимпатический тонус и восстановление "
-              "(литература по ограничению сна)."],
+        refs=["Sleep deficit lowers parasympathetic tone and recovery "
+              "(sleep-restriction literature)."],
     )
 
 
@@ -278,15 +279,15 @@ def detect_hrv_downtrend(daily: Dict[str, Dict[str, Any]], goals: Dict[str, Any]
     severity = WARNING if drop_pct >= warning_pct else ATTENTION
     return Insight(
         id="insight-hrv_downtrend",
-        title_ru="HRV ниже личного baseline",
+        title_ru="HRV below your personal baseline",
         severity=severity,
         confidence=_grade(len(baseline) >= 14),
         evidence_text=(
-            "7-дневное среднее HRV %s мс против вашего baseline %s мс (14-28 дней) - "
-            "ниже на %s%%." % (_fmt(recent_mean), _fmt(base_mean), _fmt(drop_pct))
+            "7-day mean HRV is %s ms against your baseline of %s ms (14-28 days) - "
+            "lower by %s%%." % (_fmt(recent_mean), _fmt(base_mean), _fmt(drop_pct))
         ),
-        question_ru="Что изменилось за 1-2 недели - нагрузки, сон, алкоголь, болезнь или стресс?",
-        action_ru="Возьмите 2-3 дня лёгкого режима и проследите, вернётся ли HRV к baseline.",
+        question_ru="What changed over the last 1-2 weeks - training load, sleep, alcohol, illness or stress?",
+        action_ru="Take 2-3 easy days and watch whether HRV comes back to baseline.",
         metric="hrv",
         data=_with_trace(
             {
@@ -300,8 +301,8 @@ def detect_hrv_downtrend(daily: Dict[str, Dict[str, Any]], goals: Dict[str, Any]
             window="7d vs 14-28d",
             param_ids=("insights.hrv_drop_attention_pct", "insights.hrv_drop_warning_pct"),
         ),
-        refs=["Снижение тренда HRV отражает рост нагрузки и недовосстановление "
-              "(HRV-мониторинг)."],
+        refs=["A falling HRV trend reflects rising load and under-recovery "
+              "(HRV monitoring literature)."],
     )
 
 
@@ -321,15 +322,15 @@ def detect_rhr_uptrend(daily: Dict[str, Dict[str, Any]], goals: Dict[str, Any]) 
     severity = WARNING if rise >= warning_bpm else ATTENTION
     return Insight(
         id="insight-rhr_uptrend",
-        title_ru="Пульс покоя выше baseline",
+        title_ru="Resting heart rate above baseline",
         severity=severity,
         confidence=_grade(len(baseline) >= 14),
         evidence_text=(
-            "7-дневный пульс покоя %s уд/мин против baseline %s уд/мин - "
-            "выше на %s уд." % (_fmt(recent_mean), _fmt(base_mean), _fmt(rise, 1))
+            "7-day resting heart rate is %s bpm against a baseline of %s bpm - "
+            "higher by %s bpm." % (_fmt(recent_mean), _fmt(base_mean), _fmt(rise, 1))
         ),
-        question_ru="Не было ли недосыпа, алкоголя, начала болезни или скачка нагрузки в эти дни?",
-        action_ru="Понаблюдайте 3-4 дня и добавьте восстановление; если пульс держится высоким - снизьте нагрузку.",
+        question_ru="Was there short sleep, alcohol, the start of an illness or a jump in load on those days?",
+        action_ru="Watch it for 3-4 days and add recovery; if the rate stays high, reduce the load.",
         metric="rhr",
         data=_with_trace(
             {
@@ -343,8 +344,8 @@ def detect_rhr_uptrend(daily: Dict[str, Dict[str, Any]], goals: Dict[str, Any]) 
             window="7d vs 14-28d",
             param_ids=("insights.rhr_rise_attention_bpm", "insights.rhr_rise_warning_bpm"),
         ),
-        refs=["Устойчивый рост пульса покоя - ранний маркер стресса, болезни или "
-              "перетренированности."],
+        refs=["A sustained rise in resting heart rate is an early marker of stress, "
+              "illness or overreaching."],
     )
 
 
@@ -372,15 +373,15 @@ def detect_recovery_red_streak(daily: Dict[str, Dict[str, Any]], goals: Dict[str
     span = "%s - %s" % (streak[0][0], streak[-1][0])
     return Insight(
         id="insight-recovery_red_streak",
-        title_ru="Серия красных дней восстановления",
+        title_ru="Run of red recovery days",
         severity=WARNING,
         confidence=_grade(True),
         evidence_text=(
-            "%d дня подряд recovery в красной зоне (<%d): %s (%s)."
+            "%d days in a row with recovery in the red zone (<%d): %s (%s)."
             % (best_len, RECOVERY_RED_MAX, vals, span)
         ),
-        question_ru="Это совпадает с болезнью, сильным стрессом или резким ростом нагрузки?",
-        action_ru="Сегодня приоритет - сон и покой, без интенсивных тренировок.",
+        question_ru="Does this line up with illness, heavy stress or a sharp increase in load?",
+        action_ru="Make sleep and rest the priority today, with no intense training.",
         metric="recovery",
         data=_with_trace(
             {
@@ -413,17 +414,17 @@ def detect_strain_recovery_mismatch(daily: Dict[str, Dict[str, Any]], goals: Dic
     severity = WARNING if len(hits) >= MISMATCH_WARNING_COUNT else ATTENTION
     return Insight(
         id="insight-strain_recovery_mismatch",
-        title_ru="Нагрузка на фоне низкого восстановления",
+        title_ru="Hard load on top of low recovery",
         severity=severity,
         confidence=_grade(len(hits) >= MISMATCH_WARNING_COUNT),
         evidence_text=(
-            "За %d дней %d раз высокая нагрузка (strain >= %s) пришлась на день "
-            "низкого восстановления (recovery < %d): %s."
+            "Over %d days, hard load landed on a low-recovery day %d times "
+            "(strain >= %s on a day with recovery < %d): %s."
             % (MISMATCH_WINDOW_DAYS, len(hits), _fmt(STRAIN_HIGH),
                RECOVERY_LOW_FOR_STRAIN, ", ".join(hits))
         ),
-        question_ru="Тренировки идут под состояние организма или по графику независимо от него?",
-        action_ru="В дни с recovery < 50 заменяйте интенсив на лёгкую активность; решайте утром по recovery.",
+        question_ru="Are workouts following how your body is doing, or the calendar regardless?",
+        action_ru="On days with recovery < 50, swap intense work for light activity; decide in the morning based on recovery.",
         metric="recovery",
         data=_with_trace(
             {
@@ -465,17 +466,17 @@ def detect_weekend_pattern(daily: Dict[str, Dict[str, Any]], goals: Dict[str, An
     conf = _grade(len(weekend_vals) >= 4 and len(weekday_vals) >= 4)
     return Insight(
         id="insight-weekend_pattern",
-        title_ru="Восстановление проседает в выходные" if dip else "Восстановление в выходные выше",
+        title_ru="Recovery dips on weekends" if dip else "Recovery is higher on weekends",
         severity=ATTENTION if dip else INFO,
         confidence=conf,
         evidence_text=(
-            "Recovery в выходные в среднем %s против %s в будни (разница %s пунктов)."
+            "Recovery averages %s on weekends against %s on weekdays (a gap of %s points)."
             % (_fmt(wkend), _fmt(wkday), _fmt(abs(diff)))
         ),
-        question_ru="Что в выходные иначе - алкоголь, поздний отбой, сбитый режим?"
-        if dip else "Что в будни мешает восстановлению по сравнению с выходными?",
-        action_ru="Попробуйте держать в выходные то же время отбоя, что в будни, и сравните recovery."
-        if dip else "Перенесите то, что работает в выходные (сон, темп дня), на будни.",
+        question_ru="What is different on weekends - alcohol, a later bedtime, a shifted schedule?"
+        if dip else "What is it about weekdays that holds recovery back compared to weekends?",
+        action_ru="Try keeping the same bedtime on weekends as on weekdays and compare recovery."
+        if dip else "Carry what works on weekends (sleep, the pace of the day) over into weekdays.",
         metric="recovery",
         data=_with_trace(
             {
@@ -504,16 +505,16 @@ def detect_sleep_consistency(daily: Dict[str, Dict[str, Any]], goals: Dict[str, 
         return None
     return Insight(
         id="insight-sleep_consistency",
-        title_ru="Нестабильная длительность сна",
+        title_ru="Inconsistent sleep duration",
         severity=ATTENTION,
         confidence=_grade(len(values) >= 10),
         evidence_text=(
-            "Разброс длительности сна за %d ночей большой - стандартное отклонение "
-            "%sч (от %s до %sч). Консистентность важнее одной идеальной ночи."
+            "Sleep duration varies widely across %d nights - standard deviation "
+            "%sh (from %s to %sh). Consistency matters more than one perfect night."
             % (len(values), _fmt(sd, 1), _fmt(min(values), 1), _fmt(max(values), 1))
         ),
-        question_ru="Можно ли сузить разброс отбоя и подъёма, даже если общая длительность не идеальна?",
-        action_ru="Зафиксируйте время подъёма на 14 дней (в пределах 30 минут), включая выходные.",
+        question_ru="Could you narrow the spread of bedtime and wake time, even if total duration is not ideal?",
+        action_ru="Fix your wake time for 14 days (within a 30-minute window), weekends included.",
         metric="sleep_h",
         data=_with_trace(
             {
@@ -528,8 +529,8 @@ def detect_sleep_consistency(daily: Dict[str, Dict[str, Any]], goals: Dict[str, 
             window="14 nights",
             param_ids=("insights.sleep_consistency_stdev_h",),
         ),
-        refs=["Регулярность сна связана со здоровьем сильнее, чем разовая "
-              "длительность (sleep regularity)."],
+        refs=["Sleep regularity is tied to health outcomes more strongly than any "
+              "single night's duration (sleep regularity literature)."],
     )
 
 

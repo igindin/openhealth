@@ -1,25 +1,26 @@
 # Plan: agent-native multi-domain OpenHealth
 
-## Суть
-Развиваем OpenHealth в agent-native health OS: главный интерфейс — Claude Code /
-Codex (не GUI). Каждый домен (pulse, cycle, body, metabolic, skin, sleep) —
-плагин-модуль с контрактом, схемой и тестами на синтетике. Реализуем классы
-функциональности оригинально по открытой науке; чужие бренд-ассеты/код не копируем.
-Без диагнозов: шкала доверия C1–C5 + red-flags. Local-first, MIT. GUI — потом, через A2UI.
+## Summary
+Grow OpenHealth into an agent-native health OS: the primary interface is Claude
+Code / Codex, not a GUI. Each domain (pulse, cycle, body, metabolic, skin, sleep)
+is a plugin module with a contract, a schema and tests on synthetic data. We
+implement classes of functionality originally, from open science; we copy no
+third-party brand assets or code. No diagnoses: a C1–C5 confidence scale plus
+red flags. Local-first, MIT. GUI comes later, via A2UI.
 
-## Что делаем
-- Модульная плагин-система (`openhealth/modules/`): контракт `HealthModule` + registry. [DONE]
-- Домен-модули: Pulse(HRV) [DONE], затем Sleep/Circadian, Cycle, Body, Metabolic, Skin.
-- Agent-native UX: slash-команды (/checkin /log /fast /sleep /pulse /insights /trends /protocol) + health-agent оркестратор поверх Python CLI.
-- Онбординг без git: `make setup`, pre-commit, CI, скрытый git/PR через агентские скрипты, ≥20 agent task cards, новичковые AGENTS/CLAUDE/CONTRIBUTING.
-- core/privacy (анонимизация+тесты), headless API + TS SDK + OpenAPI, A2UI-адаптер (Insight→интент, golden, без рендера).
+## What we are doing
+- Modular plugin system (`openhealth/modules/`): the `HealthModule` contract + a registry. [DONE]
+- Domain modules: Pulse (HRV) [DONE], then Sleep/Circadian, Cycle, Body, Metabolic, Skin.
+- Agent-native UX: slash commands (/checkin /log /fast /sleep /pulse /insights /trends /protocol) + a health-agent orchestrator on top of the Python CLI.
+- Onboarding without git: `make setup`, pre-commit, CI, git/PR hidden behind agent scripts, 20+ agent task cards, beginner-facing AGENTS/CLAUDE/CONTRIBUTING.
+- core/privacy (anonymization + tests), headless API + TS SDK + OpenAPI, A2UI adapter (Insight→intent, golden tests, no rendering).
 
-## Проверка
-- до: OpenHealth = ingest+parsers+evidence+lab, без модулей/агент-UX/API.
-- после: тесты/типы/lint зелёные; `make setup` с нуля; каждый модуль проходит contract-тест; ≥6 slash-команд end-to-end на синтетике; ≥20 agent task cards; новичок проходит «открыл Claude Code → залогировал/получил инсайт» и «выбрал задачу → PR» без знания git.
+## Verification
+- before: OpenHealth = ingest + parsers + evidence + lab, with no modules, agent UX or API.
+- after: tests/types/lint green; `make setup` works from scratch; every module passes its contract test; 6+ slash commands work end-to-end on synthetic data; 20+ agent task cards; a newcomer can go from "opened Claude Code → logged something / got an insight" and "picked a task → PR" without knowing git.
 
-## Допущения
-- Работаем в public `igindin/openhealth`, ветка `feat/agent-native-os`, без push без разрешения.
-- GUI вне рамок (агент = интерфейс). Core — stdlib-only (без numpy).
-- A2UI: подтвердить пакет (google/A2UI vs codaaiteam/ai2ui) перед адаптером.
-- Всё на синтетике, ноль реальных PII.
+## Assumptions
+- We work in the public `igindin/openhealth`, branch `feat/agent-native-os`, no push without permission.
+- GUI is out of scope (the agent is the interface). Core stays stdlib-only (no numpy).
+- A2UI: confirm which package (google/A2UI vs codaaiteam/ai2ui) before building the adapter.
+- Everything runs on synthetic data, zero real PII.

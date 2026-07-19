@@ -1,43 +1,43 @@
-# VO2max (оценка кардиофитнеса)
-> algo_version: vo2max@v1 · источник данных: движок (из WHOOP-сырого) · редактируемость: параметры в коде
+# VO2max (cardio fitness estimate)
+> algo_version: vo2max@v1 · data source: engine (from WHOOP raw) · editability: parameters in code
 
-## Что это
+## What this is
 
-Оценка максимального потребления кислорода (мл/кг/мин) без лаборатории — по методу отношения пульсов Uth-Sørensen-Overgaard-Pedersen (2004). Это всегда **оценка, не измерение**: каждая запись несёт C2 и явный дисклеймер.
+An estimate of maximal oxygen uptake (mL/kg/min) without a lab, using the heart rate ratio method of Uth-Sørensen-Overgaard-Pedersen (2004). It is always an **estimate, not a measurement**: every record carries C2 and an explicit disclaimer.
 
-## Формула / алгоритм
+## Formula / algorithm
 
-`VO2max ≈ 15.3 × (HRmax / HRrest)` [мл/(кг·мин)]
+`VO2max ≈ 15.3 × (HRmax / HRrest)` [mL/(kg·min)]
 
-Источники HRmax по приоритету:
+Sources of HRmax, in priority order:
 
-1. **Измеренный** HRmax из WHOOP body measurement (`max_heart_rate`) — предпочтительный, метод на нём валидировался;
-2. fallback **220 − возраст**, только если возраст известен (большая индивидуальная ошибка, помечается `hrmax_source: age_estimate_220_minus_age`);
-3. ни того ни другого — модуль **отказывается считать** (ValueError), а не выдумывает число.
+1. **Measured** HRmax from a WHOOP body measurement (`max_heart_rate`) — preferred, since the method was validated on it;
+2. fallback **220 − age**, only if age is known (large individual error, flagged as `hrmax_source: age_estimate_220_minus_age`);
+3. with neither available, the module **refuses to compute** (ValueError) rather than inventing a number.
 
-HRrest — последний пульс покоя на дату или раньше. Результат проверяется на плаузибельность (10-90 мл/кг/мин, вне — флаг `plausible_range: false`).
+HRrest is the most recent resting heart rate on or before the date. The result is checked for plausibility (10-90 mL/kg/min, outside which the `plausible_range: false` flag is set).
 
-**ACSM-категории** (excellent/good/fair/poor) прикрепляются только когда заданы и пол, и возраст — по таблице популяционных полос `_CATEGORY_BANDS` (пол × возрастная декада, пороги-полы; например мужчины 30-39: excellent >= 50, good >= 44, fair >= 40). Это грубый популяционный ориентир, не вердикт.
+**ACSM categories** (excellent/good/fair/poor) are attached only when both sex and age are known, using the `_CATEGORY_BANDS` table of population bands (sex × age decade, with threshold floors; for example men aged 30-39: excellent >= 50, good >= 44, fair >= 40). This is a rough population reference point, not a verdict.
 
-**C2-дисклеймер (всегда в выводе):** метод Uth валидирован на хорошо тренированных мужчинах 21-51 года; перенос на женщин, нетренированных и старших не доказан; надёжнее всего с измеренным HRmax. Рассматривать как грубый диапазон к обсуждению.
+**C2 disclaimer (always in the output):** the Uth method was validated on well-trained men aged 21-51; transfer to women, untrained people and older adults is not established; it is most reliable with a measured HRmax. Treat it as a rough range for discussion.
 
-## Параметры (константы кода)
+## Parameters (code constants)
 
-| параметр | значение | где в коде | зачем |
+| parameter | value | where in code | why |
 |---|---|---|---|
-| коэффициент Uth | 15.3 | `openhealth/modules/vo2max.py: UTH_COEFFICIENT` | оригинальный коэффициент Uth et al. (2004) |
-| плаузибельный минимум | 10.0 | `openhealth/modules/vo2max.py: _VO2_MIN` | ниже — у живого человека не бывает, ошибка входов |
-| плаузибельный максимум | 90.0 | `openhealth/modules/vo2max.py: _VO2_MAX` | выше — уровень рекордов, почти наверняка ошибка |
-| ACSM-полосы | таблица | `openhealth/modules/vo2max.py: _CATEGORY_BANDS` | популяционные категории по полу/декаде |
+| Uth coefficient | 15.3 | `openhealth/modules/vo2max.py: UTH_COEFFICIENT` | the original coefficient from Uth et al. (2004) |
+| plausible minimum | 10.0 | `openhealth/modules/vo2max.py: _VO2_MIN` | below this is not seen in a living person, so the inputs are wrong |
+| plausible maximum | 90.0 | `openhealth/modules/vo2max.py: _VO2_MAX` | above this is record territory, almost certainly an error |
+| ACSM bands | table | `openhealth/modules/vo2max.py: _CATEGORY_BANDS` | population categories by sex and decade |
 
-## Источники и доверие
+## Sources and confidence
 
 - Uth N., Sørensen H., Overgaard K., Pedersen P.K. (2004) — Heart Rate Ratio Method.
-- Категории — ACSM-style сводные таблицы кардиореспираторного фитнеса.
-- Всегда C2 (`confidence: "C2"` в metadata) + `DISCLAIMER` в каждой записи и summary.
+- Categories come from ACSM-style summary tables of cardiorespiratory fitness.
+- Always C2 (`confidence: "C2"` in metadata) plus a `DISCLAIMER` on every record and in the summary.
 
-## Известные ограничения
+## Known limitations
 
-- Перенос валидации (тренированные мужчины 21-51) на другие группы не доказан.
-- `220 − возраст` несёт ошибку ±10-12 уд/мин индивидуально — оценка через fallback грубее.
-- HRrest от WHOOP — ночной; формула Uth писалась под утренний покой, систематическое смещение возможно.
+- Transferring the validation (trained men aged 21-51) to other groups is not established.
+- `220 − age` carries an individual error of ±10-12 bpm, so an estimate via that fallback is cruder.
+- HRrest from WHOOP is measured overnight, while the Uth formula was written for morning rest, so a systematic bias is possible.

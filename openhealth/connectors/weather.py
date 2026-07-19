@@ -7,7 +7,7 @@ key, ~10k requests/day) and turns it into three things:
 
 1. ``fetch_day`` / ``fetch_range`` — canonical day dicts (temperature,
    mean sea-level pressure + its 24h change, humidity, precipitation, wind).
-2. ``weather_context`` — cautious, evidence-graded flags with Russian
+2. ``weather_context`` — cautious, evidence-graded flags with human-readable
    messages ("pressure dropping 9 hPa — possible bad day for the
    weather-sensitive"), honest about how weak the population evidence is.
 3. ``weather_observations`` / ``weather_behaviors`` — records shaped for the
@@ -118,10 +118,11 @@ GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 
 
 def geocode_city(name: str, count: int = 1, timeout: float = 8.0) -> Optional[Dict[str, Any]]:
-    """Город по имени → {"lat", "lon", "label"} через open-meteo geocoding (без ключа).
+    """City name → {"lat", "lon", "label"} via open-meteo geocoding (no API key).
 
-    Для UI «город проживания»: set_location(**geocode_city("Amsterdam")).
-    None — если не нашлось/сеть упала (вызывающий решает, как сообщить).
+    For the "home city" UI: set_location(**geocode_city("Amsterdam")).
+    Returns None when nothing was found or the network failed (the caller
+    decides how to report it).
     """
     name = (name or "").strip()
     if not name or len(name) > 80:
@@ -129,9 +130,11 @@ def geocode_city(name: str, count: int = 1, timeout: float = 8.0) -> Optional[Di
     from urllib.parse import urlencode
     from urllib.request import urlopen
 
+    # "language": "ru" is deliberate: it makes the geocoder accept and return
+    # Russian-language place names. Changing it would drop that support.
     url = GEOCODING_URL + "?" + urlencode({"name": name, "count": count, "language": "ru", "format": "json"})
     try:
-        with urlopen(url, timeout=timeout) as resp:  # noqa: S310 (https, фикс. хост)
+        with urlopen(url, timeout=timeout) as resp:  # noqa: S310 (https, fixed host)
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception:
         return None
@@ -247,14 +250,15 @@ def _aggregate(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         entry["wind_max"] = _at(daily.get("wind_speed_10m_max") or [], i)
         code = _at(daily.get("weather_code") or [], i)
         entry["weather_code"] = int(code) if code is not None else None
-        # Внешние факторы: световой день и UV (open-meteo daily).
-        # sunrise/sunset — ISO-строки, _at() их съест float'ом — берём сырыми.
+        # External factors: daylight and UV (open-meteo daily).
+        # sunrise/sunset are ISO strings; _at() would choke trying to float()
+        # them, so we read those values raw.
         def _at_str(values, idx):
             return str(values[idx])[11:16] if idx < len(values) and values[idx] else None
 
         entry["sunrise"] = _at_str(daily.get("sunrise") or [], i)
         entry["sunset"] = _at_str(daily.get("sunset") or [], i)
-        dl = _at(daily.get("daylight_duration") or [], i)  # секунды
+        dl = _at(daily.get("daylight_duration") or [], i)  # seconds
         entry["daylight_h"] = round(dl / 3600.0, 1) if dl is not None else None
         uv = _at(daily.get("uv_index_max") or [], i)
         entry["uv_index_max"] = round(uv, 1) if uv is not None else None
@@ -370,7 +374,7 @@ def weather_context(
     """Evidence-graded flags for one day dict.
 
     Returns ``[{"flag", "grade", "personal", "value", "message_ru"}, ...]``.
-    Every message states the uncertainty in plain Russian; nothing here is a
+    Every message states the uncertainty in plain language; nothing here is a
     diagnosis or an instruction, only context for reading the recovery number.
     """
     flags: List[Dict[str, Any]] = []
@@ -379,14 +383,14 @@ def weather_context(
     if pressure_change is not None and pressure_change <= -PRESSURE_DROP_HPA:
         grade, personal = _flag_grade("pressure_drop", susceptibility, evidence.Confidence.C3)
         message = (
-            "Давление падает на %.0f гПа за сутки — резкий перепад. "
-            "Популяционные данные о метеочувствительности слабые и смешанные, "
-            "так что это гипотеза, а не факт." % abs(pressure_change)
+            "Pressure is falling %.0f hPa over 24h — a sharp swing. "
+            "Population-level evidence on weather sensitivity is weak and mixed, "
+            "so this is a hypothesis, not a fact." % abs(pressure_change)
         )
         if personal:
             message += (
-                " Ты отмечал чувствительность к давлению: личный паттерн, "
-                + ("он уже повторялся — стоит проверить." if grade == evidence.Confidence.C3 else "пока слабый сигнал.")
+                " You have noted a sensitivity to pressure: a personal pattern, "
+                + ("it has already repeated — worth checking." if grade == evidence.Confidence.C3 else "still a weak signal.")
             )
         flags.append(
             {
@@ -408,8 +412,8 @@ def weather_context(
                 "personal": personal,
                 "value": t_max,
                 "message_ru": (
-                    "Жара: максимум %.0f°. Тепло ухудшает сон — это устойчивый результат "
-                    "исследований сна, ночное восстановление может просесть." % t_max
+                    "Heat: max %.0f°. Warmth worsens sleep — that is a consistent finding "
+                    "in sleep research, so overnight recovery may dip." % t_max
                 ),
             }
         )
@@ -424,8 +428,8 @@ def weather_context(
                 "personal": personal,
                 "value": t_min,
                 "message_ru": (
-                    "Холод: минимум %.0f°. Влияние на восстановление не доказано — "
-                    "просто контекст дня." % t_min
+                    "Cold: min %.0f°. The effect on recovery is unproven — "
+                    "just context for the day." % t_min
                 ),
             }
         )
@@ -440,8 +444,8 @@ def weather_context(
                 "personal": personal,
                 "value": humidity,
                 "message_ru": (
-                    "Высокая влажность (%.0f%%). В сочетании с теплом может мешать сну; "
-                    "сама по себе — слабый сигнал." % humidity
+                    "High humidity (%.0f%%). Combined with warmth it may interfere with sleep; "
+                    "on its own it is a weak signal." % humidity
                 ),
             }
         )
@@ -456,8 +460,8 @@ def weather_context(
                 "personal": personal,
                 "value": precipitation,
                 "message_ru": (
-                    "Осадки %.1f мм — привычная прогулка могла выпасть. Учитывай это, "
-                    "когда будешь читать завтрашний recovery." % precipitation
+                    "Precipitation %.1f mm — your usual walk may have been skipped. Keep that "
+                    "in mind when you read tomorrow's recovery." % precipitation
                 ),
             }
         )
@@ -466,31 +470,31 @@ def weather_context(
 
 
 def day_summary_ru(day: Dict[str, Any]) -> str:
-    """One dashboard line, e.g. «18°, давление падает -9 гПа — следи за самочувствием»."""
+    """One dashboard line, e.g. "18°, pressure falling -9 hPa — keep an eye on how you feel"."""
     temperature = day.get("t_mean") if day.get("t_mean") is not None else day.get("t_max")
-    head = "%d°" % round(temperature) if temperature is not None else "погода"
+    head = "%d°" % round(temperature) if temperature is not None else "weather"
 
     bits: List[str] = []
     pressure_change = day.get("pressure_change_24h")
     if pressure_change is not None and pressure_change <= -PRESSURE_DROP_HPA:
-        bits.append("давление падает %d гПа — следи за самочувствием" % round(pressure_change))
+        bits.append("pressure falling %d hPa — keep an eye on how you feel" % round(pressure_change))
     elif pressure_change is not None and pressure_change >= PRESSURE_DROP_HPA:
-        bits.append("давление растёт +%d гПа" % round(pressure_change))
+        bits.append("pressure rising +%d hPa" % round(pressure_change))
     t_max = day.get("t_max")
     if t_max is not None and t_max >= HEAT_T_MAX_C:
-        bits.append("жара %d° — сон может пострадать" % round(t_max))
+        bits.append("heat %d° — sleep may suffer" % round(t_max))
     t_min = day.get("t_min")
     if t_min is not None and t_min <= COLD_T_MIN_C:
-        bits.append("холод, минимум %d°" % round(t_min))
+        bits.append("cold, min %d°" % round(t_min))
     humidity = day.get("humidity_mean")
     if humidity is not None and humidity >= HUMIDITY_HIGH_PCT:
-        bits.append("влажность %d%%" % round(humidity))
+        bits.append("humidity %d%%" % round(humidity))
     precipitation = day.get("precipitation_mm")
     if precipitation is not None and precipitation >= RAIN_MM:
-        bits.append("осадки %.1f мм" % precipitation)
+        bits.append("precipitation %.1f mm" % precipitation)
 
     if not bits:
-        return "%s, спокойная погода — без погодных флагов" % head
+        return "%s, calm weather — no weather flags" % head
     return "%s, %s" % (head, "; ".join(bits))
 
 
@@ -551,14 +555,14 @@ def weather_observations(range_data: List[Dict[str, Any]]) -> List[Dict[str, Any
 # behavior_id -> (name_ru, day dict key it depends on, yes-predicate)
 _BEHAVIOR_FLAGS: Dict[str, Tuple[str, str, Callable[[float], bool]]] = {
     "weather_pressure_drop": (
-        "День с резким падением давления",
+        "Day with a sharp pressure drop",
         "pressure_change_24h",
         lambda v: v <= -PRESSURE_DROP_HPA,
     ),
-    "weather_heat": ("Жаркий день (>=30°)", "t_max", lambda v: v >= HEAT_T_MAX_C),
-    "weather_cold": ("Холодный день (<=0°)", "t_min", lambda v: v <= COLD_T_MIN_C),
-    "weather_high_humidity": ("Очень влажный день (>=85%)", "humidity_mean", lambda v: v >= HUMIDITY_HIGH_PCT),
-    "weather_rain": ("Дождливый день (>=1 мм)", "precipitation_mm", lambda v: v >= RAIN_MM),
+    "weather_heat": ("Hot day (>=30°)", "t_max", lambda v: v >= HEAT_T_MAX_C),
+    "weather_cold": ("Cold day (<=0°)", "t_min", lambda v: v <= COLD_T_MIN_C),
+    "weather_high_humidity": ("Very humid day (>=85%)", "humidity_mean", lambda v: v >= HUMIDITY_HIGH_PCT),
+    "weather_rain": ("Rainy day (>=1 mm)", "precipitation_mm", lambda v: v >= RAIN_MM),
 }
 
 
@@ -569,7 +573,7 @@ def weather_behaviors(
 
     Each weather factor becomes a boolean "behavior" (pressure-drop day yes/no,
     heat day yes/no, ...) paired with that day's recovery score, so the same
-    5-yes/5-no guarded engine computes «давление падает -> recovery падает?»
+    5-yes/5-no guarded engine computes "pressure drops -> recovery drops?"
     on personal data. Days without recovery or without the metric are skipped.
     """
     behaviors: List[Dict[str, Any]] = []

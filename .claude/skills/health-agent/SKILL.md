@@ -6,13 +6,13 @@ description: >-
   cycle, weight/fasting, food, skin, mood/check-in, insights or trends. Routes
   the request to the right domain module and answers cautiously. Triggers on
   "log", "check in", "how is my recovery/sleep/cycle/weight", "insights",
-  "trends", "pulse", "залогируй", "как мой сон/восстановление".
+  "trends", "pulse", "how did I sleep", "how is my recovery".
 ---
 
 # Health Agent — OpenHealth's interface
 
-OpenHealth has no GUI: **you are the interface.** A person (often non-technical,
-from a health sprint) talks to you in Claude Code / Codex; you log their data,
+OpenHealth has no GUI: **you are the interface.** A person (often
+non-technical) talks to you in Claude Code / Codex; you log their data,
 run the right domain module, and read results back gently.
 
 ## Hard rules

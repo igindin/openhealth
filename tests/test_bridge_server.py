@@ -459,7 +459,7 @@ def test_handle_agent_request_includes_context_and_remembers(tmp_path, oh_home, 
     assert status == 200 and body["status"] == "ok"
     assert "КОНТЕКСТ ПОЛЬЗОВАТЕЛЯ" in prompts[0]
     assert "личные данные приоритетнее" in prompts[0]
-    assert "Память прошлых разборов" not in prompts[0]  # first run: no memory yet
+    assert agent_memory.MEMORY_BLOCK_HEADER not in prompts[0]  # first run: no memory yet
 
     # the run was remembered (in OPENHEALTH_HOME, not the real home)
     entries = agent_memory.load_entries(home=oh_home)
@@ -469,9 +469,9 @@ def test_handle_agent_request_includes_context_and_remembers(tmp_path, oh_home, 
 
     # second run sees the memory block before the task
     server.handle_agent_request({"task": "insight"}, tmp_path)
-    assert "Память прошлых разборов" in prompts[1]
+    assert agent_memory.MEMORY_BLOCK_HEADER in prompts[1]
     assert "Сон укоротился." in prompts[1]
-    assert prompts[1].index("Память прошлых разборов") < prompts[1].index("Задача:")
+    assert prompts[1].index(agent_memory.MEMORY_BLOCK_HEADER) < prompts[1].index("Задача:")
 
 
 def test_build_prompt_places_preamble_before_task():

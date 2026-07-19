@@ -374,7 +374,7 @@ For each major finding:
 
 ---
 
-## Связанные файлы
+## Related files
 - [links to related research in vault]
 ```
 

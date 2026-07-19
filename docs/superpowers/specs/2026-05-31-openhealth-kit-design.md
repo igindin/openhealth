@@ -1,10 +1,10 @@
-# Health Sprint Kit (HSK) — design spec
+# OpenHealth Kit — design spec
 
 **Date:** 2026-05-31 · **Status:** draft for review · **Repo:** igindin/openhealth
 
 ## Purpose
 
-Turn OpenHealth into a distributable kit that newcomers at a health sprint can
+Turn OpenHealth into a distributable kit that newcomers can
 self-serve: drop a few prompts, get the modules they need. Ideologically like a
 handed-out "stack" of skills — a library of pointed, single-purpose skills that
 each own one area of knowledge, action, or signal about a person. The agent
@@ -88,7 +88,7 @@ as observation, never a diagnosis.
 ### 7. Intelligence adapters (optional, deferred)
 A clean interface so a specialist can be plugged where it wins: imaging
 segmentation (TotalSegmentator / MONAI / nnU-Net — open source), or a local
-small model for offline privacy. Not a dependency; the sprint works without any.
+small model for offline privacy. Not a dependency; the kit works without any.
 
 ## Data flow
 
@@ -115,7 +115,7 @@ small model for offline privacy. Not a dependency; the sprint works without any.
   stub; every full skill has a test.
 - The Dev-&-Check cycle itself is tested (a known-bad insight must be caught).
 
-## Scope / non-goals (for the first sprint cut)
+## Scope / non-goals (for the first cut)
 
 - IN: registry + loader, the trust layer, tracking/habits, 2–3 connectors
   (start with the lowest-friction exports), all domain skills as full-or-stub.

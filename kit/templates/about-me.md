@@ -10,7 +10,7 @@ as you go.
 
 ## My health goals (pick 1–3, concrete)
 - e.g. "feel steadier energy", "sleep through the night", "protect joints"
-- one question I want to answer this sprint:
+- one question I want to answer first:
 
 ## What data I have
 - devices/apps (iPhone Health, WHOOP, Oura, CGM, none — that's ok):

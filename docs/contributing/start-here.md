@@ -23,7 +23,7 @@ ships your change. You never need to learn git.
 3. Say: **"check it"** — the agent runs `make check` (lint + tests).
 4. When it's green, say: **"ship it: <one line about what you did>"**. The agent
    runs `/ship`, which makes a branch and commit for you. (A maintainer enables
-   the final publish step during the sprint.)
+   the final publish step.)
 
 ## The only rules
 

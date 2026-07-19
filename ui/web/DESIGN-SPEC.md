@@ -1,38 +1,38 @@
-# OpenHealth Web — спецификация премиум-интерфейса
+# OpenHealth Web — premium interface specification
 
-> Финальное ТЗ от Ильи (2026-06-09). Премиум-дизайн, премиум-шрифты, премиум-анимации.
-> Каждый элемент профессионально выверен по референсам UX топ-продуктов.
+> Final brief from Ilya (2026-06-09). Premium design, premium fonts, premium animations.
+> Every element professionally calibrated against UX references from top products.
 
-## Главный стиль (НЕ тема-переключение, а основной вариант)
-- **Эталон стиля:** тёмный дашборд в духе Flenteey (May 2023 task-dashboard) - охуенный, плотный, карточки с акцентными цветами, статистика. Ставим как ПОЛНУЮ альтернативу/главный вариант (v2), не как одну из тем.
-- **Золотой стандарт графиков:** WHOOP - pixel-perfect участки графиков и логика отображения (recovery/strain/sleep кольца, тренды, зоны).
-- **Референсы:** mobbin (UX топ health/admin продуктов) + cosmos search (стиль дашбордов, по эстетикам) + dribbble. Захват в PNG → pixel-perfect эталон.
-- Премиум: Geist + Geist Mono, GSAP-анимации (timeline/stagger/reveal, prefers-reduced-motion), идеальная вёрстка на ВСЕХ разрешениях (через /frontend-design + /frontend-developer).
-- Anti-slop: без бежевого/Inter-дефолта/purple-gradient/дефолтных 3-колонок.
+## Primary style (NOT a theme toggle — the main variant)
+- **Style benchmark:** a dark dashboard in the spirit of Flenteey (May 2023 task dashboard) - excellent, dense, cards with accent colors, statistics. Treat it as a FULL alternative / the main variant (v2), not as one theme among several.
+- **Gold standard for charts:** WHOOP - pixel-perfect chart regions and display logic (recovery/strain/sleep rings, trends, zones).
+- **References:** mobbin (UX of top health/admin products) + cosmos search (dashboard style, by aesthetic) + dribbble. Capture as PNG → pixel-perfect benchmark.
+- Premium: Geist + Geist Mono, GSAP animations (timeline/stagger/reveal, prefers-reduced-motion), flawless layout at EVERY resolution (via /frontend-design + /frontend-developer).
+- Anti-slop: no beige, no Inter-by-default, no purple gradient, no default 3-column grid.
 
-## Навигация (под наш набор/вижн, по образцу реальной health-os Ильи)
-Sidebar, две группы. Адаптировано под openhealth-модули:
-- **Сегодня:** Overview / Сегодня (recovery + стата дня + чекбоксы действий), Пульс дня.
-- **Данные:** Biomarkers (Анализы), WHOOP (Overview + Correlations), Timeline, Дневник (Журнал), Состав тела, Тренировки, Тренды (30 дней).
-- **Знание/действие:** Protocols, Research, Vaccination, Cascade.
-- **Система:** База, Отчёты, Дайджесты (scheduler), Синхронизация (статус коннекторов), Profiles.
-(Не все сразу — приоритет: Сегодня, Пульс дня, Biomarkers, WHOOP overview/correlations, Журнал, Тренды, Синхронизация, Отчёты/Дайджесты.)
+## Navigation (fitted to our feature set and vision, modeled on Ilya's real health-os)
+Sidebar, two groups. Adapted to the openhealth modules:
+- **«Сегодня» (Today):** Overview / «Сегодня» (Today) (recovery + day stats + action checkboxes), «Пульс дня» (Day Pulse).
+- **«Данные» (Data):** Biomarkers («Анализы» / Labs), WHOOP (Overview + Correlations), Timeline, «Журнал» (Journal, the daily diary), «Состав тела» (Body Composition), «Тренировки» (Workouts), «Тренды» (Trends, 30 days).
+- **Knowledge / action:** Protocols, Research, Vaccination, Cascade.
+- **System:** knowledge base, «Отчёты» (Reports), «Дайджесты» (Digests, scheduler), «Синхронизация» (Sync — connector status), Profiles.
+(Not all at once — priority order: «Сегодня» (Today), «Пульс дня» (Day Pulse), Biomarkers, WHOOP overview/correlations, «Журнал» (Journal), «Тренды» (Trends), «Синхронизация» (Sync), «Отчёты»/«Дайджесты» (Reports/Digests).)
 
-## Ключевые экраны
-- **Сегодня / Overview:** recovery-ring + СТАТА СЕГОДНЯ + **ЧЕКБОКСЫ** (отметить что сегодня сделано / нет — фокус на действии, не календарь). Доктор Контекст. Готовность к дню.
-- **Biomarkers / Анализы:** полноценный — значения с референсными И оптимальными диапазонами (clinical_optima C1-C5), динамика во времени, что обсудить с врачом. Это сейчас явно не хватает.
-- **WHOOP Overview:** recovery/sleep/strain — графики pixel-perfect по WHOOP-эталону.
-- **WHOOP Correlations:** что влияет на восстановление (журнал↔recovery, personal baseline).
-- **Журнал / Дневник:** пользователь ВЫБИРАЕТ, что хочет отвечать (кастомизация behaviors из библиотеки 184), затем лёгкий ежедневный чек-ин.
-- **Тренды / 30 дней, Timeline, Состав тела, Тренировки, Отчёты, Дайджесты, Синхронизация.**
+## Key screens
+- **«Сегодня» (Today) / Overview:** recovery ring + TODAY'S STATS + **CHECKBOXES** (tick off what you did today — the focus is on action, not on a calendar). Doctor Context. Day readiness.
+- **Biomarkers / «Анализы» (Labs):** the full treatment — values with BOTH reference and optimal ranges (clinical_optima C1-C5), change over time, what to raise with your doctor. This is the clear gap right now.
+- **WHOOP Overview:** recovery/sleep/strain — charts pixel-perfect against the WHOOP benchmark.
+- **WHOOP Correlations:** what drives recovery (journal ↔ recovery, personal baseline).
+- **«Журнал» (Journal) / diary:** the user CHOOSES what they want to answer (custom behaviors picked from a library of 184), then a light daily check-in.
+- **«Тренды» (Trends) / 30 days, Timeline, «Состав тела» (Body Composition), «Тренировки» (Workouts), «Отчёты» (Reports), «Дайджесты» (Digests), «Синхронизация» (Sync).**
 
-## Проверка подключений (важно)
-Фронтенд проверяет, что уже подключено, а что нет. Если девайс не подключён или нет данных (анализы / ДНК / кровь / трекер) → **предлагать ЗАГРУЗИТЬ их** (явный CTA «загрузить экспорт / подключить»). Пустые состояния ведут к загрузке.
+## Connection checks (important)
+The frontend checks what is already connected and what is not. If a device is not connected or there is no data (labs / DNA / blood / tracker) → **prompt the user to UPLOAD it** (an explicit CTA: upload an export / connect). Empty states lead to an upload.
 
-## Выпиливаем сейчас
-- **Ask / чат — УБРАТЬ из openhealth.** Не работает с Claude; нужно настроить под локальные CLI (claude / codex / antigravity) — отдельная задача позже. Пока чат выпиливаем полностью, это нерабочая херня.
+## Being removed now
+- **Ask / chat — REMOVE from openhealth.** It does not work with Claude; it would need wiring to the local CLIs (claude / codex / antigravity), which is a separate task for later. For now the chat comes out entirely — in its current state it is dead weight.
 
-## Исполнение
-- Дизайн: /design harness → mobbin + cosmos + WHOOP-эталон + dribbble → захват PNG → Antigravity (agy) переделка под Flenteey-главный-стиль.
-- Вёрстка: /frontend-design + /frontend-developer, идеально на всех разрешениях.
-- Verify: Claude for Chrome / Preview, сверка с PNG-эталоном на каждом брейкпоинте.
+## Execution
+- Design: /design harness → mobbin + cosmos + the WHOOP benchmark + dribbble → capture PNGs → Antigravity (agy) rework toward the Flenteey-as-primary style.
+- Layout: /frontend-design + /frontend-developer, flawless at every resolution.
+- Verify: Claude for Chrome / Preview, checked against the PNG benchmark at every breakpoint.

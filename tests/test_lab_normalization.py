@@ -3,6 +3,14 @@ import unittest
 from openhealth import lab_normalization as ln
 from openhealth import reference_ranges
 
+# Unit spellings exactly as printed on Russian-language lab reports. These are
+# parser INPUTS, not display text: the point of these tests is to prove that a
+# Cyrillic unit off a real RU lab PDF still resolves to its canonical UCUM token.
+# Written as escapes to keep this file ASCII.
+CYR_MMOL_L = "\u043c\u043c\u043e\u043b\u044c/\u043b"  # Cyrillic "mmol/L"
+CYR_MG_DL = "\u043c\u0433/\u0434\u043b"               # Cyrillic "mg/dL"
+CYR_PMOL_L = "\u043f\u043c\u043e\u043b\u044c/\u043b"  # Cyrillic "pmol/L"
+
 
 class CanonicalUnitTests(unittest.TestCase):
     def test_ascii_and_case_variants(self):
@@ -11,9 +19,9 @@ class CanonicalUnitTests(unittest.TestCase):
         self.assertEqual(ln.canonical_unit(" mmol/l "), "mmol/L")
 
     def test_cyrillic_variants(self):
-        self.assertEqual(ln.canonical_unit("ммоль/л"), "mmol/L")
-        self.assertEqual(ln.canonical_unit("мг/дл"), "mg/dL")
-        self.assertEqual(ln.canonical_unit("пмоль/л"), "pmol/L")
+        self.assertEqual(ln.canonical_unit(CYR_MMOL_L), "mmol/L")
+        self.assertEqual(ln.canonical_unit(CYR_MG_DL), "mg/dL")
+        self.assertEqual(ln.canonical_unit(CYR_PMOL_L), "pmol/L")
 
     def test_empty_and_unknown(self):
         self.assertIsNone(ln.canonical_unit(None))
@@ -71,7 +79,7 @@ class ToConventionalTests(unittest.TestCase):
 class NormalizeMarkerTests(unittest.TestCase):
     def test_si_glucose_becomes_conventional_and_flags_correctly(self):
         # A report in SI (mmol/L), as common outside the US.
-        out = ln.normalize_marker("Glucose", "5,55", "ммоль/л")
+        out = ln.normalize_marker("Glucose", "5,55", CYR_MMOL_L)
         self.assertEqual(out["marker_key"], "glucose")
         self.assertAlmostEqual(out["value"], 100.0, places=1)
         self.assertEqual(out["unit"], "mg/dL")
