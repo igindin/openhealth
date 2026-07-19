@@ -463,7 +463,7 @@ def build_ask_prompt(question: str, data_summary: str) -> str:
         blocks.append(
             "DATA: data.local.json not found — there is no real data. Say so honestly, do not invent values."
         )
-    blocks.append("Answer in English, briefly (this is a Telegram message), in plain text.")
+    blocks.append("Answer in Russian, briefly (this is a Telegram message), in plain text.")
     return "\n\n".join(blocks)
 
 
