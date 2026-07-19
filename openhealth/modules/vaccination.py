@@ -37,9 +37,14 @@ def _valid_date(value: str) -> str:
 
 
 def _slug(value: str) -> str:
-    """ASCII+Cyrillic-tolerant slug (storage.slugify drops Cyrillic letters)."""
+    """ASCII+Cyrillic-tolerant slug (storage.slugify drops Cyrillic letters).
+
+    The escaped range in the character class is the Cyrillic lowercase alphabet
+    (a-ya plus yo); it is kept so Russian vaccine names still produce a readable
+    slug instead of collapsing to dashes.
+    """
     lowered = value.strip().lower()
-    lowered = re.sub(r"[^a-z0-9а-яё]+", "-", lowered)
+    lowered = re.sub("[^a-z0-9\u0430-\u044f\u0451]+", "-", lowered)
     return re.sub(r"-{2,}", "-", lowered).strip("-") or "item"
 
 

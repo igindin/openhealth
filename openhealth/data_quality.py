@@ -19,8 +19,8 @@ SEVERITY
 - ``high``    — almost certainly wrong (impossible value, future date).
 - ``medium``  — likely a problem (conflicting duplicate, unit mismatch).
 - ``low``     — worth a glance (a gap in a series).
-Every issue carries a Russian message + a Russian suggestion; nothing is a
-diagnosis or an instruction to change health behaviour.
+Every issue carries a message + a suggestion; nothing is a diagnosis or an
+instruction to change health behaviour.
 """
 
 from __future__ import annotations
@@ -158,8 +158,8 @@ def _check_future_dates(records: List[Dict[str, object]], today: str) -> List[Di
         if rec_d > today_d:
             issues.append(_issue(
                 SEV_HIGH, _metric_name(rec), d,
-                f"Дата записи {d} в будущем (сегодня {today[:10]}).",
-                "Проверить дату источника — вероятно опечатка или часовой пояс.",
+                f"Record date {d} is in the future (today is {today[:10]}).",
+                "Check the date at the source - most likely a typo or a timezone issue.",
                 "future_date",
             ))
     return issues
@@ -189,9 +189,9 @@ def _check_duplicates(records: List[Dict[str, object]]) -> List[Dict[str, object
         if len(distinct) > 1:
             issues.append(_issue(
                 SEV_MEDIUM, name, d,
-                f"Одна метрика '{name}' на {d} записана с разными значениями: "
+                f"The same metric '{name}' on {d} was recorded with different values: "
                 f"{', '.join(str(x) for x in distinct)}.",
-                "Оставить один источник истины на дату или пометить какой верный.",
+                "Keep one source of truth per date, or mark which value is the correct one.",
                 "duplicate",
             ))
     return issues
@@ -214,8 +214,8 @@ def _check_impossible(records: List[Dict[str, object]]) -> List[Dict[str, object
         if val < low or val > high:
             issues.append(_issue(
                 SEV_HIGH, name, _record_date(rec),
-                f"Значение {name}={val} вне физиологичных границ ({low}-{high} {comment}).",
-                "Проверить единицы и источник; такое значение почти наверняка ошибка ввода.",
+                f"Value {name}={val} is outside physiologic bounds ({low}-{high} {comment}).",
+                "Check the units and the source; a value like this is almost certainly an entry error.",
                 "impossible_value",
             ))
     return issues
@@ -239,9 +239,9 @@ def _check_gaps(records: List[Dict[str, object]], gap_days: int) -> List[Dict[st
             if gap > gap_days:
                 issues.append(_issue(
                     SEV_LOW, metric, b.isoformat(),
-                    f"Разрыв {gap} дн. в серии '{metric}' между {a.isoformat()} и "
+                    f"A {gap}-day gap in the '{metric}' series between {a.isoformat()} and "
                     f"{b.isoformat()}.",
-                    "Возможен пропуск синхронизации устройства; тренд за этот период неполный.",
+                    "The device may have missed a sync; the trend over this period is incomplete.",
                     "series_gap",
                 ))
     return issues
@@ -292,9 +292,9 @@ def _check_unit_suspicion(records: List[Dict[str, object]]) -> List[Dict[str, ob
         if val < lo / 3.0 and lo <= val * 18.0 <= hi:
             issues.append(_issue(
                 SEV_MEDIUM, name, _record_date(rec),
-                f"Значение {name}={val} похоже на ммоль/л: ×18 = {round(val * 18.0)} мг/дл "
-                f"(в диапазоне нормы), а как мг/дл оно нереалистично низкое.",
-                "Уточнить единицы измерения (ммоль/л vs мг/дл) у источника.",
+                f"Value {name}={val} looks like mmol/L: ×18 = {round(val * 18.0)} mg/dL "
+                f"(within the normal range), whereas as mg/dL it would be unrealistically low.",
+                "Confirm the units of measurement (mmol/L vs mg/dL) with the source.",
                 "unit_suspect",
             ))
     return issues
@@ -365,13 +365,13 @@ def quality_score(report: Dict[str, object]) -> Dict[str, object]:
 
     score = max(0, 100 - total_penalty)
     if score >= 90:
-        verdict = "Данные выглядят чистыми."
+        verdict = "The data looks clean."
     elif score >= 70:
-        verdict = "Есть мелкие вопросы к данным, тренды в целом надёжны."
+        verdict = "There are minor questions about the data; the trends are broadly reliable."
     elif score >= 40:
-        verdict = "Заметные проблемы качества — проверить перед выводами."
+        verdict = "Noticeable quality problems - check them before drawing conclusions."
     else:
-        verdict = "Много проблем в данных — выводам пока доверять рано."
+        verdict = "Many problems in the data - it is too early to trust any conclusions."
 
     return {
         "score": score,

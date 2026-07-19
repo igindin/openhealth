@@ -160,7 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    # CA-бандл для исходящего HTTPS (WHOOP token-exchange/sync, Withings) до сети.
+    # CA bundle for outgoing HTTPS (WHOOP token exchange/sync, Withings), before any network call.
     try:
         from ._certs import ensure_ca_certs
         ensure_ca_certs()

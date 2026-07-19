@@ -1,21 +1,22 @@
-"""Гарантируем, что Python найдёт CA-сертификаты для исходящего HTTPS.
+"""Make sure Python can find CA certificates for outgoing HTTPS.
 
-На python.org-сборках macOS системный CA-бандл для модуля ``ssl`` не настроен
-(не запускали Install Certificates.command), из-за чего любой ``urlopen`` к https
-падает с ``CERTIFICATE_VERIFY_FAILED``, а коннекторы (погода, WHOOP, Withings)
-молча возвращают ``None``. Здесь, до первого сетевого вызова, подставляем рабочий
-CA-бандл в ``SSL_CERT_FILE``, если стандартный путь пуст и переменная не задана.
+On python.org macOS builds the system CA bundle is not wired into the ``ssl``
+module (Install Certificates.command was never run), so any ``urlopen`` over
+https fails with ``CERTIFICATE_VERIFY_FAILED`` and the connectors (weather,
+WHOOP, Withings) silently return ``None``. Here, before the first network call,
+we point ``SSL_CERT_FILE`` at a working CA bundle if the default path is empty
+and the variable is not already set.
 
-Stdlib-only, кросс-платформенно, no-op на системах с уже настроенными сертификатами.
+Stdlib-only, cross-platform, a no-op on systems where certificates already work.
 """
 
 import os
 import ssl
 
 
-# Порядок: системные бандлы основных ОС. certifi (если установлен) пробуем первым.
+# Order: system bundles of the major OSes. certifi (if installed) is tried first.
 _CANDIDATE_BUNDLES = (
-    "/etc/ssl/cert.pem",                     # macOS (LibreSSL), некоторые BSD
+    "/etc/ssl/cert.pem",                     # macOS (LibreSSL), some BSDs
     "/etc/ssl/certs/ca-certificates.crt",    # Debian/Ubuntu
     "/etc/pki/tls/certs/ca-bundle.crt",      # RHEL/Fedora/CentOS
     "/etc/ssl/ca-bundle.pem",                # openSUSE
@@ -25,15 +26,15 @@ _CANDIDATE_BUNDLES = (
 
 
 def ensure_ca_certs():
-    """Подставить SSL_CERT_FILE при необходимости. Вернуть выбранный путь или None.
+    """Set SSL_CERT_FILE if needed. Return the chosen path, or None.
 
-    Вызывать ОДИН РАЗ при старте процесса, до любого сетевого вызова.
+    Call this ONCE at process start, before any network call.
     """
-    # Уважаем явную конфигурацию окружения — ничего не навязываем.
+    # Respect an explicit environment configuration - never override it.
     if os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR"):
         return os.environ.get("SSL_CERT_FILE")
 
-    # Если у Python уже есть рабочий дефолтный бандл — не трогаем (Linux/настроенный mac).
+    # If Python already has a working default bundle, leave it alone (Linux / configured mac).
     try:
         cafile = ssl.get_default_verify_paths().cafile
     except Exception:

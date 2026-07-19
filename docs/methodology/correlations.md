@@ -1,43 +1,43 @@
-# Корреляции (влияние привычек на recovery)
-> algo_version: n/a (модуль correlations, без версионного штампа) · источник данных: движок · редактируемость: параметры в коде
+# Correlations (habit impact on recovery)
+> algo_version: n/a (correlations module, no version stamp) · data source: engine · editability: parameters in code
 
-## Что это
+## What this is
 
-Ответ на вопрос «что на меня влияет»: для каждой привычки из журнала сравниваем среднее recovery в дни, когда она была («да»), со средним в дни, когда её не было («нет»), на личном окне 90 дней. Та же идея, что у WHOOP «Impacts».
+An answer to "what affects me": for each habit in the journal we compare mean recovery on the days it was present ("yes") against mean recovery on the days it was not ("no"), over a personal 90-day window. The same idea as WHOOP "Impacts".
 
-## Формула / алгоритм
+## Formula / algorithm
 
-**Откуда берётся «+8 points» у привычки (это и есть ± в UI):**
+**Where a habit's "+8 points" comes from (this is the ± shown in the UI):**
 
-`impact = mean(recovery в дни «да») − mean(recovery в дни «нет»)`
+`impact = mean(recovery on "yes" days) − mean(recovery on "no" days)`
 
-Пример с числами. За последние 90 дней привычка «сауна» отмечена «да» в 12 днях и «нет» в 40 днях (есть recovery на каждый из них). Среднее recovery в дни с сауной — 68.4, без — 60.1. Тогда `impact = 68.4 − 60.1 = +8.3 → округление до +8`. Это **разница средних в пунктах recovery (шкала 0-100)**, не процент изменения и не вероятность. Знак: `+` — в дни с привычкой recovery в среднем выше, `−` — ниже.
+A worked example. Over the last 90 days the habit "sauna" is marked "yes" on 12 days and "no" on 40 days (with recovery available for each). Mean recovery on sauna days is 68.4, without it 60.1. Then `impact = 68.4 − 60.1 = +8.3 → rounded to +8`. This is a **difference of means in recovery points (a 0-100 scale)**, not a percentage change and not a probability. Sign: `+` means recovery averages higher on days with the habit, `−` means lower.
 
-Дальше:
+Then:
 
-1. Порог данных: минимум **5 дней «да» и 5 дней «нет»** в окне, иначе привычка вообще не анализируется (сигнал слишком тонкий, зеркалит порог WHOOP).
-2. Размер эффекта: `|impact| < 3` — negligible (не показывается), `3-7` — small, `>= 7` — moderate.
-3. Грейд доверия: сырая личная корреляция — максимум **C2 (слабый сигнал)**. Подняться до C3 (гипотеза) она может только если привычка естественно включалась/выключалась минимум 2 раза подряд по датам (`switches >= 2` — прокси минимального n-of-1/ABAB). Выше C3 по корреляции — никогда (cap в `evidence.cap_personal_pattern`).
-4. Вывод — не голое число, а action-prompt с грейдом: «В дни с X recovery в среднем 68 против 60 (+8 пунктов). Попробуй делать X неделю и посмотри» + открытые вопросы «что ещё менялось в эти дни?».
+1. Data threshold: at least **5 "yes" days and 5 "no" days** in the window, otherwise the habit is not analysed at all (the signal is too thin; this mirrors WHOOP's threshold).
+2. Effect size: `|impact| < 3` is negligible (not shown), `3-7` is small, `>= 7` is moderate.
+3. Confidence grade: a raw personal correlation is capped at **C2 (weak signal)**. It can only rise to C3 (hypothesis) if the habit naturally switched on and off at least twice in a row by date (`switches >= 2`, a proxy for a minimal n-of-1/ABAB). A correlation never goes above C3 (the cap lives in `evidence.cap_personal_pattern`).
+4. The output is not a bare number but an action prompt with its grade: "On days with X, recovery averages 68 versus 60 (+8 points). Try doing X for a week and see" plus open questions such as "what else changed on those days?".
 
-## Параметры (константы кода)
+## Parameters (code constants)
 
-| параметр | значение | где в коде | зачем |
+| parameter | value | where in code | why |
 |---|---|---|---|
-| окно анализа, дней | 90 | `openhealth/modules/correlations.py: DEFAULT_WINDOW_DAYS` | личный baseline-период (60-90 дней — баланс свежести и объёма) |
-| лаг, дней | 0 | `correlations.lag_days` (тунабл) | пара «поведение день D → recovery день D+лаг». Recovery меряется утром, поэтому вечернее поведение проявляется в recovery СЛЕДУЮЩЕГО утра — для таких входов ставь лаг = 1. Лаг = 0 сравнивает поведение с recovery того же дня (утро D отражает ночь D-1). |
-| минимум дней «да» | 5 | `openhealth/modules/correlations.py: MIN_YES_DAYS` | ниже — шум, зеркалит порог WHOOP |
-| минимум дней «нет» | 5 | `openhealth/modules/correlations.py: MIN_NO_DAYS` | нужна контрольная группа дней |
-| порог small | 3.0 | `openhealth/modules/correlations.py: SMALL_IMPACT` | < 3 пунктов — в пределах шума, не показываем |
-| порог moderate | 7.0 | `openhealth/modules/correlations.py: MODERATE_IMPACT` | >= 7 пунктов — заметный личный эффект |
+| analysis window, days | 90 | `openhealth/modules/correlations.py: DEFAULT_WINDOW_DAYS` | the personal baseline period (60-90 days balances recency and volume) |
+| lag, days | 0 | `correlations.lag_days` (tunable) | pairs "behaviour on day D → recovery on day D+lag". Recovery is measured in the morning, so evening behaviour shows up in the NEXT morning's recovery — set lag = 1 for such inputs. Lag = 0 compares behaviour with the same day's recovery (morning D reflects night D-1). |
+| minimum "yes" days | 5 | `openhealth/modules/correlations.py: MIN_YES_DAYS` | below this it is noise; mirrors WHOOP's threshold |
+| minimum "no" days | 5 | `openhealth/modules/correlations.py: MIN_NO_DAYS` | a control group of days is needed |
+| small threshold | 3.0 | `openhealth/modules/correlations.py: SMALL_IMPACT` | under 3 points is within noise, so it is not shown |
+| moderate threshold | 7.0 | `openhealth/modules/correlations.py: MODERATE_IMPACT` | >= 7 points is a noticeable personal effect |
 
-## Источники и доверие
+## Sources and confidence
 
-- Подход «mean yes − mean no» — стандартный для consumer-журналов (WHOOP Journal Impacts); статистических тестов значимости нет намеренно: вместо p-value — жёсткий порог 5/5, размерные пороги и cap C2.
-- Грейды по канону `openhealth/evidence.py`: C2 — вопрос, не утверждение; C3 — только после повторных переключений.
+- The "mean yes − mean no" approach is standard for consumer journals (WHOOP Journal Impacts); statistical significance tests are deliberately absent — instead of a p-value there is the hard 5/5 threshold, the effect-size thresholds and the C2 cap.
+- Grades follow the `openhealth/evidence.py` canon: C2 is a question, not a claim; C3 only after repeated switches.
 
-## Известные ограничения
+## Known limitations
 
-- **Корреляция ≠ причинность.** «+8 пунктов» может объясняться третьим фактором (в выходные и сауна, и долгий сон). Поэтому каждый вывод оформлен вопросом и предлагает проверить через осознанный on/off (см. protocols.md).
-- Учитываются только булевы записи журнала; числовые привычки (дозы, часы) сюда не попадают.
-- Дни без recovery выбрасываются из пар, так что n_yes/n_no могут быть меньше числа отметок в журнале.
+- **Correlation is not causation.** "+8 points" may be explained by a third factor (on weekends there is both a sauna and a long sleep). That is why each output is framed as a question and suggests checking it with a deliberate on/off (see protocols.md).
+- Only boolean journal entries are counted; numeric habits (doses, hours) do not make it in.
+- Days without recovery are dropped from the pairs, so n_yes/n_no can be smaller than the number of marks in the journal.

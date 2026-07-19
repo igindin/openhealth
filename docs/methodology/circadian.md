@@ -1,58 +1,58 @@
-# Циркадная энергия (фазы дня и кривая)
-> algo_version: two-process-rise@v1 · источник данных: движок (анкор из WHOOP-сна) · редактируемость: параметры в коде
+# Circadian energy (day phases and curve)
+> algo_version: two-process-rise@v1 · data source: engine (anchored on WHOOP sleep) · editability: parameters in code
 
-## Что это
+## What this is
 
-Rise-подобное расписание энергии на день по двухпроцессной модели регуляции сна (Borbely): инерция сна после подъёма, утренний пик, дневной спад, вечерний пик, замедление, окно мелатонина, окно сна. Плюс непрерывная кривая энергии 0-100 на 24 часа. Всё привязано к **личному анкору сна**, а не к часам на стене.
+A Rise-style energy schedule for the day, based on the two-process model of sleep regulation (Borbely): sleep inertia after waking, the morning peak, the afternoon dip, the evening peak, the wind-down, the melatonin window and the sleep window. Plus a continuous 0-100 energy curve across 24 hours. Everything is tied to your **personal sleep anchor** rather than to the clock on the wall.
 
-## Формула / алгоритм
+## Formula / algorithm
 
-**Анкор сна** (`_compute_sleep_anchor`, `openhealth/circadian.py`): по WHOOP-сессиям сна за последние 14 дней (без днёвных снов) — взвешенное среднее времени отбоя/подъёма/midpoint; ночи последних 7 дней весят 2.0, старше — 1.0. Без данных: подъём 08:00, отбой 00:30.
+**Sleep anchor** (`_compute_sleep_anchor`, `openhealth/circadian.py`): from WHOOP sleep sessions over the last 14 days (naps excluded) — a weighted mean of bedtime, wake time and midpoint; nights within the last 7 days are weighted 2.0, older ones 1.0. With no data: wake 08:00, bedtime 00:30.
 
-**Фактор долга** `f = min(debt, 8) / 8` — накопленный долг сна (sleep_debt@v2 по тем же ночам) насыщается на 8 часах. Долг углубляет/расширяет спад, растягивает инерцию и подрезает пики.
+**Debt factor** `f = min(debt, 8) / 8` — accumulated sleep debt (sleep_debt@v2 over the same nights), saturating at 8 hours. Debt deepens and widens the dip, stretches inertia and trims the peaks.
 
-**Сдвиг от утреннего света** (`_morning_light_shift_minutes`): если чек-ин света позже подъёма на > 15 мин, циркадные фазы сдвигаются на `min(delta/2, 30)` минут (инерция сна не сдвигается — она привязана к подъёму).
+**Morning light shift** (`_morning_light_shift_minutes`): if the light check-in is more than 15 min later than waking, the circadian phases shift by `min(delta/2, 30)` minutes (sleep inertia does not shift, since it is tied to waking).
 
-**Фазы** (от подъёма w, отбоя b, сдвига s):
+**Phases** (from wake w, bedtime b, shift s):
 
-- инерция сна: w … w + (1.25 + 0.25f) ч
-- утренний пик: w + 2.5 + s … w + (4.0 − 0.5f) + s
-- дневной спад: w + (6.0 − 0.25f) + s … w + (8.0 + 0.5f) + s
-- вечерний пик: w + 9.0 + s … min(w + (11.0 − 0.5f) + s, b − 2:15)
-- замедление: b − 2 ч … b
-- **окно мелатонина: b − 60 мин … b − 30 мин** (лучшее окно отбоя; при разметке точек приоритетнее замедления)
-- окно сна: b … w + 24 ч
+- sleep inertia: w … w + (1.25 + 0.25f) h
+- morning peak: w + 2.5 + s … w + (4.0 − 0.5f) + s
+- afternoon dip: w + (6.0 − 0.25f) + s … w + (8.0 + 0.5f) + s
+- evening peak: w + 9.0 + s … min(w + (11.0 − 0.5f) + s, b − 2:15)
+- wind-down: b − 2 h … b
+- **melatonin window: b − 60 min … b − 30 min** (the best bedtime window; it takes priority over wind-down when marking points)
+- sleep window: b … w + 24 h
 
-**Кривая энергии**: косинусная интерполяция между контрольными точками (нулевой наклон в каждой), 4 точки/час. Узлы (часы от подъёма, энергия):
+**Energy curve**: cosine interpolation between control points (zero slope at each), 4 points per hour. Nodes (hours from waking, energy):
 
-- подъём: 33 − 6f
-- утренний пик (3.25 + s): **92 − 15f**
-- дневной спад (7.0 + 0.25f + s): 46 − 18f
-- вечерний пик (10.0 − 0.25f + s): 80 − 14f
-- окно мелатонина (b − 0.75): 30 − 5f
-- отбой: 22 · середина сна: 8 · возврат к уровню подъёма на 24 ч (непрерывность)
+- waking: 33 − 6f
+- morning peak (3.25 + s): **92 − 15f**
+- afternoon dip (7.0 + 0.25f + s): 46 − 18f
+- evening peak (10.0 − 0.25f + s): 80 − 14f
+- melatonin window (b − 0.75): 30 − 5f
+- bedtime: 22 · mid-sleep: 8 · returning to the waking level at 24 h (continuity)
 
-Если анкор даёт день короче 13 или длиннее 20 ч, отбой берётся как подъём + 16.5 ч (fallback).
+If the anchor yields a day shorter than 13 h or longer than 20 h, bedtime is taken as waking + 16.5 h (fallback).
 
-## Параметры (константы кода)
+## Parameters (code constants)
 
-| параметр | значение | где в коде | зачем |
+| parameter | value | where in code | why |
 |---|---|---|---|
-| модель | two-process-rise@v1 | `openhealth/circadian.py: ENERGY_SCHEDULE_MODEL` | версионный штамп в каждом выводе |
-| насыщение долга, ч | 8.0 | `openhealth/circadian.py: ENERGY_DEBT_SATURATION_H` | больше 8 ч долга эффект не углубляют |
-| длина дня fallback, ч | 16.5 | `openhealth/circadian.py: DEFAULT_DAY_LENGTH_H` | когда анкор неюзабелен |
-| вес свежих ночей | 2.0 (до 7 дней) | `openhealth/circadian.py: _compute_sleep_anchor` | свежий режим важнее прошлонедельного |
-| сдвиг от света | delta/2, кап 30 мин | `openhealth/circadian.py: _morning_light_shift_minutes` | свет позже подъёма мягко сдвигает фазы |
-| пик энергии | 92 − 15f | `openhealth/circadian.py: _energy_nodes` | амплитуда утреннего пика, режется долгом |
+| model | two-process-rise@v1 | `openhealth/circadian.py: ENERGY_SCHEDULE_MODEL` | version stamp on every output |
+| debt saturation, h | 8.0 | `openhealth/circadian.py: ENERGY_DEBT_SATURATION_H` | beyond 8 h of debt the effect stops deepening |
+| fallback day length, h | 16.5 | `openhealth/circadian.py: DEFAULT_DAY_LENGTH_H` | used when the anchor is unusable |
+| weight of recent nights | 2.0 (up to 7 days) | `openhealth/circadian.py: _compute_sleep_anchor` | the current schedule matters more than last week's |
+| light shift | delta/2, capped at 30 min | `openhealth/circadian.py: _morning_light_shift_minutes` | light later than waking shifts phases gently |
+| energy peak | 92 − 15f | `openhealth/circadian.py: _energy_nodes` | amplitude of the morning peak, trimmed by debt |
 
-## Источники и доверие
+## Sources and confidence
 
-- Двухпроцессная модель (Borbely) и фазовые смещения à la Rise — устоявшаяся наука (C3-C4).
-- **Личная** расстановка окон — подгонка только от анкора сна и долга: `personal_fit: "C2"` в каждом выводе, плюс evidence_note прямо в payload.
-- Сгенерированные окна пишутся как InsightHypothesis / TimelineEvent с пометкой «hypothetical», в производный календарь — никогда в исходные.
+- The two-process model (Borbely) and Rise-style phase shifts are established science (C3-C4).
+- The **personal** placement of the windows is fitted from the sleep anchor and debt alone: `personal_fit: "C2"` on every output, plus an evidence_note directly in the payload.
+- Generated windows are written as InsightHypothesis / TimelineEvent marked "hypothetical", and into the derived calendar only — never into source calendars.
 
-## Известные ограничения
+## Known limitations
 
-- Настоящая циркадная фаза не измеряется (нет DLMO/температуры ядра) — всё выводится из тайминга сна.
-- Хронотип не моделируется отдельно: анкор сна несёт его косвенно.
-- Сдвиги-формулы (числа 2.5/6.0/9.0, амплитуды 92/46/80) — задокументированная калибровка под публичную методологию Rise, не результат личного эксперимента; правишь — бампни версию модели.
+- The true circadian phase is not measured (there is no DLMO or core temperature), so everything is inferred from sleep timing.
+- Chronotype is not modelled separately; the sleep anchor carries it only indirectly.
+- The shift formulas (the numbers 2.5/6.0/9.0, the amplitudes 92/46/80) are a documented calibration against Rise's public methodology, not the result of a personal experiment; if you change them, bump the model version.

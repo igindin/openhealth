@@ -37,7 +37,7 @@ After the SYNTHESIZER produces the new consensus_reference.md (or synthesis.md),
 4. Output: `_temporal_diff.md`
 
 **After TEMPORAL DIFF:**
-- Add a `## Temporal Diff Summary` section at the END of the new consensus_reference.md (after all existing content, before `## Связанные файлы`):
+- Add a `## Temporal Diff Summary` section at the END of the new consensus_reference.md (after all existing content, before `## Related files`):
 
 ```markdown
 ## Temporal Diff Summary
@@ -56,7 +56,7 @@ After the SYNTHESIZER produces the new consensus_reference.md (or synthesis.md),
 ```
 
 - Archive the previous consensus: copy it to the NEW research directory as `_previous_consensus_[YYYY_MM].md`
-- Add link to _temporal_diff.md in the `## Связанные файлы` section
+- Add link to _temporal_diff.md in the `## Related files` section
 
 ## 4c. INTERACTION MAPPER (consensus+interactions / full)
 

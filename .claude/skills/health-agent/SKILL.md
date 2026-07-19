@@ -6,7 +6,7 @@ description: >-
   cycle, weight/fasting, food, skin, mood/check-in, insights or trends. Routes
   the request to the right domain module and answers cautiously. Triggers on
   "log", "check in", "how is my recovery/sleep/cycle/weight", "insights",
-  "trends", "pulse", "залогируй", "как мой сон/восстановление".
+  "trends", "pulse", "how did I sleep", "how is my recovery".
 ---
 
 # Health Agent — OpenHealth's interface

@@ -208,45 +208,45 @@ def marker_history(
 
 PANELS: Dict[str, Dict[str, object]] = {
     "lipids": {
-        "label_ru": "Липиды",
+        "label_ru": "Lipids",
         "markers": ["ldl", "hdl", "triglycerides", "total_cholesterol"],
-        "discuss_ru": "Липиды читают вместе (ЛПНП/ЛПВП/ТГ/общий), а не по одному; "
-                      "обсудить сердечно-сосудистый риск с врачом.",
+        "discuss_ru": "Lipids are read together (LDL/HDL/TG/total), not one at a time; "
+                      "discuss cardiovascular risk with a clinician.",
     },
     "glycemia": {
-        "label_ru": "Гликемия",
+        "label_ru": "Glycemia",
         "markers": ["glucose", "hba1c"],
-        "discuss_ru": "Глюкоза натощак и HbA1c вместе показывают углеводный обмен; "
-                      "инсулин добавляет инсулинорезистентность (если есть).",
+        "discuss_ru": "Fasting glucose and HbA1c together show carbohydrate metabolism; "
+                      "insulin adds the insulin-resistance picture (when it was measured).",
     },
     "iron": {
-        "label_ru": "Железо",
+        "label_ru": "Iron",
         "markers": ["ferritin"],
-        "discuss_ru": "Ферритин — острофазовый белок, читать вместе с СРБ; "
-                      "при воспалении завышается.",
+        "discuss_ru": "Ferritin is an acute-phase protein, so read it together with CRP; "
+                      "inflammation pushes it up.",
     },
     "thyroid": {
-        "label_ru": "Щитовидная железа",
+        "label_ru": "Thyroid",
         "markers": ["tsh"],
-        "discuss_ru": "ТТГ — скрининговый маркер; Т3/Т4 уточняют картину при отклонении.",
+        "discuss_ru": "TSH is a screening marker; T3/T4 refine the picture when it is off.",
     },
     "inflammation": {
-        "label_ru": "Воспаление",
+        "label_ru": "Inflammation",
         "markers": ["crp"],
-        "discuss_ru": "СРБ отражает острое/хроническое воспаление; "
-                      "острая болезнь обесценивает результат.",
+        "discuss_ru": "CRP reflects acute/chronic inflammation; "
+                      "an acute illness makes the result uninformative.",
     },
     "vitamins": {
-        "label_ru": "Витамины",
+        "label_ru": "Vitamins",
         "markers": ["vitamin_d", "b12"],
-        "discuss_ru": "Витамин D и B12 — дефициты частые и корректируемые; "
-                      "обсудить дозу и пересдачу с врачом.",
+        "discuss_ru": "Vitamin D and B12 deficiencies are common and correctable; "
+                      "discuss dosing and re-testing with a clinician.",
     },
     "kidney": {
-        "label_ru": "Почки (база)",
+        "label_ru": "Kidney (basic)",
         "markers": ["creatinine", "sodium", "potassium"],
-        "discuss_ru": "Креатинин + электролиты — базовая оценка функции почек; "
-                      "для СКФ нужен расчёт по возрасту/полу.",
+        "discuss_ru": "Creatinine + electrolytes are a basic look at kidney function; "
+                      "eGFR needs a calculation based on age/sex.",
     },
 }
 
@@ -350,7 +350,7 @@ def _index(
         "formula": formula,
         "interpretation_ru": interpretation_ru,
         "confidence": confidence.value,
-        "discuss_ru": "Обсудить с врачом — это не диагноз.",
+        "discuss_ru": DISCUSS,
     }
 
 
@@ -370,56 +370,56 @@ def derived_indices(
     if "ldl" in v and "hdl" in v and v["hdl"] > 0:
         ratio = v["ldl"] / v["hdl"]
         if ratio < 2.0:
-            interp = "Ниже ~2.0 обычно считают благоприятным балансом."
+            interp = "Below ~2.0 is usually considered a favourable balance."
         elif ratio < 3.5:
-            interp = "Пограничная зона (~2.0-3.5); смотреть с общим риском."
+            interp = "Borderline zone (~2.0-3.5); read it alongside overall risk."
         else:
-            interp = "Выше ~3.5 связывают с повышенным риском; обсудить с врачом."
+            interp = "Above ~3.5 is associated with elevated risk; discuss with a clinician."
         out.append(_index(
-            "ldl_hdl_ratio", "ЛПНП / ЛПВП", ratio, "ratio",
-            "ЛПНП ÷ ЛПВП", interp, Confidence.C3,
+            "ldl_hdl_ratio", "LDL / HDL", ratio, "ratio",
+            "LDL ÷ HDL", interp, Confidence.C3,
         ))
 
     # TG/HDL ratio — surrogate for insulin resistance (mg/dL convention).
     if "triglycerides" in v and "hdl" in v and v["hdl"] > 0:
         ratio = v["triglycerides"] / v["hdl"]
         if ratio < 2.0:
-            interp = "Ниже ~2.0 — маловероятная инсулинорезистентность (для мг/дл)."
+            interp = "Below ~2.0 makes insulin resistance unlikely (mg/dL convention)."
         elif ratio < 3.0:
-            interp = "Пограничная зона (~2.0-3.0); смотреть с глюкозой/HbA1c."
+            interp = "Borderline zone (~2.0-3.0); read it alongside glucose/HbA1c."
         else:
-            interp = "Выше ~3.0 связывают с инсулинорезистентностью; обсудить с врачом."
+            interp = "Above ~3.0 is associated with insulin resistance; discuss with a clinician."
         out.append(_index(
-            "tg_hdl_ratio", "ТГ / ЛПВП", ratio, "ratio (mg/dL)",
-            "Триглицериды ÷ ЛПВП (в мг/дл)", interp, Confidence.C3,
+            "tg_hdl_ratio", "TG / HDL", ratio, "ratio (mg/dL)",
+            "Triglycerides ÷ HDL (in mg/dL)", interp, Confidence.C3,
         ))
 
     # Non-HDL cholesterol — total minus HDL.
     if "total_cholesterol" in v and "hdl" in v:
         non_hdl = v["total_cholesterol"] - v["hdl"]
         if non_hdl < 130.0:
-            interp = "Ниже ~130 мг/дл обычно считают желательным."
+            interp = "Below ~130 mg/dL is usually considered desirable."
         elif non_hdl < 160.0:
-            interp = "Пограничная зона (~130-160 мг/дл)."
+            interp = "Borderline zone (~130-160 mg/dL)."
         else:
-            interp = "Выше ~160 мг/дл — обсудить риск с врачом."
+            interp = "Above ~160 mg/dL — discuss the risk with a clinician."
         out.append(_index(
-            "non_hdl_cholesterol", "Не-ЛПВП холестерин", non_hdl, "mg/dL",
-            "Общий холестерин − ЛПВП", interp, Confidence.C3,
+            "non_hdl_cholesterol", "Non-HDL cholesterol", non_hdl, "mg/dL",
+            "Total cholesterol − HDL", interp, Confidence.C3,
         ))
 
     # HOMA-IR — fasting glucose (mg/dL) * insulin (uIU/mL) / 405.
     if "glucose" in v and "insulin" in v:
         homa = v["glucose"] * v["insulin"] / 405.0
         if homa < 1.0:
-            interp = "Ниже ~1.0 — обычно хорошая чувствительность к инсулину."
+            interp = "Below ~1.0 usually suggests good insulin sensitivity."
         elif homa < 2.0:
-            interp = "Ранний сигнал (~1.0-2.0); смотреть в динамике."
+            interp = "An early signal (~1.0-2.0); watch how it moves over time."
         else:
-            interp = "Выше ~2.0 связывают с инсулинорезистентностью; обсудить с врачом."
+            interp = "Above ~2.0 is associated with insulin resistance; discuss with a clinician."
         out.append(_index(
             "homa_ir", "HOMA-IR", homa, "index",
-            "Глюкоза(мг/дл) × Инсулин(мкЕд/мл) ÷ 405", interp, Confidence.C3,
+            "Glucose(mg/dL) × Insulin(uIU/mL) ÷ 405", interp, Confidence.C3,
         ))
 
     return out
@@ -481,19 +481,19 @@ def next_checkup_hint(
     due: Optional[bool] = None
     note: str
     if interval is None:
-        note = "Для этого маркера нет стандартного интервала пересдачи."
+        note = "There is no standard re-test interval for this marker."
     elif days is None:
-        note = f"Рекомендуемый интервал ~{interval} мес.; дата последней сдачи неизвестна."
+        note = f"Suggested interval ~{interval} mo.; the date of the last test is unknown."
     else:
         threshold_days = interval * _DAYS_PER_MONTH
         due = days >= threshold_days
         if due:
-            note = (f"Прошло ~{days} дн. (≥ {interval} мес.) — стоит обсудить пересдачу "
-                    f"с врачом.")
+            note = (f"~{days} days have passed (≥ {interval} mo.) — worth discussing a "
+                    f"re-test with a clinician.")
         else:
             months_left = max(0, round((threshold_days - days) / _DAYS_PER_MONTH, 1))
-            note = (f"Прошло ~{days} дн.; до типичного интервала ~{interval} мес. ещё "
-                    f"~{months_left} мес.")
+            note = (f"~{days} days have passed; ~{months_left} mo. still to go before the "
+                    f"typical ~{interval} mo. interval.")
 
     return {
         "marker_key": marker_key,

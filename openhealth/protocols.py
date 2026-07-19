@@ -32,18 +32,28 @@ MAX_ACTIVE_PROTOCOLS = 3
 
 # Default safety note shared by all protocols; some kinds strengthen it.
 DEFAULT_SAFETY_NOTE = (
-    "Это самонаблюдение (n-of-1), а не лечение. Меняйте только один фактор за раз. "
-    "При тревожных симптомах обратитесь к врачу."
+    "This is self-observation (n-of-1), not treatment. Change only one factor at a "
+    "time. If you have worrying symptoms, see a doctor."
 )
 RED_STREAK_SAFETY_NOTE = (
-    "Затяжная серия низкого восстановления вместе с симптомами (жар, боль, сильная "
-    "усталость) - повод сначала показаться врачу, а не запускать эксперимент."
+    "A long run of low recovery together with symptoms (fever, pain, heavy fatigue) "
+    "is a reason to see a doctor first, not to start an experiment."
 )
 
 # Behavior-id / category fragments that look like classic HRV suppressors. Used
 # to point an HRV-downtrend protocol at a concrete trigger when correlations
 # already implicate one.
-_HRV_TRIGGER_HINTS = ("alcohol", "алког", "screen", "экран", "late", "поздн", "caffeine", "кофеин")
+# Behavior names in ``openhealth/data/journal_behaviors.json`` are Russian, so
+# each English stem is paired with its Russian counterpart, written as escapes
+# to keep this source ASCII:
+#   \u0430\u043b\u043a\u043e\u0433 = "alcohol"   \u044d\u043a\u0440\u0430\u043d = "screen"
+#   \u043f\u043e\u0437\u0434\u043d = "late"      \u043a\u043e\u0444\u0435\u0438\u043d = "caffeine"
+_HRV_TRIGGER_HINTS = (
+    "alcohol", "\u0430\u043b\u043a\u043e\u0433",
+    "screen", "\u044d\u043a\u0440\u0430\u043d",
+    "late", "\u043f\u043e\u0437\u0434\u043d",
+    "caffeine", "\u043a\u043e\u0444\u0435\u0438\u043d",
+)
 
 
 @dataclass
@@ -95,9 +105,9 @@ def _hrv_intervention(correlations: Optional[List[Dict[str, Any]]]) -> str:
         )
         hay = hay.lower()
         if any(h in hay for h in _HRV_TRIGGER_HINTS):
-            name = c.get("title", "").replace("Impact: ", "").strip() or "этот фактор"
-            return "Уберите '%s' на 7 дней (по вашим данным он связан со снижением)." % name
-    return "Сделайте 7 дней восстановительного режима: отбой на 30-45 минут раньше, без вечернего алкоголя."
+            name = c.get("title", "").replace("Impact: ", "").strip() or "this factor"
+            return "Drop '%s' for 7 days (in your data it goes with a decline)." % name
+    return "Take 7 recovery-focused days: bedtime 30-45 minutes earlier, no evening alcohol."
 
 
 def from_insight(
@@ -110,91 +120,91 @@ def from_insight(
     if kind == "sleep_debt":
         return Protocol(
             id="protocol-sleep_debt",
-            hypothesis_ru="Если убрать недосып, среднее восстановление вырастет.",
-            intervention_ru="Ложитесь на 45 минут раньше обычного.",
+            hypothesis_ru="If the sleep shortfall goes away, mean recovery will rise.",
+            intervention_ru="Go to bed 45 minutes earlier than usual.",
             metric="recovery",
             baseline_days=7,
             intervention_days=7,
             schema="ABAB",
-            success_criteria_ru="Среднее recovery в фазах с ранним отбоем (B) выше, "
-                                 "чем в обычных (A), на >= 5 пунктов.",
+            success_criteria_ru="Mean recovery in the early-bedtime phases (B) is higher "
+                                 "than in the normal ones (A) by >= 5 points.",
         )
 
     if kind == "hrv_downtrend":
         return Protocol(
             id="protocol-hrv_downtrend",
-            hypothesis_ru="Снятие основной нагрузки на HRV вернёт его к личному baseline.",
+            hypothesis_ru="Removing the main load on HRV will bring it back to your personal baseline.",
             intervention_ru=_hrv_intervention(correlations),
             metric="hrv",
             baseline_days=7,
             intervention_days=7,
             schema="ABAB",
-            success_criteria_ru="7-дневное среднее HRV в фазе вмешательства выше "
-                                 "базового на >= 8% (возврат к baseline).",
+            success_criteria_ru="7-day mean HRV in the intervention phase is >= 8% above "
+                                 "the baseline phase (a return to baseline).",
         )
 
     if kind == "rhr_uptrend":
         return Protocol(
             id="protocol-rhr_uptrend",
-            hypothesis_ru="Снижение вечерней нагрузки и алкоголя вернёт пульс покоя к baseline.",
-            intervention_ru="Уберите вечерний алкоголь и добавьте 2 лёгких дня в неделю.",
+            hypothesis_ru="Cutting evening load and alcohol will bring resting heart rate back to baseline.",
+            intervention_ru="Drop evening alcohol and add 2 easy days per week.",
             metric="rhr",
             baseline_days=7,
             intervention_days=7,
             schema="ABAB",
-            success_criteria_ru="7-дневный пульс покоя в фазе вмешательства в пределах 2 уд/мин от baseline.",
+            success_criteria_ru="7-day resting heart rate in the intervention phase is within 2 bpm of baseline.",
         )
 
     if kind == "recovery_red_streak":
         return Protocol(
             id="protocol-recovery_red_streak",
-            hypothesis_ru="Неделя приоритета восстановлению выводит recovery из красной зоны.",
-            intervention_ru="7 дней приоритет сну и покою: ранний отбой, без "
-                            "интенсивных тренировок и вечернего алкоголя.",
+            hypothesis_ru="A week with recovery as the priority brings recovery out of the red zone.",
+            intervention_ru="7 days with sleep and rest as the priority: early bedtime, no "
+                            "intense training and no evening alcohol.",
             metric="recovery",
             baseline_days=7,
             intervention_days=7,
             schema="AB",
-            success_criteria_ru="Нет красных дней подряд; среднее recovery в фазе B выше, чем в A, на >= 7 пунктов.",
+            success_criteria_ru="No red days in a row; mean recovery in phase B is higher than in A by >= 7 points.",
             safety_note_ru=RED_STREAK_SAFETY_NOTE,
         )
 
     if kind == "strain_recovery_mismatch":
         return Protocol(
             id="protocol-strain_recovery_mismatch",
-            hypothesis_ru="Если привязать интенсивность к утреннему recovery, восстановление улучшится.",
-            intervention_ru="Планируйте интенсивность по утреннему recovery: при recovery < 50 - только лёгкий день.",
+            hypothesis_ru="If intensity is tied to morning recovery, recovery will improve.",
+            intervention_ru="Plan intensity from morning recovery: if recovery < 50, keep it an easy day.",
             metric="recovery",
             baseline_days=7,
             intervention_days=7,
             schema="ABAB",
-            success_criteria_ru="Нет дней с strain >= 14 при recovery < 50; "
-                                 "среднее recovery в фазе B выше A на >= 5 пунктов.",
+            success_criteria_ru="No days with strain >= 14 while recovery < 50; "
+                                 "mean recovery in phase B is above A by >= 5 points.",
         )
 
     if kind == "weekend_pattern":
         return Protocol(
             id="protocol-weekend_pattern",
-            hypothesis_ru="Выравнивание времени отбоя в выходные убирает просадку recovery.",
-            intervention_ru="В выходные держите будний отбой (в пределах 30 минут).",
+            hypothesis_ru="Levelling out weekend bedtimes removes the recovery dip.",
+            intervention_ru="Keep your weekday bedtime on weekends (within 30 minutes).",
             metric="recovery",
             baseline_days=14,
             intervention_days=14,
             schema="ABAB",
-            success_criteria_ru="Разница среднего recovery будни-выходные становится < 5 пунктов.",
+            success_criteria_ru="The weekday-weekend gap in mean recovery becomes < 5 points.",
         )
 
     if kind == "sleep_consistency":
         return Protocol(
             id="protocol-sleep_consistency",
-            hypothesis_ru="Стабильное время сна важнее идеальной длительности и поднимает восстановление.",
-            intervention_ru="Фиксируйте время подъёма (в пределах 30 минут) 14 дней, включая выходные.",
+            hypothesis_ru="A steady sleep schedule matters more than perfect duration and lifts recovery.",
+            intervention_ru="Fix your wake time (within 30 minutes) for 14 days, weekends included.",
             metric="sleep_h",
             baseline_days=14,
             intervention_days=14,
             schema="AB",
-            success_criteria_ru="Стандартное отклонение длительности сна < 1.0ч; "
-                                 "среднее recovery выше на >= 5 пунктов.",
+            success_criteria_ru="Standard deviation of sleep duration < 1.0h; "
+                                 "mean recovery higher by >= 5 points.",
         )
 
     return None
@@ -216,15 +226,15 @@ def from_correlation(corr: Dict[str, Any]) -> Optional[Protocol]:
     direction = meta.get("direction", "positive")
 
     if direction == "positive":
-        intervention = "Сознательно выполняйте '%s' каждый день фазы вмешательства." % name
-        crit = ("Среднее recovery в фазах с '%s' выше, чем без него, на >= %s пунктов."
+        intervention = "Deliberately do '%s' every day of the intervention phase." % name
+        crit = ("Mean recovery in the phases with '%s' is higher than without it by >= %s points."
                 % (name, _round_points(impact)))
-        hypo = "Если регулярно делать '%s', восстановление вырастет." % name
+        hypo = "If '%s' is done regularly, recovery will rise." % name
     else:
-        intervention = "Уберите '%s' на время фазы вмешательства." % name
-        crit = ("Среднее recovery в фазах без '%s' выше, чем с ним, на >= %s пунктов."
+        intervention = "Remove '%s' for the intervention phase." % name
+        crit = ("Mean recovery in the phases without '%s' is higher than with it by >= %s points."
                 % (name, _round_points(impact)))
-        hypo = "Если убрать '%s', восстановление вырастет." % name
+        hypo = "If '%s' is removed, recovery will rise." % name
 
     return Protocol(
         id="protocol-corr-%s" % bid,

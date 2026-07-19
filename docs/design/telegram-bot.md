@@ -15,7 +15,8 @@ The current implementation is in [`openhealth/bot.py`](../../openhealth/bot.py)
 
 - **Photos** → body-zone + visible-attribute tagging → MediaObservation.
 - **Documents (PDF/CSV/JSON)** → routed to the lab-panel parser when the caption
-  or filename hints at labs (`lab`, `blood`, `анализ`…), else the generic
+  or filename hints at labs (`lab`, `blood`, `panel`, plus Cyrillic stems for
+  "lab test" and "blood" — see `LAB_HINTS` in `bot.py`), else the generic
   document parser. Lab values come back flagged in/out of range.
 - **Voice/audio** → stored and enveloped (transcription is a TODO, see below).
 - **Text** → note, with an **immediate red-flag safety response**: a message

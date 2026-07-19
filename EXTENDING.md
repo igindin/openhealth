@@ -1,174 +1,183 @@
-# Расширение дашбордов OpenHealth (BYO design)
+# Extending OpenHealth dashboards (BYO design)
 
-Это агентно-читаемый контракт расширения дашбордов OpenHealth. Прежде чем
-писать новую тему, модуль или скин, прочитай его и `CAPABILITIES.md`: многое
-уже есть, и чаще нужно расширить систему, а не переписать.
+This is the agent-readable extension contract for OpenHealth dashboards. Before
+writing a new theme, module or skin, read it together with `CAPABILITIES.md`:
+a lot already exists, and extending the system usually beats rewriting it.
 
-Граница движок↔скин публичная и работает в обе стороны: можно принести свой
-скин поверх нашего движка, свой движок под наш скин, или взять только дизайн
-(токены + кит графиков) standalone.
+The engine↔skin boundary is public and works in both directions: bring your own
+skin on top of our engine, your own engine under our skin, or take just the
+design (tokens + chart kit) standalone.
 
-## Ментальная модель: движок → скин → тема
+## Mental model: engine → skin → theme
 
-Три слоя, каждый меняется независимо.
+Three layers, each replaceable on its own.
 
-- **Движок** - то, что описывает и питает данные:
-  - реестр `ui/web/assets/registry.json` - единственный источник правды:
-    определения скинов, разделов и метрик (без значений).
-  - данные `ui/web/data.local.json` - реальные значения по id метрики (или по
-    `data_key`), git-ignored. При отсутствии данных берётся `demo` из реестра.
-  - кит графиков `ui/web/assets/oh-charts.js` - чистые SVG-функции, общие для
-    всех скинов.
-  - загрузчик `ui/web/assets/oh-registry.js` - склеивает реестр и данные и
-    отдаёт единый объект `OH`, из которого рендерят скины.
-- **Скин** - раскладка и навигация, которая проходит по реестру и рисует из
-  `OH`. Скин не хранит определений метрик и не хардкодит значения.
-  - `dashboard.html` (V1) - классический тёмный скин с зонами.
-  - `dashboard-v2.html` (V2) - светлый Bento-скин с лонг-скроллом.
-- **Тема** - набор CSS-токенов с общими именами поверх скина. У одного скина
-  может быть несколько тем.
+- **Engine** - everything that describes and feeds the data:
+  - registry `ui/web/assets/registry.json` - the single source of truth:
+    definitions of skins, sections and metrics (no values).
+  - data `ui/web/data.local.json` - real values keyed by metric id (or by
+    `data_key`), git-ignored. With no data present, `demo` from the registry is
+    used instead.
+  - chart kit `ui/web/assets/oh-charts.js` - pure SVG functions shared by all
+    skins.
+  - loader `ui/web/assets/oh-registry.js` - joins registry and data and exposes
+    a single `OH` object that skins render from.
+- **Skin** - the layout and navigation that walks the registry and draws from
+  `OH`. A skin holds no metric definitions and hardcodes no values.
+  - `dashboard.html` (V1) - the classic dark skin with zones.
+  - `dashboard-v2.html` (V2) - the light bento skin with long scroll.
+- **Theme** - a set of CSS tokens with shared names layered on top of a skin.
+  One skin can carry several themes.
   - V1: `dark`, `light`, `brutalist`.
   - V2: `bento`.
-  - Контракт токенов (одинаковые имена во всех темах):
+  - Token contract (identical names across every theme):
     `--bg`, `--card`, `--text`, `--accent-1..n`, `--radius`, `--shadow`,
     `--bg-fx`.
 
-Метрики и разделы = записи реестра. Скины их раскладывают и навигируют. Темы
-перекрашивают. Движок кормит данными. Чтобы что-то добавить, начинай с реестра.
+Metrics and sections are registry entries. Skins lay them out and navigate them.
+Themes recolor them. The engine feeds them data. To add anything, start with the
+registry.
 
-## Что система уже умеет
+## What the system already does
 
-Актуальный индекс скинов, тем, разделов и метрик с провенансом - в
-`CAPABILITIES.md`. Он генерируется из реестра (`python3 ui/web/gen_capabilities.py`),
-поэтому всегда совпадает с тем, что реально есть. Смотри его первым.
+The current index of skins, themes, sections and metrics with provenance lives
+in `CAPABILITIES.md`. It is generated from the registry
+(`python3 ui/web/gen_capabilities.py`), so it always matches what actually
+exists. Read it first.
 
-## Контракт движка: глобальный `OH`
+## Engine contract: the global `OH`
 
-Загрузчик `oh-registry.js` выставляет глобальный объект `OH`. Скины рендерят
-только через эти методы (никакой локальной копии определений или значений):
+The `oh-registry.js` loader exposes a global `OH` object. Skins render through
+these methods only (no local copy of definitions or values):
 
-- `OH.load({base, dataUrl}) -> Promise<OH>` - загрузить реестр (`base` -
-  каталог с `registry.json`, по умолчанию `./assets/`) и реальные данные
-  (`dataUrl`, по умолчанию `data.local.json`); промис резолвится в `OH`.
-- `OH.metric(id)` - определение метрики из реестра (или `null`).
-- `OH.section(id)` - определение раздела из реестра (или `null`).
-- `OH.sectionMetrics(sectionId)` - массив определений метрик раздела по порядку.
-- `OH.skin(id)` - определение скина из реестра (или `null`).
-- `OH.value(id)` - текущее значение метрики: реальное из `data.local.json`,
-  иначе `demo` из реестра.
-- `OH.target(id)` - сопутствующая цель метрики (например, потребность во сне):
-  реальная по `target_key`, иначе `target_default`.
-- `OH.raw(key, fb)` - любое значение из `data.local.json` по ключу (например,
-  `readiness`, `action`), с фолбэком `fb`.
-- `OH.state(id)` - единый контракт состояния блока: `'real'` (есть реальное
-  значение), `'insufficient'` (данные есть, но ниже порога `eligibility`),
-  `'empty'` (источник не подключён / раздел `status:"soon"`), `'demo'` (реальных
-  нет, показан помеченный пример). Скины красят не-real состояния приглушённо и
-  ставят честный чип («мало данных» / «нет данных» / «демо»).
-- `OH.eligibility(id) -> {ok, have, need, label}` - порог пригодности для
-  вычисляемых метрик (например, корреляции требуют N дней). Без `eligibility` в
-  реестре -> `{ok:true}`.
-- `OH.evidence(id)` - доказательность утверждения `{confidence:C1-C5, type,
-  sources}` (личные n=1 паттерны не выше C3). Без `evidence` -> `null`.
-- `OH.manifest()` - паритет-манифест: `sections` → метрики (`id` + `state`).
-  Это эталон того, что любой скин обязан отрисовать из реестра.
+- `OH.load({base, dataUrl}) -> Promise<OH>` - load the registry (`base` is the
+  directory holding `registry.json`, default `./assets/`) and the real data
+  (`dataUrl`, default `data.local.json`); the promise resolves to `OH`.
+- `OH.metric(id)` - the metric definition from the registry (or `null`).
+- `OH.section(id)` - the section definition from the registry (or `null`).
+- `OH.sectionMetrics(sectionId)` - the section's metric definitions, in order.
+- `OH.skin(id)` - the skin definition from the registry (or `null`).
+- `OH.value(id)` - the metric's current value: the real one from
+  `data.local.json`, otherwise `demo` from the registry.
+- `OH.target(id)` - the metric's companion target (sleep need, for example): the
+  real one via `target_key`, otherwise `target_default`.
+- `OH.raw(key, fb)` - any value from `data.local.json` by key (for example
+  `readiness`, `action`), with `fb` as fallback.
+- `OH.state(id)` - the single state contract for a block: `'real'` (a real value
+  exists), `'insufficient'` (data exists but sits below the `eligibility`
+  threshold), `'empty'` (source not connected / section `status:"soon"`),
+  `'demo'` (no real data, a labeled example is shown). Skins render non-real
+  states muted and attach an honest chip ("not enough data" / "no data" /
+  "demo").
+- `OH.eligibility(id) -> {ok, have, need, label}` - the eligibility threshold for
+  computed metrics (correlations need N days, for example). With no `eligibility`
+  in the registry -> `{ok:true}`.
+- `OH.evidence(id)` - how well-supported a claim is: `{confidence:C1-C5, type,
+  sources}` (personal n=1 patterns never exceed C3). With no `evidence` ->
+  `null`.
+- `OH.manifest()` - the parity manifest: `sections` → metrics (`id` + `state`).
+  This is the reference for what any skin is required to render from the
+  registry.
 
-Навигация, персоны и слой знаний (тоже из реестра, оба скина читают):
+Navigation, personas and the knowledge layer (also registry-driven, read by both
+skins):
 
-- `OH.nav.groups()` - `<=9` групп навигации с их подразделами (из
-  `registry.groups`), отфильтрованных по видимости `openhealth.nav.hidden`. Оба
-  скина строят навигацию только из этого.
+- `OH.nav.groups()` - up to 9 navigation groups with their subsections (from
+  `registry.groups`), filtered by `openhealth.nav.hidden` visibility. Both skins
+  build navigation from this and nothing else.
 - `OH.personas()` / `OH.persona(id)` / `OH.setPersona(id)` / `OH.personaActive` -
-  11 аудиторных пресетов (`registry.personas`). `OH.personaGroups()` возвращает
-  группы, переупорядоченные под активную персону; без активной персоны это ровно
-  `OH.nav.groups()` (по умолчанию навигация не меняется - opt-in).
-- `OH.devices()` / `OH.protocolSources()` / `OH.videosFor(metricId)` - слой
-  знаний из `assets/knowledge.json`. `OH.evidenceLabel(level)` -> `{label, cls}`
-  (high/medium/low или C1-C5) для бейджа доказательности.
-- `OH.sectionView(id)` рендерит раздел; для `kind:"knowledge"` -> `OH.knowledgeView`,
-  для `status:"soon"` -> `OH.sectionStub` (честная заглушка «скоро»). Разметку
-  `sectionView` не переписывать: на ней держатся DnD (`[data-metric]`) и
-  провенанс (`.oh-q[data-prov]`).
+  11 audience presets (`registry.personas`). `OH.personaGroups()` returns the
+  groups reordered for the active persona; with no active persona it is exactly
+  `OH.nav.groups()` (navigation stays unchanged by default - opt-in).
+- `OH.devices()` / `OH.protocolSources()` / `OH.videosFor(metricId)` - the
+  knowledge layer from `assets/knowledge.json`. `OH.evidenceLabel(level)` ->
+  `{label, cls}` (high/medium/low or C1-C5) for the evidence badge.
+- `OH.sectionView(id)` renders a section; `kind:"knowledge"` ->
+  `OH.knowledgeView`, `status:"soon"` -> `OH.sectionStub` (an honest "coming
+  soon" placeholder). Do not rewrite the `sectionView` markup: drag-and-drop
+  (`[data-metric]`) and provenance (`.oh-q[data-prov]`) depend on it.
 
-## Контракт кита графиков: глобальный `OHCharts`
+## Chart kit contract: the global `OHCharts`
 
-`oh-charts.js` выставляет глобальный `OHCharts`. Функции чистые: принимают
-данные + опции, возвращают строку SVG. Цвета приходят от вызывающего (токены
-скина), поэтому один и тот же график выглядит одинаково в любом скине/теме.
+`oh-charts.js` exposes a global `OHCharts`. The functions are pure: they take
+data + options and return an SVG string. Colors come from the caller (the skin's
+tokens), so the same chart looks right in any skin or theme.
 
-- `OHCharts.ring(opts) -> string` (SVG) - кольцо recovery/strain с подписью по
-  центру.
-- `OHCharts.sparkline(opts) -> string` (SVG) - сглаженный спарклайн тренда.
+- `OHCharts.ring(opts) -> string` (SVG) - the recovery/strain ring with a
+  centered label.
+- `OHCharts.sparkline(opts) -> string` (SVG) - a smoothed trend sparkline.
 
-Новые типы графиков добавляются сюда и сразу становятся доступны обоим скинам.
+New chart types are added here and become available to both skins immediately.
 
-## Контракт скина
+## Skin contract
 
-Каждый скин рендерит из `OH` и обязан экспортить `window.__renderManifest()` -
-манифест того, что он реально отрисовал (те же `sections` → метрики + state).
-Parity-проверка сравнивает `__renderManifest()` каждого скина с `OH.manifest()`
-(эталоном из реестра); расхождение = падение проверки.
+Every skin renders from `OH` and must export `window.__renderManifest()` - a
+manifest of what it actually drew (the same `sections` → metrics + state). The
+parity check compares each skin's `__renderManifest()` against `OH.manifest()`
+(the registry reference); any divergence fails the check.
 
-## Три уровня расширения
+## Three levels of extension
 
-### Уровень A - своя тема
+### Level A - your own theme
 
-Самый дешёвый путь. Добавить набор токенов с **теми же именами переменных**
-(`--bg`, `--card`, `--text`, `--accent-1..n`, `--radius`, `--shadow`,
-`--bg-fx`) поверх существующего скина (V1 или V2) - получается новая тема. Ни
-реестр, ни рендер трогать не нужно. Тема скин-локальна: theme-for-theme
-паритет между скинами не требуется.
+The cheapest path. Add a token set using **the same variable names** (`--bg`,
+`--card`, `--text`, `--accent-1..n`, `--radius`, `--shadow`, `--bg-fx`) on top of
+an existing skin (V1 or V2) and you have a new theme. Neither the registry nor
+the render code needs touching. A theme is skin-local: theme-for-theme parity
+between skins is not required.
 
-### Уровень B - свой скин
+### Level B - your own skin
 
-Своя раскладка и навигация поверх нашего движка. Реализовать рендер из `OH`
-(`OH.section`, `OH.sectionMetrics`, `OH.value`, `OH.target`, `OH.state` и кит
-графиков `OHCharts`) и экспортить `window.__renderManifest()`. Скин валиден,
-если проходит parity-проверку: его манифест совпадает с `OH.manifest()`.
-Скин не хранит определений метрик и не хардкодит значения.
+Your own layout and navigation on top of our engine. Implement the render from
+`OH` (`OH.section`, `OH.sectionMetrics`, `OH.value`, `OH.target`, `OH.state` and
+the `OHCharts` chart kit) and export `window.__renderManifest()`. A skin is valid
+once it passes the parity check: its manifest matches `OH.manifest()`. A skin
+holds no metric definitions and hardcodes no values.
 
-### Уровень C - граница в обе стороны
+### Level C - the boundary in both directions
 
-- **Свой скин над нашим движком** = уровень B.
-- **Свой движок под наш скин.** Скин зависит только от интерфейса
-  реестр+данные (`OH`). Можно подсунуть свой источник данных, реализующий тот
-  же интерфейс `OH` (`metric`, `section`, `sectionMetrics`, `value`, `target`,
-  `state`, `manifest`, `load`), и переиспользовать наш скин как есть.
-- **Только дизайн.** Взять систему токенов и кит графиков (`oh-charts.js`)
-  standalone, без остального движка.
+- **Your skin over our engine** = level B.
+- **Your engine under our skin.** A skin depends only on the registry+data
+  interface (`OH`). Plug in your own data source implementing that same `OH`
+  interface (`metric`, `section`, `sectionMetrics`, `value`, `target`, `state`,
+  `manifest`, `load`) and reuse our skin as is.
+- **Design only.** Take the token system and the chart kit (`oh-charts.js`)
+  standalone, without the rest of the engine.
 
-## Навигация группами, персоны и знания
+## Grouped navigation, personas and knowledge
 
-- **Группа навигации.** Правь `registry.groups` (id, label_ru, icon, order,
-  section_ids). Держи не больше 9 групп - навбар V2 = Дом + группы + Настройки, и
-  этот лимит проверяет parity-тест. Каждый `section_id` должен ссылаться на
-  существующий раздел. Оба скина подхватят из `OH.nav.groups()` - отдельный код
-  не нужен. Немигрированные разделы показывают честную заглушку «скоро».
-- **Персона (аудиторный пресет).** Правь `registry.personas` по схеме
-  `personas_schema`: id, label_ru, icon, tagline, priority_groups (из groups),
-  focus_metrics (из metrics), devices/sources (из knowledge.json), note,
-  reference. Все ссылки обязаны резолвиться - parity-тест это проверяет. Пикер в
-  настройках обоих скинов наполняется автоматически; выбор переупорядочивает
-  навигацию через `OH.personaGroups` (opt-in, по умолчанию выключено).
-- **Запись слоя знаний.** Правь `assets/knowledge.json` (`devices` /
-  `protocol_sources` / `video_refs`). Каждая запись обязана нести провенанс
-  (`source_url`/`url` + `checked_at`) и честный `evidence_level`
-  (high/medium/low). Видео привязывается к метрике полем `metric_id` (метрика
-  должна существовать). Ничего не выдумывать - только реальные ссылки.
-- **Состояния и честность.** Никогда не показывать выдуманное как реальное:
-  метрика без данных -> `demo`/`empty`, ниже порога -> `insufficient` с условием
-  и действием. Для порога добавь метрике `eligibility` (`need`, `have_key`,
-  `label_ru`). Личные n=1 паттерны в `evidence` не выше C3.
+- **Navigation group.** Edit `registry.groups` (id, label_ru, icon, order,
+  section_ids). Keep it to 9 groups at most - the V2 nav bar is Home + groups +
+  Settings, and the parity test enforces that limit. Every `section_id` must
+  point at an existing section. Both skins pick it up from `OH.nav.groups()` - no
+  extra code needed. Sections not yet migrated show an honest "coming soon"
+  placeholder.
+- **Persona (audience preset).** Edit `registry.personas` following
+  `personas_schema`: id, label_ru, icon, tagline, priority_groups (from groups),
+  focus_metrics (from metrics), devices/sources (from knowledge.json), note,
+  reference. Every reference must resolve - the parity test checks this. The
+  picker in both skins' settings fills itself automatically; picking a persona
+  reorders navigation through `OH.personaGroups` (opt-in, off by default).
+- **Knowledge-layer entry.** Edit `assets/knowledge.json` (`devices` /
+  `protocol_sources` / `video_refs`). Every entry must carry provenance
+  (`source_url`/`url` + `checked_at`) and an honest `evidence_level`
+  (high/medium/low). A video is bound to a metric through `metric_id` (the metric
+  must exist). Invent nothing - real links only.
+- **States and honesty.** Never present something invented as real: a metric
+  without data -> `demo`/`empty`, below threshold -> `insufficient` with the
+  condition and the action to take. To set a threshold, give the metric an
+  `eligibility` block (`need`, `have_key`, `label_ru`). Personal n=1 patterns
+  never exceed C3 in `evidence`.
 
-## Правило паритета
+## The parity rule
 
-Это жёсткое правило. Любая новая метрика или раздел:
+This one is hard. For any new metric or section:
 
-1. добавляется в `ui/web/assets/registry.json` (источник правды);
-2. оба скина (V1 и V2) обязаны её отрисовать - скин-локального контента нет,
-   включая раздел Настройки;
-3. карта возможностей регенерируется: `python3 ui/web/gen_capabilities.py`;
-4. parity-тест должен быть зелёным.
+1. it is added to `ui/web/assets/registry.json` (the source of truth);
+2. both skins (V1 and V2) must render it - there is no skin-local content,
+   Settings included;
+3. the capability map is regenerated: `python3 ui/web/gen_capabilities.py`;
+4. the parity test must be green.
 
-Контентный паритет (разделы, метрики, состояния) обязателен; визуальный нет -
-темы остаются скин-локальными.
+Content parity (sections, metrics, states) is mandatory; visual parity is not -
+themes stay skin-local.

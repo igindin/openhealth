@@ -41,41 +41,51 @@ from typing import Optional
 # Topic → genes/rsIDs map (extend as needed)
 # ---------------------------------------------------------------------------
 
+# The escaped keywords below are Russian search terms (transliterated in the
+# per-topic comments). Research notes are written in both languages, so the
+# matcher keeps both spellings of each concept.
 TOPIC_GENE_MAP = {
     "neuroprotection_cognitive": {
+        # RU stems: kognitiv (cognitive), neuroprotek (neuroprotect), demenc (dementia)
         "keywords": ["neuroprotection", "cognitive", "longevity", "dementia", "alzheimer", "bdnf", "gsk", "lithium",
-                     "когнитив", "нейропротек", "деменц"],
+                     "\u043a\u043e\u0433\u043d\u0438\u0442\u0438\u0432", "\u043d\u0435\u0439\u0440\u043e\u043f\u0440\u043e\u0442\u0435\u043a", "\u0434\u0435\u043c\u0435\u043d\u0446"],
         "genes": ["BDNF", "GSK3B", "APOE", "COMT", "MTHFR", "GAD1", "GAD2", "ABCA7", "TREM2", "CR1"],
         "rsids": ["rs6265", "rs334558", "rs429358", "rs7412", "rs4680", "rs1801133"],
     },
     "omega3_lipids": {
-        "keywords": ["omega", "epa", "dha", "fads", "lipid", "cholesterol", "омега", "липид"],
+        # RU stems: omega (omega), lipid (lipid)
+        "keywords": ["omega", "epa", "dha", "fads", "lipid", "cholesterol", "\u043e\u043c\u0435\u0433\u0430", "\u043b\u0438\u043f\u0438\u0434"],
         "genes": ["FADS1", "FADS2", "APOE", "LPL", "ABCA1", "ABCG8"],
         "rsids": ["rs174547", "rs1535", "rs429358", "rs7412"],
     },
     "vitamin_d": {
-        "keywords": ["vitamin d", "vdr", "25(oh)d", "vitamin-d", "витамин d", "витамин d3"],
+        # RU stems: "vitamin d" / "vitamin d3"
+        "keywords": ["vitamin d", "vdr", "25(oh)d", "vitamin-d", "\u0432\u0438\u0442\u0430\u043c\u0438\u043d d", "\u0432\u0438\u0442\u0430\u043c\u0438\u043d d3"],
         "genes": ["VDR", "GC", "CYP2R1", "CYP24A1", "NADSYN1"],
         "rsids": ["rs1544410", "rs2282679", "rs12785878", "rs10741657"],
     },
     "folate_methylation": {
-        "keywords": ["folate", "methylation", "mthfr", "homocysteine", "фолат", "метилирован", "гомоцистеин"],
+        # RU stems: folat (folate), metilirovan (methylated), gomocistein (homocysteine)
+        "keywords": ["folate", "methylation", "mthfr", "homocysteine", "\u0444\u043e\u043b\u0430\u0442", "\u043c\u0435\u0442\u0438\u043b\u0438\u0440\u043e\u0432\u0430\u043d", "\u0433\u043e\u043c\u043e\u0446\u0438\u0441\u0442\u0435\u0438\u043d"],
         "genes": ["MTHFR", "MTRR", "MTR", "FUT2"],
         "rsids": ["rs1801133", "rs1801131", "rs1801394", "rs1805087"],
     },
     "cardiovascular_lipid": {
-        "keywords": ["lp(a)", "apob", "ldl", "cardiovascular", "atherosclerosis", "lipoprotein", "сердечно",
-                     "лпа", "лпнп"],
+        # RU stems: serdechno (cardio-), lpa (Lp(a)), lpnp (LDL)
+        "keywords": ["lp(a)", "apob", "ldl", "cardiovascular", "atherosclerosis", "lipoprotein", "\u0441\u0435\u0440\u0434\u0435\u0447\u043d\u043e",
+                     "\u043b\u043f\u0430", "\u043b\u043f\u043d\u043f"],
         "genes": ["APOE", "LPA", "PCSK9", "LDLR", "ABCG8", "ABCA1", "CETP"],
         "rsids": ["rs429358", "rs7412", "rs10455872", "rs3798220"],
     },
     "iron_metabolism": {
-        "keywords": ["iron", "ferritin", "anemia", "ida", "hfe", "железо", "ферритин", "анем"],
+        # RU stems: zhelezo (iron), ferritin (ferritin), anem (anemia)
+        "keywords": ["iron", "ferritin", "anemia", "ida", "hfe", "\u0436\u0435\u043b\u0435\u0437\u043e", "\u0444\u0435\u0440\u0440\u0438\u0442\u0438\u043d", "\u0430\u043d\u0435\u043c"],
         "genes": ["HFE", "TMPRSS6", "TFR2", "HAMP", "HJV"],
         "rsids": ["rs1799945", "rs1800562", "rs855791"],
     },
     "pharmacogenomics_cyp": {
-        "keywords": ["pharmacogenomic", "cyp", "drug metabolism", "фарм"],
+        # RU stem: farm (pharma-)
+        "keywords": ["pharmacogenomic", "cyp", "drug metabolism", "\u0444\u0430\u0440\u043c"],
         "genes": ["CYP2D6", "CYP3A4", "CYP3A5", "CYP2C9", "CYP2C19", "CYP1A2"],
         "rsids": [],
     },

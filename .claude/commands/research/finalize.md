@@ -59,7 +59,7 @@ The script performs ALL steps automatically:
 3. NotebookLM sync — creates notebook, adds sources (.md + .csv), generates + downloads infographic PNG **INTO research_dir** (NOT project root!)
 4. Telegram notification — infographic as photo + TL;DR caption + `/view/` buttons + NotebookLM link
 
-**ПРАВИЛО РАЗМЕЩЕНИЯ АРТЕФАКТОВ:** Все PNG/infographic/audio артефакты ОБЯЗАНЫ сохраняться в папку исследования (`research_dir/`), а НЕ в корень проекта. Имя: `infographic_[slug].png`.
+**ARTIFACT PLACEMENT RULE:** All PNG/infographic/audio artifacts MUST be saved into the research directory (`research_dir/`), NOT into the project root. Filename: `infographic_[slug].png`.
 5. Opens synthesis in styled viewer (Anthropic brand: Poppins + Lora, color-coded sections)
 
 **Flags:**

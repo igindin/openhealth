@@ -17,7 +17,7 @@ No terminal, no install:
 
 The dashboard opens with demo data. Your own data is one command away: `bash setup.sh`.
 
-**Beginner guide, step by step:** [docs/START-HERE.md](./docs/START-HERE.md) (RU) · [docs/START-HERE.en.md](./docs/START-HERE.en.md) (EN)
+**Beginner guide, step by step:** [docs/START-HERE.md](./docs/START-HERE.md)
 
 If OpenHealth ends up useful to you, starring the repo is the single best way to help others find it. ⭐
 
@@ -232,7 +232,7 @@ How to start:
    the same loop: journal → recovery → correlations → action.
 
 All commands, tools and quick recipes are in [docs/COMMANDS.md](./docs/COMMANDS.md).
-A step-by-step beginner guide is in [docs/START-HERE.en.md](./docs/START-HERE.en.md).
+A step-by-step beginner guide is in [docs/START-HERE.md](./docs/START-HERE.md).
 
 Remember: this is a self-tracking tool, **not medical advice or diagnosis.**
 Every finding is a hypothesis with a confidence grade (C1–C5), not a conclusion.

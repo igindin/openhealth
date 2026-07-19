@@ -34,8 +34,10 @@ from .models import BodyZone
 from .storage import ensure_repo_structure, now_utc
 
 # Caption/filename hints that route an uploaded document to the lab-panel parser
-# rather than the generic document parser.
-LAB_HINTS = ("lab", "blood", "panel", "анализ", "кров", "biomarker", "result")
+# rather than the generic document parser. The two escaped entries are Russian
+# word stems, kept so that Russian-language captions and filenames still reach
+# the lab parser: "analiz" (lab test / analysis) and "krov" (stem of "blood").
+LAB_HINTS = ("lab", "blood", "panel", "\u0430\u043d\u0430\u043b\u0438\u0437", "\u043a\u0440\u043e\u0432", "biomarker", "result")
 
 logger = logging.getLogger(__name__)
 

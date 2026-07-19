@@ -38,6 +38,11 @@ def _correlation(bid, impact, direction, grade="C3", title=None):
     }
 
 
+# Behavior names in ``openhealth/data/journal_behaviors.json`` are Russian, so a
+# correlation title arrives in Cyrillic. Kept as an escape to hold this source
+# ASCII while still proving the Russian trigger stems fire.
+RU_ALCOHOL = "\u0430\u043b\u043a\u043e\u0433\u043e\u043b\u044c"  # "alcohol"
+
 ALL_KINDS = [
     "sleep_debt", "hrv_downtrend", "rhr_uptrend", "recovery_red_streak",
     "strain_recovery_mismatch", "weekend_pattern", "sleep_consistency",
@@ -64,25 +69,25 @@ class FromInsightTests(unittest.TestCase):
 
     def test_hrv_protocol_points_at_correlation_trigger(self):
         corr = [_correlation("substances.alcohol", -8.0, "negative", grade="C3",
-                              title="Impact: алкоголь")]
+                              title="Impact: %s" % RU_ALCOHOL)]
         p = protocols.from_insight(_insight("hrv_downtrend"), correlations=corr)
-        self.assertIn("алкоголь", p.intervention_ru)
+        self.assertIn(RU_ALCOHOL, p.intervention_ru)
 
     def test_hrv_protocol_generic_without_trigger(self):
         p = protocols.from_insight(_insight("hrv_downtrend"), correlations=[])
-        self.assertIn("восстановительн", p.intervention_ru)
+        self.assertIn("recovery-focused", p.intervention_ru)
 
 
 class FromCorrelationTests(unittest.TestCase):
     def test_positive_direction(self):
         p = protocols.from_correlation(_correlation("recovery_activities.meditation", 6.0, "positive"))
         self.assertEqual(p.schema, "ABAB")
-        self.assertIn("выполняйте", p.intervention_ru)
+        self.assertIn("every day of the intervention phase", p.intervention_ru)
         self.assertIn("6", p.success_criteria_ru)
 
     def test_negative_direction(self):
         p = protocols.from_correlation(_correlation("substances.alcohol", 9.0, "negative"))
-        self.assertIn("Уберите", p.intervention_ru)
+        self.assertIn("Remove", p.intervention_ru)
 
     def test_success_criterion_floored_at_three(self):
         p = protocols.from_correlation(_correlation("x.y", 1.0, "positive"))

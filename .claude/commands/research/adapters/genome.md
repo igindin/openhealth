@@ -26,9 +26,9 @@ For users who have NOT done raw WGS but have processed reports stored as markdow
 Example source file format (Tonya's `genetics_profile.md`):
 
 ```markdown
-- APOE: rs429358 T/T; rs7412 C/C → ε3/ε3 (нейтральный риск‑фон по APOE).
-- FADS1 rs174547 T/T → сниженная эффективность эндогенной конверсии ALA→EPA/DHA.
-- MTHFR C677T rs1801133 T/T (гомозигота)
+- APOE: rs429358 T/T; rs7412 C/C → ε3/ε3 (neutral APOE risk background).
+- FADS1 rs174547 T/T → reduced efficiency of endogenous ALA→EPA/DHA conversion.
+- MTHFR C677T rs1801133 T/T (homozygous)
 ```
 
 The tool extracts: `rs429358 → APOE T/T`, `rs7412 → APOE C/C`, `rs174547 → FADS1 T/T`, `rs1801133 → MTHFR T/T`.
@@ -144,8 +144,8 @@ Generated in the research folder. SCOUTs read it as additional context.
 ## Source-File Sections to Cite
 
 When SCOUT writes about MTHFR / APOE / etc., cite the specific source-file section:
-- MTHFR T/T → genetics_profile.md §"Фолат/метилирование"
-- APOE ε3/ε3 → genetics_profile.md §"Липиды"
+- MTHFR T/T → genetics_profile.md §"Folate/methylation"
+- APOE ε3/ε3 → genetics_profile.md §"Lipids"
 
 This lets the user verify against original source.
 ```

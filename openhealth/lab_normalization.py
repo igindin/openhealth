@@ -25,58 +25,67 @@ from . import reference_ranges
 
 # --- unit aliases ----------------------------------------------------------
 #
-# Map many spellings of a unit (lowercased, ascii + cyrillic) to a canonical
+# Map many spellings of a unit (lowercased, Latin + Cyrillic) to a canonical
 # UCUM-ish token. Both the conventional and SI unit of every marker in
 # reference_ranges must resolve here so a report stated either way normalizes.
+#
+# CYRILLIC KEYS ARE INPUT DATA, NOT UNTRANSLATED TEXT. Russian-language lab
+# reports print unit names in Cyrillic, so those exact byte sequences are what
+# arrives from a PDF/OCR extraction. They are written below as \uXXXX escapes
+# (with an English gloss) to keep this source ASCII while still matching real
+# reports. Removing them would break parsing of Russian lab PDFs.
 
 _UNIT_ALIASES: Dict[str, str] = {
-    # mass / volume concentrations
+    # -- mass / volume concentrations, Latin spellings
     "mg/dl": "mg/dL",
     "mg/dl.": "mg/dL",
-    "мг/дл": "mg/dL",
     "g/dl": "g/dL",
-    "г/дл": "g/dL",
     "g/l": "g/L",
-    "г/л": "g/L",
-    # molar concentrations
+    # -- molar concentrations, Latin spellings
     "mmol/l": "mmol/L",
-    "ммоль/л": "mmol/L",
     "umol/l": "umol/L",
     "µmol/l": "umol/L",
-    "мкмоль/л": "umol/L",
     "nmol/l": "nmol/L",
-    "нмоль/л": "nmol/L",
     "pmol/l": "pmol/L",
-    "пмоль/л": "pmol/L",
-    # small mass per volume
+    # -- small mass per volume, Latin spellings
     "ng/ml": "ng/mL",
-    "нг/мл": "ng/mL",
     "ug/l": "ug/L",
     "µg/l": "ug/L",
-    "мкг/л": "ug/L",
     "pg/ml": "pg/mL",
-    "пг/мл": "pg/mL",
-    # cell counts
+    # -- cell counts, Latin spellings
     "10^9/l": "10^9/L",
     "10*9/l": "10^9/L",
     "x10^9/l": "10^9/L",
     "10e9/l": "10^9/L",
-    "10^9/л": "10^9/L",
-    # endocrine / misc
+    # -- endocrine / misc, Latin spellings
     "miu/l": "mIU/L",
-    "мме/л": "mIU/L",
     "mg/l": "mg/L",
-    "мг/л": "mg/L",
     "%": "%",
     "percent": "%",
+
+    # -- Cyrillic spellings as printed on Russian lab reports (see note above).
+    #    Each key is the Cyrillic rendering of the unit named in its comment.
+    "\u043c\u0433/\u0434\u043b": "mg/dL",                     # Cyrillic "mg/dL"
+    "\u0433/\u0434\u043b": "g/dL",                            # Cyrillic "g/dL"
+    "\u0433/\u043b": "g/L",                                   # Cyrillic "g/L"
+    "\u043c\u043c\u043e\u043b\u044c/\u043b": "mmol/L",        # Cyrillic "mmol/L"
+    "\u043c\u043a\u043c\u043e\u043b\u044c/\u043b": "umol/L",  # Cyrillic "umol/L"
+    "\u043d\u043c\u043e\u043b\u044c/\u043b": "nmol/L",        # Cyrillic "nmol/L"
+    "\u043f\u043c\u043e\u043b\u044c/\u043b": "pmol/L",        # Cyrillic "pmol/L"
+    "\u043d\u0433/\u043c\u043b": "ng/mL",                     # Cyrillic "ng/mL"
+    "\u043c\u043a\u0433/\u043b": "ug/L",                      # Cyrillic "ug/L"
+    "\u043f\u0433/\u043c\u043b": "pg/mL",                     # Cyrillic "pg/mL"
+    "10^9/\u043b": "10^9/L",                                  # Cyrillic "10^9/L"
+    "\u043c\u043c\u0435/\u043b": "mIU/L",                     # Cyrillic "mIU/L"
+    "\u043c\u0433/\u043b": "mg/L",                            # Cyrillic "mg/L"
 }
 
 
 def canonical_unit(unit: Optional[str]) -> Optional[str]:
     """Resolve a unit string as printed on a report to a canonical token.
 
-    Case- and whitespace-insensitive; understands a few common cyrillic and
-    ascii spellings. Returns ``None`` when the unit is empty, and the cleaned
+    Case- and whitespace-insensitive; understands a few common Cyrillic and
+    Latin spellings. Returns ``None`` when the unit is empty, and the cleaned
     original (unchanged token) when it is non-empty but unrecognised — so the
     caller can decide, never this function.
     """

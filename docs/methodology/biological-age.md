@@ -1,43 +1,43 @@
-# Биологический возраст (фитнес-возраст по VO2max)
-> algo_version: n/a (UI-расчёт в dashboard.html) · источник данных: движок (VO2max) + UI-таблица норм · редактируемость: только описание
+# Biological age (fitness age from VO2max)
+> algo_version: n/a (computed in the UI, dashboard.html) · data source: engine (VO2max) + UI norms table · editability: description only
 
-## Что это
+## What this is
 
-Карточка «биологический возраст» на дашборде. Честно: это **не клинический биовозраст** (не PhenoAge, не метилирование, не клок по биомаркерам крови). Это **фитнес-возраст**: «на какой средний возраст выглядит твой VO2max» по таблице возрастных норм. C2, оценка по одному показателю кардиофитнеса. Без VO2max в данных карточка не показывается вовсе.
+The "biological age" card on the dashboard. To be straight about it: this is **not a clinical biological age** (not PhenoAge, not methylation, not a clock built on blood biomarkers). It is a **fitness age**: "what average age does your VO2max look like" according to a table of age norms. C2, an estimate from a single cardio fitness measure. Without VO2max in the data the card is not shown at all.
 
-## Формула / алгоритм
+## Formula / algorithm
 
-Таблица `VO2_AGE_NORMS` — средний VO2max мужчин по возрасту (середины декад, мл/кг/мин), категория «average» сводных таблиц кардиореспираторного фитнеса:
+The `VO2_AGE_NORMS` table holds mean VO2max for men by age (decade midpoints, mL/kg/min), the "average" category from summary tables of cardiorespiratory fitness:
 
-| возраст | 25 | 35 | 45 | 55 | 65 | 75 |
+| age | 25 | 35 | 45 | 55 | 65 | 75 |
 |---|---|---|---|---|---|---|
 | VO2max | 44 | 42 | 39 | 36 | 33 | 30 |
 
 `fitnessAgeFromVo2max(v)`:
 
-1. **Внутри таблицы** — линейная интерполяция между соседними точками: находим декады, между чьими нормами лежит v, и пропорционально вычисляем возраст.
-2. **Выше первой точки (v >= 44)** — экстраполяция наклоном первого сегмента (лет на единицу VO2max), **с капом снизу: результат не меньше 22 лет** (`Math.max(22, ...)`; в UI показывается как «<= 22»). Кап — потому что экстраполировать «биологически 15 лет» из высокого VO2max бессмысленно.
-3. **Ниже последней точки (v < 30)** — экстраполяция вниз с шагом 0.3 единицы VO2max на год, кап сверху 85 лет.
+1. **Inside the table** — linear interpolation between adjacent points: find the decades whose norms bracket v and compute the age proportionally.
+2. **Above the first point (v >= 44)** — extrapolation along the slope of the first segment (years per unit of VO2max), **with a lower cap: the result is never below 22 years** (`Math.max(22, ...)`; shown in the UI as "<= 22"). The cap exists because extrapolating "biologically 15 years old" from a high VO2max is meaningless.
+3. **Below the last point (v < 30)** — extrapolation downward at 0.3 units of VO2max per year, capped at 85 years.
 
-Чипы рядом — направление вклада (VO2max, RHR, стабильность сна), без точных лет: стрелка вниз = «омолаживает», вверх = «старит».
+The chips next to it show the direction of each contribution (VO2max, RHR, sleep stability) without exact years: an arrow down means "makes you younger", up means "makes you older".
 
-## Параметры (константы кода)
+## Parameters (code constants)
 
-| параметр | значение | где в коде | зачем |
+| parameter | value | where in code | why |
 |---|---|---|---|
-| таблица норм | [[25,44],[35,42],[45,39],[55,36],[65,33],[75,30]] | `ui/web/dashboard.html: VO2_AGE_NORMS` | средние мужские нормы по декадам |
-| кап снизу | 22 | `ui/web/dashboard.html: fitnessAgeFromVo2max` | моложе 22 не показываем (экстраполяция теряет смысл) |
-| кап сверху | 85 | `ui/web/dashboard.html: fitnessAgeFromVo2max` | симметричная защита снизу таблицы |
-| наклон ниже таблицы | 0.3 ед./год | `ui/web/dashboard.html: fitnessAgeFromVo2max` | грубая экстраполяция за пределами норм |
+| norms table | [[25,44],[35,42],[45,39],[55,36],[65,33],[75,30]] | `ui/web/dashboard.html: VO2_AGE_NORMS` | mean male norms by decade |
+| lower cap | 22 | `ui/web/dashboard.html: fitnessAgeFromVo2max` | we do not show anything younger than 22 (extrapolation stops making sense) |
+| upper cap | 85 | `ui/web/dashboard.html: fitnessAgeFromVo2max` | the symmetric guard at the bottom of the table |
+| slope below the table | 0.3 units/year | `ui/web/dashboard.html: fitnessAgeFromVo2max` | a rough extrapolation beyond the norms |
 
-## Источники и доверие
+## Sources and confidence
 
-- VO2max — оценка Uth (см. vo2max.md), сам уже C2; фитнес-возраст — производная от оценки, тоже C2 (грейд показан прямо в карточке).
-- Таблица — популяционные средние мужчин; прямой источник — сводные таблицы кардиореспираторного фитнеса (ACSM-style).
+- VO2max is the Uth estimate (see vo2max.md), itself already C2; fitness age is derived from that estimate, so it is C2 as well (the grade is shown right on the card).
+- The table holds population means for men; the direct source is ACSM-style summary tables of cardiorespiratory fitness.
 
-## Известные ограничения
+## Known limitations
 
-- **Это не клинический биологический возраст** — один показатель, без крови, без эпигенетики; подпись в UI прямо говорит «оценка по кардиофитнесу, не клиническая».
-- Таблица мужская; для женщин значения сдвинуты — текущий расчёт даст систематическую ошибку.
-- Вся цепочка стоит на оценочном VO2max: ошибка входов (HRmax по возрасту) тянется в «возраст».
-- Логика живёт в UI, а не в движке: правка норм — это правка dashboard.html (и этого файла).
+- **This is not a clinical biological age** — one measure, no blood, no epigenetics; the caption in the UI says plainly "an estimate from cardio fitness, not clinical".
+- The table is for men; values for women are shifted, so the current calculation will carry a systematic error.
+- The whole chain rests on an estimated VO2max: an input error (HRmax from age) propagates into the "age".
+- The logic lives in the UI rather than the engine: editing the norms means editing dashboard.html (and this file).

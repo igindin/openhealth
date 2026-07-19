@@ -24,7 +24,7 @@ def _envelope(**over):
         "submitted_at": "2026-07-07T08:15:00+00:00",
         "channel": "telegram",
         "author": "ilya",
-        "text": "лёг в 23:10, чувствую себя отдохнувшим",
+        "text": "went to bed at 23:10, feeling well rested",
         "tags": ["sleep", "mood"],
     }
     env.update(over)
@@ -66,7 +66,7 @@ def test_intake_indexes_envelope_as_record(tmp_path):
     assert row["evidence_class"] == "personal"
     import json
     payload = json.loads(row["payload_json"])
-    assert "отдохнувшим" in payload["summary"]
+    assert "well rested" in payload["summary"]
     assert "telegram" in payload["tags"] and "intake" in payload["tags"]
     assert payload["metadata"]["channel"] == "telegram"
 

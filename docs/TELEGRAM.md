@@ -16,8 +16,8 @@ Pure stdlib (repo core rule): `urllib.request` long polling, `json`,
 - **The token never lives in the repo.** Environment variable or a dot-file in
   your home directory.
 - **An allowlist of chat ids is mandatory.** The bot refuses to start without
-  one. Anyone not on the list gets «Доступ не настроен» and *nothing* they
-  send is ever stored.
+  one. Anyone not on the list gets an "access is not configured" reply and
+  *nothing* they send is ever stored.
 - **Logs carry no message bodies** — only chat ids, message kinds and
   submission ids, on stderr.
 - Keep your bot private: don't publish its @username, and remember that

@@ -20,15 +20,28 @@ class NormalizeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             vaccination.normalize_item({"name": "  "})
         with self.assertRaises(ValueError):
-            vaccination.normalize_item({"name": "Грипп", "date": "06.10.2025"})
+            vaccination.normalize_item({"name": "Influenza", "date": "06.10.2025"})
         with self.assertRaises(ValueError):
-            vaccination.normalize_item({"name": "Грипп", "next_due": "späterm"})
+            vaccination.normalize_item({"name": "Influenza", "next_due": "späterm"})
         with self.assertRaises(ValueError):
-            vaccination.normalize_item({"name": "Грипп", "dose_number": 0})
+            vaccination.normalize_item({"name": "Influenza", "dose_number": 0})
 
     def test_undated_record_stays_undated(self):
-        item = vaccination.normalize_item({"name": "Корь (детство)"})
+        item = vaccination.normalize_item({"name": "Measles (childhood)"})
         self.assertIsNone(item["date"])  # no invented dates
+
+
+class SlugTests(unittest.TestCase):
+    def test_cyrillic_name_keeps_letters_in_slug(self):
+        # The escaped fixtures are Russian for "influenza" and "measles
+        # (childhood)". storage.slugify would drop the Cyrillic letters
+        # entirely; vaccination._slug must keep them so Russian-named records
+        # still get distinct, readable ids.
+        self.assertEqual(vaccination._slug("\u0413\u0440\u0438\u043f\u043f"), "\u0433\u0440\u0438\u043f\u043f")
+        self.assertEqual(vaccination._slug("\u041a\u043e\u0440\u044c (\u0434\u0435\u0442\u0441\u0442\u0432\u043e)"), "\u043a\u043e\u0440\u044c-\u0434\u0435\u0442\u0441\u0442\u0432\u043e")
+
+    def test_slug_falls_back_for_unslugabble_name(self):
+        self.assertEqual(vaccination._slug("+++"), "item")
 
 
 class ComputeTests(unittest.TestCase):
@@ -37,7 +50,7 @@ class ComputeTests(unittest.TestCase):
 
     def test_ledger_observations(self):
         result = self._compute([
-            {"name": "Грипп (сезонный)", "date": "2025-10-06", "dose_number": 1, "next_due": "2026-10-01"},
+            {"name": "Influenza (seasonal)", "date": "2025-10-06", "dose_number": 1, "next_due": "2026-10-01"},
             {"name": "Tick-borne encephalitis", "date": "2024-05-01", "dose_number": 2},
         ])
         self.assertEqual(len(result.metrics), 2)
@@ -50,7 +63,7 @@ class ComputeTests(unittest.TestCase):
 
     def test_overdue_next_due_raises_attention_flag(self):
         result = self._compute([
-            {"name": "АДС-М (столбняк/дифтерия)", "date": "2015-03-01", "next_due": "2025-03-01"},
+            {"name": "Td (tetanus/diphtheria)", "date": "2015-03-01", "next_due": "2025-03-01"},
         ])
         flags = [i for i in result.insights if i["record_type"] == "InsightHypothesis"]
         self.assertEqual(len(flags), 1)
@@ -64,18 +77,18 @@ class ComputeTests(unittest.TestCase):
 
     def test_future_next_due_is_upcoming_not_flagged(self):
         result = self._compute([
-            {"name": "Грипп", "date": "2025-10-06", "next_due": "2026-10-01"},
+            {"name": "Influenza", "date": "2025-10-06", "next_due": "2026-10-01"},
         ])
         flags = [i for i in result.insights if i["record_type"] == "InsightHypothesis"]
         self.assertEqual(flags, [])
         snapshot = next(i for i in result.insights if i.get("note_kind") == "vaccination_snapshot")
-        self.assertEqual(snapshot["metadata"]["upcoming"], [{"name": "Грипп", "next_due": "2026-10-01"}])
+        self.assertEqual(snapshot["metadata"]["upcoming"], [{"name": "Influenza", "next_due": "2026-10-01"}])
         self.assertEqual(snapshot["metadata"]["overdue"], [])
 
     def test_snapshot_counts_and_notes(self):
         result = self._compute([
-            {"name": "Грипп", "date": "2024-10-01", "next_due": "2025-10-01"},
-            {"name": "Корь"},
+            {"name": "Influenza", "date": "2024-10-01", "next_due": "2025-10-01"},
+            {"name": "Measles"},
         ])
         snapshot = next(i for i in result.insights if i.get("note_kind") == "vaccination_snapshot")
         self.assertEqual(snapshot["metadata"]["total"], 2)
@@ -93,7 +106,7 @@ class PersistTests(unittest.TestCase):
             db = Path(tmp) / "index.db"
             index.init_db(db)
             result = modules.get_module("vaccination").compute({
-                "items": [{"name": "Грипп", "date": "2024-10-01", "next_due": "2025-10-01"}],
+                "items": [{"name": "Influenza", "date": "2024-10-01", "next_due": "2025-10-01"}],
                 "today": "2026-06-10",
             })
             written = vaccination.persist(result, db)

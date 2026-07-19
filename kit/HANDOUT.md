@@ -25,7 +25,7 @@ and recovery scoring.
   imports, domain modules, recovery scoring, and the live dashboard.
 
 Full command map: [docs/COMMANDS.md](../docs/COMMANDS.md). Step-by-step beginner
-guide: [docs/START-HERE.en.md](../docs/START-HERE.en.md).
+guide: [docs/START-HERE.md](../docs/START-HERE.md).
 
 ## 15-minute start
 

@@ -363,7 +363,7 @@ Single most important unanswered question for this market/niche.
 
 ---
 
-## Связанные файлы
+## Related files
 - [links to related research in vault]
 ```
 

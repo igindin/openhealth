@@ -1,6 +1,6 @@
 ---
 name: openhealth-upstream
-description: Safely port useful code from a contributor's private health-tracking repo into the public OpenHealth project as a pull request, stripping all personal data along the way. Use when the user says "port to openhealth", "upstream from my health-os", "contribute from my personal repo", "extract from my personal health repo", "перенести в openhealth", "вытащить из личного health-os", or otherwise asks to move code from a private health workspace into OpenHealth. This skill is safety-critical — it must run BEFORE any file is copied, not after.
+description: Safely port useful code from a contributor's private health-tracking repo into the public OpenHealth project as a pull request, stripping all personal data along the way. Use when the user says "port to openhealth", "upstream from my health-os", "contribute from my personal repo", "extract from my personal health repo", "move this into openhealth", "pull this out of my personal health-os", or otherwise asks to move code from a private health workspace into OpenHealth. This skill is safety-critical — it must run BEFORE any file is copied, not after.
 version: 0.1.0
 ---
 

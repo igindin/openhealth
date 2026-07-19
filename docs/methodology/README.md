@@ -1,40 +1,40 @@
-# Методологии расчёта
+# Calculation methodology
 
-По одному файлу на параметр дашборда. Каждый файл написан **из реального кода** (точные константы и пути) и имеет жёсткий формат, чтобы UI мог его парсить: заголовок `#`, строка `> algo_version: ... · источник данных: ... · редактируемость: ...`, секции `## Что это`, `## Формула / алгоритм`, `## Параметры (константы кода)` (таблица `параметр | значение | где в коде | зачем`), `## Источники и доверие`, `## Известные ограничения`.
+One file per dashboard parameter. Every file is written **from the actual code** (exact constants and paths) and follows a strict format so the UI can parse it: a `#` title, a `> algo_version: ... · data source: ... · editability: ...` line, then the sections `## What this is`, `## Formula / algorithm`, `## Parameters (code constants)` (a `parameter | value | where in code | why` table), `## Sources and confidence`, `## Known limitations`.
 
-## Индекс
+## Index
 
-| файл | параметр | версия алгоритма | основной модуль |
+| file | parameter | algorithm version | main module |
 |---|---|---|---|
 | [recovery.md](recovery.md) | recovery score 0-100 | recovery_score@v3 | `openhealth/modules/recovery.py` |
-| [correlations.md](correlations.md) | влияние привычек («+N пунктов») | n/a | `openhealth/modules/correlations.py` |
+| [correlations.md](correlations.md) | habit impact ("+N points") | n/a | `openhealth/modules/correlations.py` |
 | [hrv.md](hrv.md) | rMSSD, readiness, baseline/SWC | n/a (readiness v2) | `openhealth/modules/pulse.py` |
-| [rhr.md](rhr.md) | пульс покоя (компонента + тренд) | recovery_score@v3 | `openhealth/modules/recovery.py`, `openhealth/insights.py` |
-| [strain.md](strain.md) | нагрузка 0-21 (passthrough) | strain@v1 | `openhealth/modules/recovery.py` |
-| [sleep.md](sleep.md) | долг сна, need, маркеры сна | sleep_debt@v2 | `openhealth/modules/recovery.py`, `openhealth/modules/sleep.py` |
-| [vo2max.md](vo2max.md) | VO2max (оценка Uth) | vo2max@v1 | `openhealth/modules/vo2max.py` |
-| [circadian.md](circadian.md) | фазы дня, кривая энергии | two-process-rise@v1 | `openhealth/circadian.py` |
-| [insights.md](insights.md) | 7 детекторов паттернов | n/a | `openhealth/insights.py` |
-| [protocols.md](protocols.md) | n-of-1 протоколы (ABAB/AB) | n/a | `openhealth/protocols.py` |
-| [biological-age.md](biological-age.md) | фитнес-возраст по VO2max | n/a (UI) | `ui/web/dashboard.html` |
-| [day-load.md](day-load.md) | загрузка дня из календаря | n/a | `openhealth/connectors/ics_calendar.py` |
-| [weather-flags.md](weather-flags.md) | погодные флаги | n/a | `openhealth/connectors/weather.py` |
-| [data-quality.md](data-quality.md) | балл качества данных | n/a | `openhealth/data_quality.py` |
+| [rhr.md](rhr.md) | resting heart rate (component + trend) | recovery_score@v3 | `openhealth/modules/recovery.py`, `openhealth/insights.py` |
+| [strain.md](strain.md) | strain 0-21 (passthrough) | strain@v1 | `openhealth/modules/recovery.py` |
+| [sleep.md](sleep.md) | sleep debt, need, sleep markers | sleep_debt@v2 | `openhealth/modules/recovery.py`, `openhealth/modules/sleep.py` |
+| [vo2max.md](vo2max.md) | VO2max (Uth estimate) | vo2max@v1 | `openhealth/modules/vo2max.py` |
+| [circadian.md](circadian.md) | day phases, energy curve | two-process-rise@v1 | `openhealth/circadian.py` |
+| [insights.md](insights.md) | 7 pattern detectors | n/a | `openhealth/insights.py` |
+| [protocols.md](protocols.md) | n-of-1 protocols (ABAB/AB) | n/a | `openhealth/protocols.py` |
+| [biological-age.md](biological-age.md) | fitness age from VO2max | n/a (UI) | `ui/web/dashboard.html` |
+| [day-load.md](day-load.md) | day load from the calendar | n/a | `openhealth/connectors/ics_calendar.py` |
+| [weather-flags.md](weather-flags.md) | weather flags | n/a | `openhealth/connectors/weather.py` |
+| [data-quality.md](data-quality.md) | data quality score | n/a | `openhealth/data_quality.py` |
 
-Смежное: [evidence-and-trust.md](evidence-and-trust.md) — канон уверенности C1-C5, на который ссылаются все файлы выше.
+Related: [evidence-and-trust.md](evidence-and-trust.md) — the C1-C5 confidence canon that every file above refers to.
 
-## Правило синхронизации (anti-drift)
+## Sync rule (anti-drift)
 
-**Правишь параметр в коде → бампни `algo_version` модуля (если она есть) и обнови соответствующий md в этой папке.** Старые записи остаются помечены версией, которая их произвела, — это и есть смысл версионирования.
+**Change a parameter in code → bump the module's `algo_version` (if it has one) and update the matching md in this folder.** Older records stay stamped with the version that produced them; that is the whole point of versioning.
 
-Дрейф ловится тестом `tests/test_methodology_docs.py`: он парсит значения из таблиц «Параметры (константы кода)» и сверяет их с живым импортом модулей (веса recovery, окно baseline 28, коэффициент Uth 15.3, порог давления 8 гПа, вес busy-часов 70). Разъехались md и код — тест красный.
+Drift is caught by `tests/test_methodology_docs.py`: it parses the values out of the "Parameters (code constants)" tables and compares them against a live import of the modules (recovery weights, the 28-day baseline window, the Uth coefficient 15.3, the 8 hPa pressure threshold, the busy-hours weight of 70). If the md and the code diverge, the test goes red.
 
-## Как это редактировать
+## How to edit this
 
-Эти файлы — обычный markdown в локальном репозитории, источник правды для будущей страницы «Методологии» в дашборде. Редактирование:
+These files are plain markdown in a local repository, and they are the source of truth for the future "Methodology" page in the dashboard. Editing:
 
-- руками — любой правкой файла (формат секций сохранять, иначе UI-парсер и тест сломаются);
-- через агента — запрос вида «поменяй порог X» означает **двойную правку**: константа в коде + строка в таблице md (и бамп версии, если модуль версионирован). Агент обязан делать обе;
-- runtime-оверрайды — реестр `openhealth/params.py` (`~/.openhealth/params.json`): пользователь меняет значение в пределах допустимого диапазона без правки кода; записи, посчитанные с оверрайдом, штампуются `algo_version+custom` и несут `metadata.params_overrides`. Константы в коде остаются каноническими дефолтами — именно их сверяет anti-drift тест.
+- by hand — any edit to the file (keep the section format, otherwise the UI parser and the test break);
+- through an agent — a request like "change threshold X" means a **double edit**: the constant in the code plus the row in the md table (and a version bump if the module is versioned). The agent must do both;
+- runtime overrides — the `openhealth/params.py` registry (`~/.openhealth/params.json`): the user changes a value within an allowed range without touching code; records computed with an override are stamped `algo_version+custom` and carry `metadata.params_overrides`. The constants in code remain the canonical defaults, and those are what the anti-drift test checks.
 
-UI-контракт (для оркестратора): `GET /api/methodology` → `[{id, title, version, path, content}]`, где `id` — имя файла без `.md`, `title` — первая `#`-строка, `version` — из `algo_version` в шапке, `content` — сырой markdown.
+UI contract (for the orchestrator): `GET /api/methodology` → `[{id, title, version, path, content}]`, where `id` is the filename without `.md`, `title` is the first `#` line, `version` comes from `algo_version` in the header, and `content` is the raw markdown.

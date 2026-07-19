@@ -20,17 +20,23 @@ from openhealth.connectors import telegram_intake as intake
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "intake-envelope.schema.json"
 
 
+# --- non-ASCII input the bot must round-trip byte-for-byte -------------------
+# The channel is used in Russian, so Cyrillic text has to survive the envelope
+# and the markdown card unchanged. Written as escapes to keep this file ASCII.
+CYRILLIC_NOTE = "\u0441\u043f\u0430\u043b 6 \u0447\u0430\u0441\u043e\u0432"  # "slept 6 hours"
+
+
 # --- fixtures: synthetic Bot API updates -------------------------------------
 
 
-def text_update(update_id=1, chat_id=111, message_id=42, text="спал 6 часов", date=1760000000):
+def text_update(update_id=1, chat_id=111, message_id=42, text="slept 6 hours", date=1760000000):
     return {
         "update_id": update_id,
         "message": {
             "message_id": message_id,
             "date": date,
             "chat": {"id": chat_id, "type": "private"},
-            "from": {"id": chat_id, "username": "ilya", "first_name": "Илья"},
+            "from": {"id": chat_id, "username": "ilya", "first_name": "Ilya"},
             "text": text,
         },
     }
@@ -43,7 +49,7 @@ def voice_update(update_id=2, chat_id=111):
             "message_id": 43,
             "date": 1760000100,
             "chat": {"id": chat_id, "type": "private"},
-            "from": {"id": chat_id, "first_name": "Илья"},
+            "from": {"id": chat_id, "first_name": "Ilya"},
             "voice": {
                 "file_id": "VOICE_FILE_ID",
                 "file_unique_id": "uniq-voice",
@@ -54,7 +60,7 @@ def voice_update(update_id=2, chat_id=111):
     }
 
 
-def photo_update(update_id=3, chat_id=111, caption="сыпь на руке"):
+def photo_update(update_id=3, chat_id=111, caption="rash on my arm"):
     return {
         "update_id": update_id,
         "message": {
@@ -77,7 +83,7 @@ def photo_update(update_id=3, chat_id=111, caption="сыпь на руке"):
 def test_text_update_to_envelope():
     env = intake.update_to_envelope(text_update())
     assert env["type"] == "text"
-    assert env["text"] == "спал 6 часов"
+    assert env["text"] == "slept 6 hours"
     assert env["chat_id"] == 111
     assert env["ts"] == 1760000000
     assert env["source"] == "telegram"
@@ -104,7 +110,7 @@ def test_voice_update_to_envelope_has_transcript_todo():
 def test_photo_update_keeps_caption_and_largest_size():
     env = intake.update_to_envelope(photo_update())
     assert env["type"] == "photo"
-    assert env["text"] == "сыпь на руке"
+    assert env["text"] == "rash on my arm"
     (att,) = env["attachments"]
     assert att["file_id"] == "PHOTO_BIG"
     assert att["width"] == 800
@@ -127,7 +133,7 @@ def test_envelope_satisfies_schema_required_fields():
 
 
 def test_checkin_envelope_shape():
-    answers = {"sleep": "7", "workout": "да, зал", "alcohol": "нет", "wellbeing": "4"}
+    answers = {"sleep": "7", "workout": "yes, gym", "alcohol": "no", "wellbeing": "4"}
     env = intake.checkin_envelope(111, "ilya", answers, started_at="2026-06-10T08:00:00+00:00", ts=1760000300)
     assert env["type"] == "checkin"
     assert env["metadata"]["checkin"] == answers
@@ -140,15 +146,17 @@ def test_checkin_envelope_shape():
 
 
 def test_write_envelope_and_card(tmp_path):
-    env = intake.update_to_envelope(text_update())
+    # Cyrillic body on purpose: the envelope and the card must keep it intact.
+    env = intake.update_to_envelope(text_update(text=CYRILLIC_NOTE))
     env_path = intake.write_envelope(env, tmp_path)
     assert env_path == tmp_path / "envelopes" / "2025-10-09" / "tg-111-42.json"
     stored = json.loads(env_path.read_text(encoding="utf-8"))
     assert stored == env
+    assert stored["text"] == CYRILLIC_NOTE
 
     card_path = intake.write_card(env, tmp_path / "inbox", envelope_file=env_path)
     card = card_path.read_text(encoding="utf-8")
-    assert "спал 6 часов" in card
+    assert CYRILLIC_NOTE in card
     assert "tg-111-42" in card
 
     # same submission_id overwrites (at-least-once redelivery, no duplicates)
@@ -346,9 +354,9 @@ def test_bot_stores_text_intake_with_card(tmp_path):
     bot.handle_update(text_update())
     (env_path,) = stored_envelopes(config)
     env = json.loads(env_path.read_text(encoding="utf-8"))
-    assert env["text"] == "спал 6 часов"
+    assert env["text"] == "slept 6 hours"
     assert (config.inbox_dir / "tg-111-42.md").exists()
-    assert api.sent[-1][1] == "Записал в журнал."
+    assert api.sent[-1][1] == "Saved to the journal."
 
 
 def test_bot_downloads_voice_and_fills_path(tmp_path):
@@ -360,7 +368,7 @@ def test_bot_downloads_voice_and_fills_path(tmp_path):
     assert att["path"] == "files/voice/tg-111-43.oga"
     assert (config.data_dir / att["path"]).read_bytes() == b"BYTES"
     assert env["transcript"] is None
-    assert "Транскрипция" in api.sent[-1][1]
+    assert "Transcription" in api.sent[-1][1]
 
 
 def test_bot_keeps_envelope_when_download_fails(tmp_path):
@@ -371,7 +379,7 @@ def test_bot_keeps_envelope_when_download_fails(tmp_path):
     (att,) = env["attachments"]
     assert att["path"] is None
     assert "download_error" in att
-    assert "не удалось" in api.sent[-1][1]
+    assert "could not be downloaded" in api.sent[-1][1]
 
 
 def test_bot_help_and_unknown_command(tmp_path):
@@ -390,7 +398,7 @@ def test_checkin_full_flow_writes_journal_envelope(tmp_path):
     bot.handle_update(text_update(text="/checkin", message_id=50))
     assert tb.CHECKIN_QUESTIONS[0][1] in api.sent[-1][1]
 
-    answers = ["7", "да, зал", "нет", "4"]
+    answers = ["7", "yes, gym", "no", "4"]
     for i, answer in enumerate(answers):
         bot.handle_update(text_update(text=answer, message_id=51 + i))
 
@@ -398,7 +406,7 @@ def test_checkin_full_flow_writes_journal_envelope(tmp_path):
     env_path = next(p for p in stored_envelopes(config) if "checkin" in p.name)
     env = json.loads(env_path.read_text(encoding="utf-8"))
     assert env["type"] == "checkin"
-    assert env["metadata"]["checkin"] == {"sleep": "7", "workout": "да, зал", "alcohol": "нет", "wellbeing": "4"}
+    assert env["metadata"]["checkin"] == {"sleep": "7", "workout": "yes, gym", "alcohol": "no", "wellbeing": "4"}
     assert not bot.checkin.active(111)
 
 
@@ -411,21 +419,21 @@ def test_checkin_state_survives_restart(tmp_path):
     # new process: fresh Bot over the same state file resumes mid-dialog
     bot2 = tb.Bot(FakeAPI(), config)
     assert bot2.checkin.active(111)
-    bot2.handle_update(text_update(text="нет", message_id=62))
+    bot2.handle_update(text_update(text="no", message_id=62))
     assert tb.CHECKIN_QUESTIONS[2][1] in bot2.api.sent[-1][1]
 
 
 def test_checkin_cancel(tmp_path):
     bot, api, _ = make_bot(tmp_path)
     bot.handle_update(text_update(text="/cancel"))
-    assert "нечего отменять" in api.sent[-1][1].lower()
+    assert "nothing to cancel" in api.sent[-1][1].lower()
     bot.handle_update(text_update(text="/checkin"))
     bot.handle_update(text_update(text="/cancel"))
-    assert "отменён" in api.sent[-1][1].lower()
+    assert "cancelled" in api.sent[-1][1].lower()
     assert not bot.checkin.active(111)
     # after cancel, plain text is plain intake again, not a checkin answer
-    bot.handle_update(text_update(text="просто заметка", message_id=70))
-    assert api.sent[-1][1] == "Записал в журнал."
+    bot.handle_update(text_update(text="just a note", message_id=70))
+    assert api.sent[-1][1] == "Saved to the journal."
 
 
 # --- /today ---------------------------------------------------------------------
@@ -439,22 +447,22 @@ def test_today_summary_from_local_data(tmp_path):
     ), encoding="utf-8")
     bot.handle_update(text_update(text="/today"))
     reply = api.sent[-1][1]
-    assert "Recovery 78%" in reply and "зелёная зона" in reply
+    assert "Recovery 78%" in reply and "green zone" in reply
     assert "HRV 92.4 ms" in reply
-    assert "Сон 7.2 ч" in reply
+    assert "Sleep 7.2 h" in reply
     assert 2 <= len(reply.splitlines()) <= 5
 
 
 def test_today_summary_honest_when_no_data(tmp_path):
     bot, api, _ = make_bot(tmp_path)
     bot.handle_update(text_update(text="/today"))
-    assert "data.local.json не найден" in api.sent[-1][1]
+    assert "data.local.json not found" in api.sent[-1][1]
 
 
 def test_recovery_zones():
-    assert tb._recovery_zone(80) == "зелёная зона"
-    assert tb._recovery_zone(50) == "жёлтая зона"
-    assert tb._recovery_zone(10) == "красная зона"
+    assert tb._recovery_zone(80) == "green zone"
+    assert tb._recovery_zone(50) == "yellow zone"
+    assert tb._recovery_zone(10) == "red zone"
 
 
 # --- /ask agent bridge --------------------------------------------------------------
@@ -462,13 +470,13 @@ def test_recovery_zones():
 
 def test_ask_disabled_by_default(tmp_path):
     bot, api, _ = make_bot(tmp_path)
-    bot.handle_update(text_update(text="/ask что с HRV?"))
+    bot.handle_update(text_update(text="/ask what about my HRV?"))
     assert "--enable-ask" in api.sent[-1][1]
 
 
 def test_ask_enabled_but_no_cli_is_honest():
-    answer = tb.ask_agent("что с HRV?", "", which=lambda name: None)
-    assert "не подключён" in answer
+    answer = tb.ask_agent("what about my HRV?", "", which=lambda name: None)
+    assert "not connected" in answer
 
 
 def test_ask_runs_codex_cli_pattern():
@@ -476,7 +484,7 @@ def test_ask_runs_codex_cli_pattern():
 
     class Proc:
         returncode = 0
-        stdout = "Ответ агента: HRV в норме (C2)."
+        stdout = "Agent answer: HRV looks normal (C2)."
         stderr = ""
 
     def fake_runner(cmd, **kw):
@@ -484,21 +492,21 @@ def test_ask_runs_codex_cli_pattern():
         return Proc()
 
     answer = tb.ask_agent(
-        "что с HRV?", "- Recovery: 78%",
+        "what about my HRV?", "- Recovery: 78%",
         which=lambda name: "/usr/local/bin/codex" if name == "codex" else None,
         runner=fake_runner,
     )
-    assert answer.startswith("Ответ агента")
+    assert answer.startswith("Agent answer")
     assert calls["cmd"][:2] == ["codex", "exec"]
     assert "--sandbox" in calls["cmd"] and "read-only" in calls["cmd"]
     prompt = calls["cmd"][-1]
-    assert "что с HRV?" in prompt and "Recovery: 78%" in prompt and "не врач" in prompt
+    assert "what about my HRV?" in prompt and "Recovery: 78%" in prompt and "not a doctor" in prompt
 
 
 def test_ask_question_required(tmp_path):
     bot, api, _ = make_bot(tmp_path, enable_ask=True)
     bot.handle_update(text_update(text="/ask"))
-    assert "Использование" in api.sent[-1][1]
+    assert "Usage" in api.sent[-1][1]
 
 
 # --- long-polling loop: offset never lost, never duplicated ---------------------------
