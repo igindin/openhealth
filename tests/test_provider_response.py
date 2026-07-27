@@ -257,6 +257,12 @@ def test_extract_text_skips_leading_non_text_blocks():
             "provider_text_block_missing",
             "provider_text",
         ),
+        (
+            b'{"stop_reason":"max_tokens","content":'
+            b'[{"type":"thinking","thinking":"x"}]}',
+            "provider_output_truncated",
+            "provider_text",
+        ),
     ],
 )
 def test_extract_text_fails_with_bounded_codes(raw_body, code, stage):

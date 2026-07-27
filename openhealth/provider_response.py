@@ -345,6 +345,11 @@ def extract_text(raw_body: bytes) -> tuple[dict[str, Any], str]:
             "provider_envelope_json_invalid",
             "provider_envelope",
         )
+    if envelope.get("stop_reason") == "max_tokens":
+        raise ProviderResponseError(
+            "provider_output_truncated",
+            "provider_text",
+        )
     content = envelope.get("content")
     if not isinstance(content, list):
         raise ProviderResponseError(
