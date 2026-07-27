@@ -124,6 +124,10 @@ them with `python -m openhealth modules`.
 - Text and locally transcribed voice replies may revise the linked meal record,
   but the raw photo/message/transcript stays immutable and every change must be
   idempotent, auditable, and recoverable if delivery or the process fails.
+- Archive exact provider-response bytes locally before parsing them, bound to
+  the source message, attempt, photo artifact, and a hash of the exact request.
+  A malformed archived response fails closed and must never trigger an
+  automatic resend of the same photo.
 
 ## Suggested Workflow
 
