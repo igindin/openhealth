@@ -111,6 +111,199 @@ class LabelNormalizationTests(unittest.TestCase):
             label["declared"],
         )
 
+    def test_multiple_armenian_macros_can_share_one_literal_row(self):
+        self.assertEqual(
+            nutrition_label.canonical_nutrient("Ս."),
+            "protein_g",
+        )
+        macro_row = "Ս՝ 10 գՃ՝ 5 գԱծխ՝ 20 գ"
+        payload = _armenian_label(
+            nutrition_basis="unknown",
+            basis_text="",
+            energy=_energy(165),
+            nutrients=[
+                {
+                    "label": "Ս",
+                    "value": 10,
+                    "unit": "գ",
+                    "raw_row_text": macro_row,
+                },
+                {
+                    "label": "Ճ",
+                    "value": 5,
+                    "unit": "գ",
+                    "raw_row_text": macro_row,
+                },
+                {
+                    "label": "Ածխ",
+                    "value": 20,
+                    "unit": "գ",
+                    "raw_row_text": macro_row,
+                },
+            ],
+        )
+        payload["raw_label_text"] = "\n".join(
+            [
+                payload["product_name_original"],
+                payload["package_raw_row_text"],
+                payload["energy"]["raw_row_text"],
+                macro_row,
+            ]
+        )
+
+        label = nutrition_label.normalize_label_extraction(payload)
+
+        self.assertEqual(
+            label["declared"],
+            {
+                "kcal": 165.0,
+                "protein_g": 10.0,
+                "fat_g": 5.0,
+                "carb_g": 20.0,
+            },
+        )
+        self.assertEqual(label["basis"], nutrition_label.BASIS_UNKNOWN)
+
+    def test_shared_macro_row_still_rejects_swapped_values(self):
+        macro_row = "Ս՝ 10 գ Ճ՝ 5 գ Ածխ՝ 20 գ"
+        payload = _armenian_label(
+            nutrition_basis="unknown",
+            basis_text="",
+            energy=_energy(165),
+            nutrients=[
+                {
+                    "label": "Ս",
+                    "value": 5,
+                    "unit": "գ",
+                    "raw_row_text": macro_row,
+                },
+                {
+                    "label": "Ճ",
+                    "value": 10,
+                    "unit": "գ",
+                    "raw_row_text": macro_row,
+                },
+                {
+                    "label": "Ածխ",
+                    "value": 20,
+                    "unit": "գ",
+                    "raw_row_text": macro_row,
+                },
+            ],
+        )
+        payload["raw_label_text"] = "\n".join(
+            [
+                payload["product_name_original"],
+                payload["package_raw_row_text"],
+                payload["energy"]["raw_row_text"],
+                macro_row,
+            ]
+        )
+
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as raised:
+            nutrition_label.normalize_label_extraction(payload)
+        self.assertEqual(
+            raised.exception.code,
+            "nutrient_span_ambiguous",
+        )
+
+        wrong_unit = json.loads(
+            json.dumps(payload, ensure_ascii=False)
+        )
+        wrong_unit["nutrients"][0]["value"] = 10
+        wrong_unit["nutrients"][1]["value"] = 5
+        wrong_unit["nutrients"][0]["unit"] = "մլ"
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ):
+            nutrition_label.normalize_label_extraction(wrong_unit)
+
+        out_of_order = json.loads(
+            json.dumps(payload, ensure_ascii=False)
+        )
+        out_of_order["nutrients"][0]["value"] = 10
+        out_of_order["nutrients"][1]["value"] = 5
+        out_of_order["nutrients"] = [
+            out_of_order["nutrients"][1],
+            out_of_order["nutrients"][0],
+            out_of_order["nutrients"][2],
+        ]
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as order_error:
+            nutrition_label.normalize_label_extraction(out_of_order)
+        self.assertEqual(
+            order_error.exception.code,
+            "nutrient_spans_out_of_order",
+        )
+
+    def test_shared_macro_row_requires_exact_label_and_unit_boundaries(self):
+        suffix_label_row = "ԱՍ՝ 10 գՃ՝ 5 գԱծխ՝ 20 գ"
+        suffix_label = _armenian_label(
+            nutrition_basis="unknown",
+            basis_text="",
+            energy=_energy(165),
+            nutrients=[
+                {
+                    "label": "Ս",
+                    "value": 10,
+                    "unit": "գ",
+                    "raw_row_text": suffix_label_row,
+                },
+                {
+                    "label": "Ճ",
+                    "value": 5,
+                    "unit": "գ",
+                    "raw_row_text": suffix_label_row,
+                },
+                {
+                    "label": "Ածխ",
+                    "value": 20,
+                    "unit": "գ",
+                    "raw_row_text": suffix_label_row,
+                },
+            ],
+        )
+        suffix_label["raw_label_text"] = "\n".join(
+            [
+                suffix_label["product_name_original"],
+                suffix_label["package_raw_row_text"],
+                suffix_label["energy"]["raw_row_text"],
+                suffix_label_row,
+            ]
+        )
+
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as label_error:
+            nutrition_label.normalize_label_extraction(suffix_label)
+        self.assertEqual(
+            label_error.exception.code,
+            "nutrient_shared_row_boundary",
+        )
+
+        prefixed_unit_row = "Ս՝ 10 գրամ Ճ՝ 5 գ Ածխ՝ 20 գ"
+        prefixed_unit = json.loads(
+            json.dumps(suffix_label, ensure_ascii=False)
+        )
+        prefixed_unit["nutrients"][0]["raw_row_text"] = prefixed_unit_row
+        prefixed_unit["nutrients"][1]["raw_row_text"] = prefixed_unit_row
+        prefixed_unit["nutrients"][2]["raw_row_text"] = prefixed_unit_row
+        prefixed_unit["raw_label_text"] = prefixed_unit[
+            "raw_label_text"
+        ].replace(suffix_label_row, prefixed_unit_row)
+
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as unit_error:
+            nutrition_label.normalize_label_extraction(prefixed_unit)
+        self.assertEqual(
+            unit_error.exception.code,
+            "nutrient_unit_boundary",
+        )
+
     def test_full_container_is_not_multiplied_by_package_weight(self):
         label = nutrition_label.normalize_label_extraction(_armenian_label())
         estimate = nutrition_label.estimate_from_consumption_text(label, "Съел всё целиком")

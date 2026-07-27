@@ -54,6 +54,7 @@ _NUTRIENT_ALIASES = {
         "proteins",
         "белок",
         "белки",
+        "ս",
         "սպ",
         "սպիտակուց",
         "սպիտակուցներ",
@@ -133,6 +134,10 @@ _NUMBER_TOKEN_RE = re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)?(?![\d.,])")
 
 class NutritionLabelError(ValueError):
     """Base class for unsafe or malformed label data."""
+
+    def __init__(self, message: str, *, code: Optional[str] = None):
+        super().__init__(message)
+        self.code = code or self.__class__.__name__
 
 
 class NutritionLabelNeedsClarification(NutritionLabelError):
@@ -351,6 +356,153 @@ def _bind_raw_row(
     return row_text
 
 
+def _nutrient_span_in_raw_row(
+    *,
+    label: str,
+    value: float,
+    raw_unit: str,
+    row_text: str,
+    field: str,
+) -> tuple[int, int]:
+    """Bind one nutrient inside a literal row that may contain peer fields."""
+    candidates: List[tuple[int, int]] = []
+    search_start = 0
+    while True:
+        label_start = row_text.find(label, search_start)
+        if label_start < 0:
+            break
+        suffix = row_text[label_start + len(label) :]
+        numbers = list(_NUMBER_TOKEN_RE.finditer(suffix))
+        if numbers:
+            number = numbers[0]
+            between_label_and_value = suffix[: number.start()]
+            if (
+                not any(char.isalnum() for char in between_label_and_value)
+                and _number_is(value, number.group(0))
+            ):
+                next_number_start = (
+                    numbers[1].start()
+                    if len(numbers) > 1
+                    else len(suffix)
+                )
+                value_suffix = suffix[
+                    number.end() : next_number_start
+                ]
+                unit_search_start = 0
+                while True:
+                    unit_start = value_suffix.find(
+                        raw_unit,
+                        unit_search_start,
+                    )
+                    if unit_start < 0:
+                        break
+                    before_unit = value_suffix[:unit_start]
+                    if not any(char.isalnum() for char in before_unit):
+                        candidates.append(
+                            (
+                                label_start,
+                                label_start
+                                + len(label)
+                                + number.end()
+                                + unit_start
+                                + len(raw_unit),
+                            )
+                        )
+                    unit_search_start = unit_start + 1
+        search_start = label_start + 1
+
+    unique = list(dict.fromkeys(candidates))
+    if len(unique) != 1:
+        raise NutritionLabelNeedsClarification(
+            "%s must bind to one exact label/value/unit span" % field,
+            code="nutrient_span_ambiguous",
+        )
+    return unique[0]
+
+
+def _bind_nutrient_raw_row(
+    *,
+    label: str,
+    value: float,
+    raw_unit: str,
+    raw_row_text: Any,
+    raw_label_text: str,
+    field: str,
+) -> tuple[str, tuple[int, int]]:
+    row_text = _text(
+        raw_row_text,
+        field + ".raw_row_text",
+        required=True,
+        limit=1000,
+    )
+    if row_text not in raw_label_text:
+        raise NutritionLabelNeedsClarification(
+            "%s raw row must be a literal fragment of raw_label_text" % field,
+            code="nutrient_raw_row_not_literal",
+        )
+
+    if not _raw_fragment_has_field_boundary(
+        raw_label_text,
+        row_text,
+    ):
+        raise NutritionLabelNeedsClarification(
+            "%s shared raw row must start at a field boundary" % field,
+            code="nutrient_shared_row_boundary",
+        )
+
+    span = _nutrient_span_in_raw_row(
+        label=label,
+        value=value,
+        raw_unit=raw_unit,
+        row_text=row_text,
+        field=field,
+    )
+    return row_text, span
+
+
+def _validate_nutrient_row_boundaries(
+    bindings: List[tuple[str, tuple[int, int], str]],
+) -> None:
+    """Require exact field boundaries while allowing adjacent shared fields."""
+    rows: Dict[str, List[tuple[tuple[int, int], str]]] = {}
+    for row_text, span, field in bindings:
+        rows.setdefault(row_text, []).append((span, field))
+
+    for row_text, row_bindings in rows.items():
+        for index, (span, field) in enumerate(row_bindings):
+            if index == 0:
+                prefix = row_text[: span[0]]
+                if any(char.isalnum() for char in prefix):
+                    raise NutritionLabelNeedsClarification(
+                        "%s label must start at a field boundary" % field,
+                        code="nutrient_shared_row_boundary",
+                    )
+            else:
+                prior_span, prior_field = row_bindings[index - 1]
+                gap = row_text[prior_span[1] : span[0]]
+                if any(char.isalnum() for char in gap):
+                    raise NutritionLabelNeedsClarification(
+                        "unbound text separates %s and %s"
+                        % (prior_field, field),
+                        code="nutrient_shared_row_boundary",
+                    )
+
+            next_start = (
+                row_bindings[index + 1][0][0]
+                if index + 1 < len(row_bindings)
+                else None
+            )
+            if (
+                span[1] < len(row_text)
+                and row_text[span[1]].isalnum()
+                and next_start != span[1]
+            ):
+                raise NutritionLabelNeedsClarification(
+                    "%s unit must end at a field boundary" % field,
+                    code="nutrient_unit_boundary",
+                )
+
+
 def _normalize_nutrient_rows(
     rows: Any,
     raw_label_text: str,
@@ -359,6 +511,7 @@ def _normalize_nutrient_rows(
         raise NutritionLabelError("nutrients must be a list")
     raw_rows: List[Dict[str, Any]] = []
     macros: Dict[str, float] = {}
+    row_bindings: List[tuple[str, tuple[int, int], str]] = []
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             raise NutritionLabelError("nutrients[%d] must be an object" % index)
@@ -367,13 +520,35 @@ def _normalize_nutrient_rows(
         raw_unit = _text(row.get("unit"), "nutrients[%d].unit" % index, required=True, limit=40)
         unit = normalize_unit(raw_unit)
         canonical = canonical_nutrient(label)
-        raw_row_text = _bind_raw_row(
+        raw_row_text, span = _bind_nutrient_raw_row(
             label=label,
             value=value,
             raw_unit=raw_unit,
             raw_row_text=row.get("raw_row_text"),
             raw_label_text=raw_label_text,
             field="nutrients[%d]" % index,
+        )
+        for prior_row, prior_span, prior_field in row_bindings:
+            if prior_row != raw_row_text:
+                continue
+            if max(span[0], prior_span[0]) < min(span[1], prior_span[1]):
+                raise NutritionLabelNeedsClarification(
+                    "nutrient spans overlap between %s and nutrients[%d]"
+                    % (prior_field, index),
+                    code="nutrient_spans_overlap",
+                )
+            if span[0] <= prior_span[0]:
+                raise NutritionLabelNeedsClarification(
+                    "nutrient spans are out of order between %s and "
+                    "nutrients[%d]" % (prior_field, index),
+                    code="nutrient_spans_out_of_order",
+                )
+        row_bindings.append(
+            (
+                raw_row_text,
+                span,
+                "nutrients[%d]" % index,
+            )
         )
         normalized_row = {
             "label": label,
@@ -390,9 +565,14 @@ def _normalize_nutrient_rows(
         if canonical in macros:
             raise NutritionLabelNeedsClarification("duplicate nutrient label for %s" % canonical)
         macros[canonical] = value
+    _validate_nutrient_row_boundaries(row_bindings)
     missing = [field for field in ("protein_g", "fat_g", "carb_g") if field not in macros]
     if missing:
-        raise NutritionLabelNeedsClarification("label is missing unambiguous rows for %s" % ", ".join(missing))
+        raise NutritionLabelNeedsClarification(
+            "label is missing unambiguous rows for %s"
+            % ", ".join(missing),
+            code="missing_macro_mapping",
+        )
     return raw_rows, macros
 
 
