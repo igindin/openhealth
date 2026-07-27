@@ -23,8 +23,15 @@ SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "intake-envel
 # --- fixtures: synthetic Bot API updates -------------------------------------
 
 
-def text_update(update_id=1, chat_id=111, message_id=42, text="спал 6 часов", date=1760000000):
-    return {
+def text_update(
+    update_id=1,
+    chat_id=111,
+    message_id=42,
+    text="спал 6 часов",
+    date=1760000000,
+    reply_to_message_id=None,
+):
+    update = {
         "update_id": update_id,
         "message": {
             "message_id": message_id,
@@ -34,10 +41,13 @@ def text_update(update_id=1, chat_id=111, message_id=42, text="спал 6 час
             "text": text,
         },
     }
+    if reply_to_message_id is not None:
+        update["message"]["reply_to_message"] = {"message_id": reply_to_message_id}
+    return update
 
 
-def voice_update(update_id=2, chat_id=111):
-    return {
+def voice_update(update_id=2, chat_id=111, reply_to_message_id=None):
+    update = {
         "update_id": update_id,
         "message": {
             "message_id": 43,
@@ -52,6 +62,9 @@ def voice_update(update_id=2, chat_id=111):
             },
         },
     }
+    if reply_to_message_id is not None:
+        update["message"]["reply_to_message"] = {"message_id": reply_to_message_id}
+    return update
 
 
 def photo_update(update_id=3, chat_id=111, caption="сыпь на руке"):
@@ -99,6 +112,14 @@ def test_voice_update_to_envelope_has_transcript_todo():
     assert att["duration_s"] == 12
     assert att["transcript"] is None
     assert att["path"] is None  # runtime fills after download
+
+
+def test_reply_target_is_preserved_without_copying_quoted_message():
+    env = intake.update_to_envelope(
+        text_update(reply_to_message_id=700)
+    )
+    assert env["metadata"]["reply_to_message_id"] == 700
+    assert "reply_to_message" not in env["metadata"]
 
 
 def test_photo_update_keeps_caption_and_largest_size():
@@ -351,6 +372,16 @@ def test_bot_stores_text_intake_with_card(tmp_path):
     assert api.sent[-1][1] == "Записал в журнал."
 
 
+def test_bot_short_circuits_russian_text_red_flag(tmp_path):
+    bot, api, config = make_bot(tmp_path)
+    bot.handle_update(text_update(text="У меня боль в груди."))
+    (env_path,) = stored_envelopes(config)
+    env = json.loads(env_path.read_text(encoding="utf-8"))
+    assert env["metadata"]["red_flags"][0]["code"] == "chest_pain"
+    assert "не буду интерпретировать" in api.sent[-1][1]
+    assert "срочной медицинской помощью" in api.sent[-1][1]
+
+
 def test_bot_downloads_voice_and_fills_path(tmp_path):
     bot, api, config = make_bot(tmp_path)
     bot.handle_update(voice_update())
@@ -360,7 +391,80 @@ def test_bot_downloads_voice_and_fills_path(tmp_path):
     assert att["path"] == "files/voice/tg-111-43.oga"
     assert (config.data_dir / att["path"]).read_bytes() == b"BYTES"
     assert env["transcript"] is None
-    assert "Транскрипция" in api.sent[-1][1]
+    assert "не настроена" in api.sent[-1][1]
+
+
+def test_bot_transcribes_voice_locally_before_persisting(tmp_path):
+    class FakeTranscriber:
+        def transcribe(self, path):
+            assert Path(path).read_bytes() == b"BYTES"
+            return {
+                "text": "уточнение порции",
+                "metadata": {
+                    "backend": "fake-local",
+                    "model": "tiny.test",
+                    "language": "ru",
+                },
+            }
+
+    api = FakeAPI()
+    config = tb.BotConfig(data_dir=tmp_path / "intake", allowlist={111})
+    bot = tb.Bot(api, config, voice_transcriber=FakeTranscriber())
+    bot.handle_update(voice_update(reply_to_message_id=700))
+    (env_path,) = stored_envelopes(config)
+    env = json.loads(env_path.read_text(encoding="utf-8"))
+    assert env["transcript"] == "уточнение порции"
+    assert env["attachments"][0]["transcript"] == "уточнение порции"
+    assert env["metadata"]["transcription"]["status"] == "done"
+    assert env["metadata"]["reply_to_message_id"] == 700
+    assert "локально расшифровал" in api.sent[-1][1]
+    card = (config.inbox_dir / "tg-111-43.md").read_text(encoding="utf-8")
+    assert "## Transcript" in card
+    assert "уточнение порции" in card
+
+
+def test_bot_short_circuits_russian_transcribed_voice_red_flag(tmp_path):
+    class RedFlagTranscriber:
+        def transcribe(self, path):
+            return {
+                "text": "У меня боль в груди.",
+                "metadata": {
+                    "backend": "fake-local",
+                    "model": "tiny.test",
+                    "language": "ru",
+                },
+            }
+
+    api = FakeAPI()
+    config = tb.BotConfig(data_dir=tmp_path / "intake", allowlist={111})
+    bot = tb.Bot(api, config, voice_transcriber=RedFlagTranscriber())
+    bot.handle_update(voice_update())
+    (env_path,) = stored_envelopes(config)
+    env = json.loads(env_path.read_text(encoding="utf-8"))
+    assert env["metadata"]["red_flags"][0]["code"] == "chest_pain"
+    assert env["transcript"] == "У меня боль в груди."
+    assert "не буду интерпретировать" in api.sent[-1][1]
+    assert "локально расшифровал" not in api.sent[-1][1]
+
+
+def test_bot_keeps_voice_when_local_transcription_fails(tmp_path):
+    class FailingTranscriber:
+        def transcribe(self, path):
+            raise RuntimeError("synthetic failure")
+
+    api = FakeAPI()
+    config = tb.BotConfig(data_dir=tmp_path / "intake", allowlist={111})
+    bot = tb.Bot(api, config, voice_transcriber=FailingTranscriber())
+    bot.handle_update(voice_update())
+    (env_path,) = stored_envelopes(config)
+    env = json.loads(env_path.read_text(encoding="utf-8"))
+    assert env["attachments"][0]["path"]
+    assert env["transcript"] is None
+    assert env["metadata"]["transcription"] == {
+        "status": "failed",
+        "error": "RuntimeError",
+    }
+    assert "напиши текстом" in api.sent[-1][1]
 
 
 def test_bot_keeps_envelope_when_download_fails(tmp_path):
