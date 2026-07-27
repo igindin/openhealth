@@ -117,6 +117,13 @@ them with `python -m openhealth modules`.
 
 - Convert incoming text, voice, photos, and captions into a standardized intake
   envelope and pass it into the same ingest pipeline.
+- Treat package-label vision as transcription only: bind the product name,
+  package/serving measures, energy, and each nutrient to exact visible raw
+  fragments; resolve the printed basis and consumed amount explicitly, then do
+  all mapping, validation, and arithmetic locally.
+- Text and locally transcribed voice replies may revise the linked meal record,
+  but the raw photo/message/transcript stays immutable and every change must be
+  idempotent, auditable, and recoverable if delivery or the process fails.
 
 ## Suggested Workflow
 
