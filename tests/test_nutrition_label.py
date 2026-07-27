@@ -83,6 +83,30 @@ def _armenian_label(**overrides):
     return payload
 
 
+def _unknown_macro_label(**overrides):
+    return _armenian_label(
+        nutrients=[
+            _nutrient("ც", 17.3),
+            _nutrient("ცხ", 15.8),
+            _nutrient("ნახ", 23.5),
+        ],
+        **overrides,
+    )
+
+
+def _mapping_confirmation(challenge, **overrides):
+    confirmation = {
+        "schema_version": 1,
+        "source": "user_reply",
+        "confirmation_id": "synthetic-reply-1",
+        "text": "Подтверждаю БЖУ",
+        "artifact_ids": ["synthetic-reply-artifact-1"],
+        "challenge_sha256": challenge["challenge_sha256"],
+    }
+    confirmation.update(overrides)
+    return confirmation
+
+
 class LabelNormalizationTests(unittest.TestCase):
     def test_armenian_rows_map_without_model_field_order(self):
         label = nutrition_label.normalize_label_extraction(_armenian_label())
@@ -337,6 +361,23 @@ class LabelNormalizationTests(unittest.TestCase):
         with self.assertRaises(nutrition_label.NutritionLabelValidationError):
             nutrition_label.normalize_label_extraction(payload)
 
+    def test_macro_mismatch_precedes_incomplete_provenance(self):
+        payload = _armenian_label(
+            provenance={"provider": "synthetic-test"},
+        )
+        payload["nutrients"] = [
+            _nutrient("Սպ.", 12.8),
+            _nutrient("Ճ.", 20.9),
+            _nutrient("Ածխ.", 19.7),
+        ]
+        payload["energy"] = _energy(277.6)
+        _sync_raw_label(payload)
+
+        with self.assertRaises(
+            nutrition_label.NutritionLabelValidationError
+        ):
+            nutrition_label.normalize_label_extraction(payload)
+
     def test_unknown_basis_is_preserved_but_cannot_be_scaled(self):
         label = nutrition_label.normalize_label_extraction(_armenian_label(nutrition_basis="unknown", basis_text=""))
 
@@ -439,6 +480,482 @@ class LabelNormalizationTests(unittest.TestCase):
         payload["nutrients"] = payload["nutrients"][:2]
         with self.assertRaises(nutrition_label.NutritionLabelNeedsClarification):
             nutrition_label.normalize_label_extraction(payload)
+
+
+class NutrientMappingConfirmationTests(unittest.TestCase):
+    proposal = {
+        "protein_g": 0,
+        "fat_g": 1,
+        "carb_g": 2,
+    }
+
+    def test_confirmed_unicode_mapping_preserves_raw_extraction(self):
+        payload = _unknown_macro_label()
+        original = json.loads(json.dumps(payload, ensure_ascii=False))
+
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as unresolved:
+            nutrition_label.normalize_label_extraction(payload)
+        self.assertEqual(unresolved.exception.code, "missing_macro_mapping")
+
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        self.assertNotIn("declared", challenge)
+        self.assertEqual(
+            [item["canonical"] for item in challenge["mapping"]],
+            ["protein_g", "fat_g", "carb_g"],
+        )
+        self.assertEqual(len(challenge["challenge_sha256"]), 64)
+
+        label = nutrition_label.apply_confirmed_nutrient_mapping(
+            payload,
+            challenge,
+            _mapping_confirmation(challenge),
+        )
+
+        self.assertEqual(payload, original)
+        self.assertEqual(
+            label["declared"],
+            {
+                "kcal": 305.4,
+                "protein_g": 17.3,
+                "fat_g": 15.8,
+                "carb_g": 23.5,
+            },
+        )
+        for actual, source in zip(
+            label["raw_nutrients"],
+            payload["nutrients"],
+        ):
+            self.assertEqual(actual["label"], source["label"])
+            self.assertEqual(actual["value"], float(source["value"]))
+            self.assertEqual(actual["unit"], source["unit"])
+            self.assertEqual(actual["raw_row_text"], source["raw_row_text"])
+            self.assertIsNone(actual["canonical"])
+        resolution = label["nutrient_mapping_resolution"]
+        self.assertEqual(
+            resolution["artifact_ids"],
+            ["synthetic-reply-artifact-1"],
+        )
+        self.assertEqual(
+            resolution["challenge_sha256"],
+            challenge["challenge_sha256"],
+        )
+
+    def test_confirmation_replay_and_json_roundtrip_are_idempotent(self):
+        payload = _unknown_macro_label()
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        confirmation = _mapping_confirmation(challenge)
+
+        first = nutrition_label.apply_confirmed_nutrient_mapping(
+            payload,
+            challenge,
+            confirmation,
+        )
+        second = nutrition_label.apply_confirmed_nutrient_mapping(
+            payload,
+            challenge,
+            confirmation,
+        )
+        self.assertEqual(first, second)
+        self.assertEqual(
+            nutrition_label.validate_normalized_label(
+                json.loads(json.dumps(first, ensure_ascii=False))
+            ),
+            first,
+        )
+
+    def test_known_rows_cannot_be_overridden_and_full_mapping_is_required(self):
+        payload = _armenian_label(
+            nutrients=[
+                _nutrient("Սպ.", 17.3),
+                _nutrient("ცხ", 15.8),
+                _nutrient("Ածխ.", 23.5),
+            ],
+        )
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as partial:
+            nutrition_label.prepare_nutrient_mapping_challenge(
+                payload,
+                {"fat_g": 1},
+            )
+        self.assertEqual(
+            partial.exception.code,
+            "nutrient_mapping_proposal_invalid",
+        )
+
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        label = nutrition_label.apply_confirmed_nutrient_mapping(
+            payload,
+            challenge,
+            _mapping_confirmation(challenge),
+        )
+        self.assertEqual(label["declared"]["fat_g"], 15.8)
+
+        contradictory = {
+            "protein_g": 1,
+            "fat_g": 0,
+            "carb_g": 2,
+        }
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as conflict:
+            nutrition_label.prepare_nutrient_mapping_challenge(
+                payload,
+                contradictory,
+            )
+        self.assertEqual(
+            conflict.exception.code,
+            "nutrient_mapping_contradicts_known_label",
+        )
+
+    def test_mapping_requires_distinct_exact_rows(self):
+        payload = _unknown_macro_label()
+        for proposal in (
+            {"protein_g": 0, "fat_g": 0, "carb_g": 2},
+            {"protein_g": 0, "fat_g": 1, "carb_g": 99},
+        ):
+            with self.subTest(proposal=proposal):
+                with self.assertRaises(
+                    nutrition_label.NutritionLabelNeedsClarification
+                ) as raised:
+                    nutrition_label.prepare_nutrient_mapping_challenge(
+                        payload,
+                        proposal,
+                    )
+                self.assertEqual(
+                    raised.exception.code,
+                    "nutrient_mapping_proposal_invalid",
+                )
+
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        tampered = json.loads(
+            json.dumps(challenge, ensure_ascii=False)
+        )
+        tampered["mapping"][0]["value"] = 23.5
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as changed:
+            nutrition_label.apply_confirmed_nutrient_mapping(
+                payload,
+                tampered,
+                _mapping_confirmation(tampered),
+            )
+        self.assertEqual(
+            changed.exception.code,
+            "nutrient_mapping_challenge_invalid",
+        )
+
+    def test_negative_ambiguous_unrelated_and_stale_replies_fail_closed(self):
+        payload = _unknown_macro_label()
+        original = json.loads(json.dumps(payload, ensure_ascii=False))
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        for text in (
+            "нет",
+            "может быть",
+            "съел 100 г",
+            "цифры за 100 г",
+            "да, съел 100 г",
+        ):
+            with self.subTest(text=text):
+                with self.assertRaises(
+                    nutrition_label.NutritionLabelNeedsClarification
+                ) as raised:
+                    nutrition_label.apply_confirmed_nutrient_mapping(
+                        payload,
+                        challenge,
+                        _mapping_confirmation(challenge, text=text),
+                    )
+                self.assertEqual(
+                    raised.exception.code,
+                    "nutrient_mapping_confirmation_not_explicit",
+                )
+                self.assertEqual(payload, original)
+
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as stale:
+            nutrition_label.apply_confirmed_nutrient_mapping(
+                payload,
+                challenge,
+                _mapping_confirmation(
+                    challenge,
+                    challenge_sha256="0" * 64,
+                ),
+            )
+        self.assertEqual(
+            stale.exception.code,
+            "nutrient_mapping_confirmation_stale",
+        )
+
+    def test_challenge_is_bound_to_source_provenance(self):
+        first = _unknown_macro_label(
+            provenance={
+                "provider": "synthetic-test",
+                "model": "none",
+                "response_id": "synthetic-response-a",
+            }
+        )
+        second = json.loads(json.dumps(first, ensure_ascii=False))
+        second["provenance"]["response_id"] = "synthetic-response-b"
+
+        first_challenge = (
+            nutrition_label.prepare_nutrient_mapping_challenge(
+                first,
+                self.proposal,
+            )
+        )
+        second_challenge = (
+            nutrition_label.prepare_nutrient_mapping_challenge(
+                second,
+                self.proposal,
+            )
+        )
+        self.assertEqual(
+            first_challenge["extraction_sha256"],
+            second_challenge["extraction_sha256"],
+        )
+        self.assertNotEqual(
+            first_challenge["provenance_sha256"],
+            second_challenge["provenance_sha256"],
+        )
+        self.assertNotEqual(
+            first_challenge["challenge_sha256"],
+            second_challenge["challenge_sha256"],
+        )
+
+    def test_mapping_resolution_tampering_is_rejected(self):
+        payload = _unknown_macro_label()
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        label = nutrition_label.apply_confirmed_nutrient_mapping(
+            payload,
+            challenge,
+            _mapping_confirmation(challenge),
+        )
+
+        for mutate in ("mapping", "artifact", "text", "fingerprint"):
+            tampered = json.loads(json.dumps(label, ensure_ascii=False))
+            resolution = tampered["nutrient_mapping_resolution"]
+            if mutate == "mapping":
+                resolution["mapping"][0]["label"] = "changed"
+            elif mutate == "artifact":
+                resolution["artifact_ids"] = ["another-artifact"]
+            elif mutate == "text":
+                resolution["text"] = "Верно"
+            else:
+                resolution["resolution_sha256"] = "0" * 64
+            with self.subTest(mutate=mutate):
+                with self.assertRaises(
+                    nutrition_label.NutritionLabelValidationError
+                ):
+                    nutrition_label.validate_normalized_label(tampered)
+
+    def test_mapping_resolution_is_bound_to_consumed_estimate(self):
+        payload = _unknown_macro_label()
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        label = nutrition_label.apply_confirmed_nutrient_mapping(
+            payload,
+            challenge,
+            _mapping_confirmation(challenge),
+        )
+        estimate = nutrition_label.estimate_from_consumption_text(
+            label,
+            "всё",
+        )
+        self.assertEqual(
+            estimate["nutrient_mapping_resolution"]["resolution_sha256"],
+            label["nutrient_mapping_resolution"]["resolution_sha256"],
+        )
+        record = nutrition_label.build_label_meal_record(
+            {
+                "id": "synthetic-meal",
+                "tags": ["meal"],
+                "metadata": {},
+            },
+            estimate,
+        )
+        self.assertEqual(
+            record["metadata"]["nutrient_mapping_resolution"],
+            label["nutrient_mapping_resolution"],
+        )
+
+        tampered = json.loads(json.dumps(estimate, ensure_ascii=False))
+        tampered["nutrient_mapping_resolution"]["artifact_ids"] = [
+            "different-artifact"
+        ]
+        with self.assertRaises(
+            nutrition_label.NutritionLabelValidationError
+        ):
+            nutrition_label.build_label_meal_record(
+                {
+                    "id": "synthetic-meal",
+                    "tags": ["meal"],
+                    "metadata": {},
+                },
+                tampered,
+            )
+
+    def test_red_flag_confirmation_short_circuits_semantic_parsing(self):
+        payload = _unknown_macro_label()
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        challenge["challenge_sha256"] = "0" * 64
+        with self.assertRaises(nutrition_label.LabelCorrectionRedFlag):
+            nutrition_label.apply_confirmed_nutrient_mapping(
+                payload,
+                challenge,
+                _mapping_confirmation(
+                    challenge,
+                    schema_version=999,
+                    text="да, у меня боль в груди",
+                ),
+            )
+
+    def test_normalized_label_red_flag_precedes_malformed_envelope(self):
+        payload = _unknown_macro_label()
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        label = nutrition_label.apply_confirmed_nutrient_mapping(
+            payload,
+            challenge,
+            _mapping_confirmation(challenge),
+        )
+        label["schema_version"] = 999
+        label["raw_label_text"] = ""
+        label["nutrient_mapping_resolution"]["schema_version"] = 999
+        label["nutrient_mapping_resolution"]["text"] = (
+            "да, у меня боль в груди"
+        )
+
+        with self.assertRaises(nutrition_label.LabelCorrectionRedFlag):
+            nutrition_label.validate_normalized_label(label)
+
+    def test_estimate_red_flag_precedes_malformed_amount_envelope(self):
+        payload = _unknown_macro_label()
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        label = nutrition_label.apply_confirmed_nutrient_mapping(
+            payload,
+            challenge,
+            _mapping_confirmation(challenge),
+        )
+        estimate = nutrition_label.estimate_from_consumption_text(
+            label,
+            "всё",
+        )
+        estimate["consumed"] = None
+        estimate["scale_factor"] = "not-a-number"
+        estimate["nutrient_mapping_resolution"]["schema_version"] = 999
+        estimate["nutrient_mapping_resolution"]["text"] = (
+            "да, у меня боль в груди"
+        )
+
+        with self.assertRaises(nutrition_label.LabelCorrectionRedFlag):
+            nutrition_label._validated_label_estimate(estimate)
+
+    def test_exact_shared_row_spans_can_be_confirmed(self):
+        shared = "ც 17.3 գ ცხ 15.8 գ ნახ 23.5 գ"
+        payload = _armenian_label(
+            nutrients=[
+                {
+                    "label": "ც",
+                    "value": 17.3,
+                    "unit": "գ",
+                    "raw_row_text": shared,
+                },
+                {
+                    "label": "ცხ",
+                    "value": 15.8,
+                    "unit": "գ",
+                    "raw_row_text": shared,
+                },
+                {
+                    "label": "ნახ",
+                    "value": 23.5,
+                    "unit": "գ",
+                    "raw_row_text": shared,
+                },
+            ],
+        )
+        payload["raw_label_text"] = "\n".join(
+            [
+                payload["product_name_original"],
+                payload["basis_text"],
+                payload["package_raw_row_text"],
+                payload["energy"]["raw_row_text"],
+                shared,
+            ]
+        )
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        spans = [entry["span"] for entry in challenge["mapping"]]
+        self.assertEqual(spans, sorted(spans))
+
+        label = nutrition_label.apply_confirmed_nutrient_mapping(
+            payload,
+            challenge,
+            _mapping_confirmation(
+                challenge,
+                source="voice_transcript",
+            ),
+        )
+        self.assertEqual(label["declared"]["protein_g"], 17.3)
+
+    def test_confirmed_mapping_does_not_resolve_basis_or_amount(self):
+        payload = _unknown_macro_label(
+            nutrition_basis="unknown",
+            basis_text="",
+        )
+        challenge = nutrition_label.prepare_nutrient_mapping_challenge(
+            payload,
+            self.proposal,
+        )
+        label = nutrition_label.apply_confirmed_nutrient_mapping(
+            payload,
+            challenge,
+            _mapping_confirmation(challenge),
+        )
+        self.assertEqual(
+            label["basis"],
+            nutrition_label.BASIS_UNKNOWN,
+        )
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ):
+            nutrition_label.estimate_from_consumption_text(
+                label,
+                "всё",
+            )
 
 
 class ConsumptionTests(unittest.TestCase):

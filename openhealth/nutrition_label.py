@@ -43,6 +43,24 @@ SUPPORTED_BASES = {
 LABEL_CONFIDENCE_LEVEL = evidence.Confidence.C2.value
 LABEL_CONFIDENCE = evidence.confidence_to_numeric(evidence.Confidence.C2)
 LABEL_SCHEMA_VERSION = 2
+NUTRIENT_MAPPING_SCHEMA_VERSION = 1
+
+_MACRO_FIELDS = ("protein_g", "fat_g", "carb_g")
+_NUTRIENT_MAPPING_SOURCES = {"user_reply", "voice_transcript"}
+_EXPLICIT_MAPPING_CONFIRMATIONS = {
+    "yes",
+    "yes correct",
+    "yes thats correct",
+    "confirm",
+    "confirmed",
+    "да",
+    "да верно",
+    "да все верно",
+    "верно",
+    "все верно",
+    "подтверждаю",
+    "подтверждаю бжу",
+}
 
 _GRAM_UNITS = {"g", "gr", "gram", "grams", "г", "гр", "грамм", "грамма", "գ"}
 _ML_UNITS = {"ml", "milliliter", "milliliters", "мл", "մլ"}
@@ -503,14 +521,16 @@ def _validate_nutrient_row_boundaries(
                 )
 
 
-def _normalize_nutrient_rows(
+def _bind_nutrient_rows(
     rows: Any,
     raw_label_text: str,
-) -> tuple[List[Dict[str, Any]], Dict[str, float]]:
+) -> tuple[
+    List[Dict[str, Any]],
+    List[tuple[str, tuple[int, int], str]],
+]:
     if not isinstance(rows, list):
         raise NutritionLabelError("nutrients must be a list")
     raw_rows: List[Dict[str, Any]] = []
-    macros: Dict[str, float] = {}
     row_bindings: List[tuple[str, tuple[int, int], str]] = []
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
@@ -518,7 +538,6 @@ def _normalize_nutrient_rows(
         label = _text(row.get("label"), "nutrients[%d].label" % index, required=True, limit=160)
         value = _finite_number(row.get("value"), "nutrients[%d].value" % index)
         raw_unit = _text(row.get("unit"), "nutrients[%d].unit" % index, required=True, limit=40)
-        unit = normalize_unit(raw_unit)
         canonical = canonical_nutrient(label)
         raw_row_text, span = _bind_nutrient_raw_row(
             label=label,
@@ -558,22 +577,58 @@ def _normalize_nutrient_rows(
             "canonical": canonical,
         }
         raw_rows.append(normalized_row)
+    _validate_nutrient_row_boundaries(row_bindings)
+    return raw_rows, row_bindings
+
+
+def _resolve_macro_values(
+    raw_rows: List[Dict[str, Any]],
+    confirmed_mapping: Optional[Dict[int, str]] = None,
+) -> Dict[str, float]:
+    mapping = confirmed_mapping or {}
+    macros: Dict[str, float] = {}
+    for index, row in enumerate(raw_rows):
+        known = row["canonical"]
+        confirmed = mapping.get(index)
+        if confirmed is not None and confirmed not in _MACRO_FIELDS:
+            raise NutritionLabelNeedsClarification(
+                "confirmed nutrient mapping target is invalid",
+                code="nutrient_mapping_invalid",
+            )
+        if known is not None and confirmed is not None and known != confirmed:
+            raise NutritionLabelNeedsClarification(
+                "confirmed nutrient mapping contradicts an exact known label",
+                code="nutrient_mapping_contradicts_known_label",
+            )
+        canonical = confirmed or known
         if canonical is None:
             continue
-        if unit != "g":
-            raise NutritionLabelNeedsClarification("%s must be expressed in grams" % label)
+        if normalize_unit(row["unit"]) != "g":
+            raise NutritionLabelNeedsClarification(
+                "%s must be expressed in grams" % row["label"]
+            )
         if canonical in macros:
-            raise NutritionLabelNeedsClarification("duplicate nutrient label for %s" % canonical)
-        macros[canonical] = value
-    _validate_nutrient_row_boundaries(row_bindings)
-    missing = [field for field in ("protein_g", "fat_g", "carb_g") if field not in macros]
+            raise NutritionLabelNeedsClarification(
+                "duplicate nutrient label for %s" % canonical
+            )
+        macros[canonical] = row["value"]
+    missing = [field for field in _MACRO_FIELDS if field not in macros]
     if missing:
         raise NutritionLabelNeedsClarification(
             "label is missing unambiguous rows for %s"
             % ", ".join(missing),
             code="missing_macro_mapping",
         )
-    return raw_rows, macros
+    return macros
+
+
+def _normalize_nutrient_rows(
+    rows: Any,
+    raw_label_text: str,
+    confirmed_mapping: Optional[Dict[int, str]] = None,
+) -> tuple[List[Dict[str, Any]], Dict[str, float]]:
+    raw_rows, _ = _bind_nutrient_rows(rows, raw_label_text)
+    return raw_rows, _resolve_macro_values(raw_rows, confirmed_mapping)
 
 
 def normalize_unit(value: Any) -> Optional[str]:
@@ -772,6 +827,20 @@ def _macro_validation(kcal: float, protein: float, fat: float, carbs: float) -> 
     }
 
 
+def _json_sha256(value: Any) -> str:
+    try:
+        serialized = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        raise NutritionLabelError("value must be JSON-serializable")
+    return hashlib.sha256(serialized).hexdigest()
+
+
 def _extraction_fingerprint(
     *,
     product_name_original: str,
@@ -801,13 +870,7 @@ def _extraction_fingerprint(
             for row in raw_rows
         ],
     }
-    serialized = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(serialized).hexdigest()
+    return _json_sha256(payload)
 
 
 def _normalize_provenance(
@@ -838,14 +901,7 @@ def _normalize_provenance(
     provenance["provider"] = provider
     provenance["model"] = model
     provenance["extraction_sha256"] = extraction_sha256
-    serialized = json.dumps(
-        provenance,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    provenance["provenance_sha256"] = hashlib.sha256(serialized).hexdigest()
+    provenance["provenance_sha256"] = _json_sha256(provenance)
     return provenance
 
 
@@ -856,25 +912,23 @@ def _calculation_context_fingerprint(
     serving: Optional[Dict[str, Any]],
     declared: Dict[str, Any],
     extraction_sha256: str,
+    nutrient_mapping_resolution_sha256: Optional[str] = None,
 ) -> str:
-    serialized = json.dumps(
-        {
-            "basis": basis,
-            "package": package,
-            "serving": serving,
-            "declared": declared,
-            "extraction_sha256": extraction_sha256,
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return hashlib.sha256(serialized).hexdigest()
+    payload = {
+        "basis": basis,
+        "package": package,
+        "serving": serving,
+        "declared": declared,
+        "extraction_sha256": extraction_sha256,
+    }
+    if nutrient_mapping_resolution_sha256 is not None:
+        payload["nutrient_mapping_resolution_sha256"] = (
+            nutrient_mapping_resolution_sha256
+        )
+    return _json_sha256(payload)
 
 
-def normalize_label_extraction(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate one model/OCR transcription without inventing missing fields."""
+def _normalize_extraction_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise NutritionLabelError("label extraction must be an object")
     mode = str(payload.get("mode") or "").strip().lower()
@@ -929,34 +983,11 @@ def normalize_label_extraction(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise NutritionLabelNeedsClarification("serving size is required for per-serving values")
 
     energy = _energy_from_payload(payload, raw_label_text)
-    raw_rows, macros = _normalize_nutrient_rows(
+    raw_rows, row_bindings = _bind_nutrient_rows(
         payload.get("nutrients"),
         raw_label_text,
     )
 
-    declared = {
-        "kcal": energy["value"],
-        "protein_g": macros["protein_g"],
-        "fat_g": macros["fat_g"],
-        "carb_g": macros["carb_g"],
-    }
-    validation = _macro_validation(
-        declared["kcal"],
-        declared["protein_g"],
-        declared["fat_g"],
-        declared["carb_g"],
-    )
-
-    uncertainties = payload.get("uncertainties") or []
-    if not isinstance(uncertainties, list):
-        raise NutritionLabelError("uncertainties must be a list")
-    normalized_uncertainties = [_text(item, "uncertainty", limit=300) for item in uncertainties if str(item).strip()]
-    if (
-        model_basis != BASIS_UNKNOWN
-        and basis == BASIS_UNKNOWN
-        and "nutrition basis could not be verified locally" not in normalized_uncertainties
-    ):
-        normalized_uncertainties.append("nutrition basis could not be verified locally")
     extraction_sha256 = _extraction_fingerprint(
         product_name_original=product_name_original,
         raw_label_text=raw_label_text,
@@ -967,19 +998,10 @@ def normalize_label_extraction(payload: Dict[str, Any]) -> Dict[str, Any]:
         energy=energy,
         raw_rows=raw_rows,
     )
-    provenance = _normalize_provenance(
-        payload.get("provenance"),
-        extraction_sha256,
-    )
 
     return {
-        "schema_version": LABEL_SCHEMA_VERSION,
-        "mode": "label",
         "product_name_original": product_name_original,
         "product_name_ru": product_name_ru,
-        # A translation is another model hypothesis.  Keep the exact visible
-        # product name canonical and expose the translation separately.
-        "title": product_name_original,
         "language": _text(payload.get("language"), "language", limit=40),
         "raw_label_text": raw_label_text,
         "basis": basis,
@@ -989,23 +1011,529 @@ def normalize_label_extraction(payload: Dict[str, Any]) -> Dict[str, Any]:
         "package": package,
         "serving": serving,
         "energy": energy,
-        "raw_nutrients": raw_rows,
+        "raw_rows": raw_rows,
+        "row_bindings": row_bindings,
+        "uncertainties_input": payload.get("uncertainties"),
+        "model_confidence_input": payload.get("confidence"),
+        "extraction_sha256": extraction_sha256,
+        "provenance_input": payload.get("provenance"),
+    }
+
+
+def _context_with_provenance(
+    context: Dict[str, Any],
+) -> Dict[str, Any]:
+    if "provenance" in context:
+        return context
+    enriched = dict(context)
+    enriched["provenance"] = _normalize_provenance(
+        context.get("provenance_input"),
+        context["extraction_sha256"],
+    )
+    return enriched
+
+
+def _normalized_label_from_context(
+    context: Dict[str, Any],
+    *,
+    confirmed_mapping: Optional[Dict[int, str]] = None,
+    nutrient_mapping_resolution: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    macros = _resolve_macro_values(
+        context["raw_rows"],
+        confirmed_mapping,
+    )
+    declared = {
+        "kcal": context["energy"]["value"],
+        "protein_g": macros["protein_g"],
+        "fat_g": macros["fat_g"],
+        "carb_g": macros["carb_g"],
+    }
+    validation = _macro_validation(
+        declared["kcal"],
+        declared["protein_g"],
+        declared["fat_g"],
+        declared["carb_g"],
+    )
+    uncertainties = context.get("uncertainties_input") or []
+    if not isinstance(uncertainties, list):
+        raise NutritionLabelError("uncertainties must be a list")
+    normalized_uncertainties = [
+        _text(item, "uncertainty", limit=300)
+        for item in uncertainties
+        if str(item).strip()
+    ]
+    if (
+        context["model_basis"] != BASIS_UNKNOWN
+        and context["basis"] == BASIS_UNKNOWN
+        and "nutrition basis could not be verified locally"
+        not in normalized_uncertainties
+    ):
+        normalized_uncertainties.append(
+            "nutrition basis could not be verified locally"
+        )
+    model_confidence = str(
+        context.get("model_confidence_input") or ""
+    ).strip().lower()
+    if model_confidence not in {"low", "medium", "high"}:
+        model_confidence = "unknown"
+    provenance = _context_with_provenance(context)["provenance"]
+    normalized = {
+        "schema_version": LABEL_SCHEMA_VERSION,
+        "mode": "label",
+        "product_name_original": context["product_name_original"],
+        "product_name_ru": context["product_name_ru"],
+        # A translation is another model hypothesis.  Keep the exact visible
+        # product name canonical and expose the translation separately.
+        "title": context["product_name_original"],
+        "language": context["language"],
+        "raw_label_text": context["raw_label_text"],
+        "basis": context["basis"],
+        "model_basis": context["model_basis"],
+        "basis_text": context["basis_text"],
+        "basis_verification": context["basis_verification"],
+        "package": context["package"],
+        "serving": context["serving"],
+        "energy": context["energy"],
+        "raw_nutrients": context["raw_rows"],
         "declared": declared,
         "validation": validation,
         "uncertainties": normalized_uncertainties,
-        "model_confidence": (
-            str(payload.get("confidence") or "").strip().lower()
-            if str(payload.get("confidence") or "").strip().lower() in {"low", "medium", "high"}
-            else "unknown"
-        ),
+        "model_confidence": model_confidence,
         "confidence_level": LABEL_CONFIDENCE_LEVEL,
         "confidence": LABEL_CONFIDENCE,
         "provenance": provenance,
     }
+    if nutrient_mapping_resolution is not None:
+        normalized["nutrient_mapping_resolution"] = json.loads(
+            json.dumps(
+                nutrient_mapping_resolution,
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+        )
+    return normalized
+
+
+def normalize_label_extraction(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate one model/OCR transcription without inventing missing fields."""
+    return _normalized_label_from_context(
+        _normalize_extraction_context(payload)
+    )
+
+
+def _prepare_nutrient_mapping_challenge_from_context(
+    context: Dict[str, Any],
+    proposed_mapping: Any,
+    *,
+    require_unmapped: bool = True,
+) -> Dict[str, Any]:
+    if not isinstance(proposed_mapping, dict):
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping proposal must be an object",
+            code="nutrient_mapping_proposal_invalid",
+        )
+    if set(proposed_mapping) != set(_MACRO_FIELDS):
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping proposal must map protein, fat, and carbohydrate",
+            code="nutrient_mapping_proposal_invalid",
+        )
+
+    mapping: Dict[int, str] = {}
+    for canonical in _MACRO_FIELDS:
+        index = proposed_mapping.get(canonical)
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise NutritionLabelNeedsClarification(
+                "nutrient mapping row indexes must be integers",
+                code="nutrient_mapping_proposal_invalid",
+            )
+        if index < 0 or index >= len(context["raw_rows"]):
+            raise NutritionLabelNeedsClarification(
+                "nutrient mapping row index is out of range",
+                code="nutrient_mapping_proposal_invalid",
+            )
+        if index in mapping:
+            raise NutritionLabelNeedsClarification(
+                "each nutrient mapping must use a distinct raw row",
+                code="nutrient_mapping_proposal_invalid",
+            )
+        mapping[index] = canonical
+
+    selected_rows = [
+        context["raw_rows"][proposed_mapping[canonical]]
+        for canonical in _MACRO_FIELDS
+    ]
+    if require_unmapped and all(
+        row["canonical"] is not None for row in selected_rows
+    ):
+        raise NutritionLabelNeedsClarification(
+            "nutrient labels are already mapped unambiguously",
+            code="nutrient_mapping_not_required",
+        )
+
+    macros = _resolve_macro_values(context["raw_rows"], mapping)
+    _macro_validation(
+        context["energy"]["value"],
+        macros["protein_g"],
+        macros["fat_g"],
+        macros["carb_g"],
+    )
+
+    entries = []
+    for canonical in _MACRO_FIELDS:
+        index = proposed_mapping[canonical]
+        row = context["raw_rows"][index]
+        if normalize_unit(row["unit"]) != "g":
+            raise NutritionLabelNeedsClarification(
+                "confirmed macronutrient rows must be expressed in grams",
+                code="nutrient_mapping_proposal_invalid",
+            )
+        known = row["canonical"]
+        if known is not None and known != canonical:
+            raise NutritionLabelNeedsClarification(
+                "nutrient mapping contradicts an exact known label",
+                code="nutrient_mapping_contradicts_known_label",
+            )
+        span = context["row_bindings"][index][1]
+        entries.append(
+            {
+                "canonical": canonical,
+                "row_index": index,
+                "label": row["label"],
+                "value": row["value"],
+                "unit": row["unit"],
+                "raw_row_text": row["raw_row_text"],
+                "span": [span[0], span[1]],
+            }
+        )
+
+    challenge = {
+        "schema_version": NUTRIENT_MAPPING_SCHEMA_VERSION,
+        "kind": "nutrition_nutrient_mapping",
+        "extraction_sha256": context["provenance"]["extraction_sha256"],
+        "provenance_sha256": context["provenance"]["provenance_sha256"],
+        "mapping": entries,
+    }
+    challenge["challenge_sha256"] = _json_sha256(challenge)
+    return challenge
+
+
+def prepare_nutrient_mapping_challenge(
+    payload: Dict[str, Any],
+    proposed_mapping: Dict[str, int],
+) -> Dict[str, Any]:
+    """Build a non-calculable, source-bound proposal for user confirmation.
+
+    ``proposed_mapping`` maps each canonical macronutrient name to one index in
+    the extraction's original ``nutrients`` list.  No semantic mapping is
+    applied until :func:`apply_confirmed_nutrient_mapping` receives a separate
+    explicit confirmation.
+    """
+    return _prepare_nutrient_mapping_challenge_from_context(
+        _context_with_provenance(
+            _normalize_extraction_context(payload)
+        ),
+        proposed_mapping,
+    )
+
+
+def _proposal_from_mapping_entries(entries: Any) -> Dict[str, int]:
+    if not isinstance(entries, list) or len(entries) != len(_MACRO_FIELDS):
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping challenge is invalid",
+            code="nutrient_mapping_challenge_invalid",
+        )
+    proposal: Dict[str, int] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise NutritionLabelNeedsClarification(
+                "nutrient mapping challenge is invalid",
+                code="nutrient_mapping_challenge_invalid",
+            )
+        canonical = str(entry.get("canonical") or "")
+        index = entry.get("row_index")
+        if (
+            canonical not in _MACRO_FIELDS
+            or canonical in proposal
+            or isinstance(index, bool)
+            or not isinstance(index, int)
+        ):
+            raise NutritionLabelNeedsClarification(
+                "nutrient mapping challenge is invalid",
+                code="nutrient_mapping_challenge_invalid",
+            )
+        proposal[canonical] = index
+    if set(proposal) != set(_MACRO_FIELDS):
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping challenge is invalid",
+            code="nutrient_mapping_challenge_invalid",
+        )
+    return proposal
+
+
+def _explicit_mapping_confirmation(text: str) -> bool:
+    normalized = unicodedata.normalize("NFKC", text).casefold().replace("ё", "е")
+    words = []
+    current = []
+    for char in normalized:
+        if char.isalnum():
+            current.append(char)
+        elif current:
+            words.append("".join(current))
+            current = []
+    if current:
+        words.append("".join(current))
+    return " ".join(words) in _EXPLICIT_MAPPING_CONFIRMATIONS
+
+
+def _normalize_mapping_confirmation(
+    confirmation: Any,
+    challenge: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not isinstance(confirmation, dict):
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping confirmation must be an object",
+            code="nutrient_mapping_confirmation_invalid",
+        )
+    text = str(confirmation.get("text") or "").strip()
+    if not text or len(text) > 500:
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping confirmation text is required",
+            code="nutrient_mapping_confirmation_invalid",
+        )
+    red_flags = evidence.scan_text_red_flags(text)
+    if red_flags:
+        raise LabelCorrectionRedFlag(red_flags)
+    if confirmation.get("schema_version") != NUTRIENT_MAPPING_SCHEMA_VERSION:
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping confirmation schema is invalid",
+            code="nutrient_mapping_confirmation_invalid",
+        )
+    source = str(confirmation.get("source") or "").strip()
+    if source not in _NUTRIENT_MAPPING_SOURCES:
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping confirmation source is invalid",
+            code="nutrient_mapping_confirmation_invalid",
+        )
+    confirmation_id = str(confirmation.get("confirmation_id") or "").strip()
+    if not confirmation_id or len(confirmation_id) > 240:
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping confirmation id is required",
+            code="nutrient_mapping_confirmation_invalid",
+        )
+    if not _explicit_mapping_confirmation(text):
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping confirmation is not explicit",
+            code="nutrient_mapping_confirmation_not_explicit",
+        )
+    challenge_sha256 = str(
+        confirmation.get("challenge_sha256") or ""
+    ).strip()
+    if challenge_sha256 != challenge["challenge_sha256"]:
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping confirmation is stale",
+            code="nutrient_mapping_confirmation_stale",
+        )
+    artifact_ids = confirmation.get("artifact_ids")
+    if not isinstance(artifact_ids, list):
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping confirmation artifacts are required",
+            code="nutrient_mapping_confirmation_invalid",
+        )
+    normalized_artifact_ids = [
+        str(item).strip()
+        for item in artifact_ids
+    ]
+    if (
+        not normalized_artifact_ids
+        or any(not item or len(item) > 240 for item in normalized_artifact_ids)
+    ):
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping confirmation artifacts are required",
+            code="nutrient_mapping_confirmation_invalid",
+        )
+    return {
+        "schema_version": NUTRIENT_MAPPING_SCHEMA_VERSION,
+        "source": source,
+        "confirmation_id": confirmation_id,
+        "text": text,
+        "artifact_ids": list(dict.fromkeys(normalized_artifact_ids)),
+        "challenge_sha256": challenge["challenge_sha256"],
+    }
+
+
+def _build_nutrient_mapping_resolution(
+    challenge: Dict[str, Any],
+    confirmation: Any,
+) -> Dict[str, Any]:
+    normalized = _normalize_mapping_confirmation(confirmation, challenge)
+    resolution = {
+        **normalized,
+        "mapping": json.loads(
+            json.dumps(
+                challenge["mapping"],
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+        ),
+    }
+    resolution["resolution_sha256"] = _json_sha256(resolution)
+    return resolution
+
+
+def apply_confirmed_nutrient_mapping(
+    payload: Dict[str, Any],
+    challenge: Dict[str, Any],
+    confirmation: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Derive a normalized label from one exact, explicitly confirmed mapping."""
+    if isinstance(confirmation, dict):
+        red_flags = evidence.scan_text_red_flags(
+            str(confirmation.get("text") or "")
+        )
+        if red_flags:
+            raise LabelCorrectionRedFlag(red_flags)
+    context = _context_with_provenance(
+        _normalize_extraction_context(payload)
+    )
+    if not isinstance(challenge, dict):
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping challenge is invalid",
+            code="nutrient_mapping_challenge_invalid",
+        )
+    proposal = _proposal_from_mapping_entries(challenge.get("mapping"))
+    expected_challenge = _prepare_nutrient_mapping_challenge_from_context(
+        context,
+        proposal,
+    )
+    if challenge != expected_challenge:
+        raise NutritionLabelNeedsClarification(
+            "nutrient mapping challenge does not match the extraction",
+            code="nutrient_mapping_challenge_invalid",
+        )
+    resolution = _build_nutrient_mapping_resolution(
+        expected_challenge,
+        confirmation,
+    )
+    confirmed_mapping = {
+        index: canonical
+        for canonical, index in proposal.items()
+    }
+    return _normalized_label_from_context(
+        context,
+        confirmed_mapping=confirmed_mapping,
+        nutrient_mapping_resolution=resolution,
+    )
+
+
+def _normalize_stored_nutrient_mapping_resolution(
+    context: Dict[str, Any],
+    value: Any,
+) -> tuple[Dict[str, Any], Dict[int, str]]:
+    if not isinstance(value, dict):
+        raise NutritionLabelValidationError(
+            "nutrient mapping resolution is invalid",
+            code="nutrient_mapping_resolution_invalid",
+        )
+    try:
+        proposal = _proposal_from_mapping_entries(value.get("mapping"))
+        challenge = _prepare_nutrient_mapping_challenge_from_context(
+            context,
+            proposal,
+            require_unmapped=False,
+        )
+        expected = _build_nutrient_mapping_resolution(
+            challenge,
+            {
+                "schema_version": value.get("schema_version"),
+                "source": value.get("source"),
+                "confirmation_id": value.get("confirmation_id"),
+                "text": value.get("text"),
+                "artifact_ids": value.get("artifact_ids"),
+                "challenge_sha256": value.get("challenge_sha256"),
+            },
+        )
+    except LabelCorrectionRedFlag:
+        raise
+    except NutritionLabelError as exc:
+        raise NutritionLabelValidationError(
+            "nutrient mapping resolution is invalid",
+            code="nutrient_mapping_resolution_invalid",
+        ) from exc
+    if value != expected:
+        raise NutritionLabelValidationError(
+            "nutrient mapping resolution fingerprint does not match",
+            code="nutrient_mapping_resolution_invalid",
+        )
+    return expected, {
+        index: canonical
+        for canonical, index in proposal.items()
+    }
+
+
+def _normalize_nutrient_mapping_resolution_envelope(
+    value: Any,
+    provenance: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise NutritionLabelValidationError(
+            "nutrient mapping resolution is invalid",
+            code="nutrient_mapping_resolution_invalid",
+        )
+    try:
+        _proposal_from_mapping_entries(value.get("mapping"))
+        challenge = {
+            "schema_version": NUTRIENT_MAPPING_SCHEMA_VERSION,
+            "kind": "nutrition_nutrient_mapping",
+            "extraction_sha256": provenance["extraction_sha256"],
+            "provenance_sha256": provenance["provenance_sha256"],
+            "mapping": value.get("mapping"),
+        }
+        challenge["challenge_sha256"] = _json_sha256(challenge)
+        expected = _build_nutrient_mapping_resolution(
+            challenge,
+            {
+                "schema_version": value.get("schema_version"),
+                "source": value.get("source"),
+                "confirmation_id": value.get("confirmation_id"),
+                "text": value.get("text"),
+                "artifact_ids": value.get("artifact_ids"),
+                "challenge_sha256": value.get("challenge_sha256"),
+            },
+        )
+    except LabelCorrectionRedFlag:
+        raise
+    except NutritionLabelError as exc:
+        raise NutritionLabelValidationError(
+            "nutrient mapping resolution is invalid",
+            code="nutrient_mapping_resolution_invalid",
+        ) from exc
+    if value != expected:
+        raise NutritionLabelValidationError(
+            "nutrient mapping resolution fingerprint does not match",
+            code="nutrient_mapping_resolution_invalid",
+        )
+    return expected
+
+
+def _scan_mapping_resolution_red_flags(value: Any) -> None:
+    if not isinstance(value, dict):
+        return
+    resolution = value.get("nutrient_mapping_resolution")
+    if not isinstance(resolution, dict):
+        return
+    red_flags = evidence.scan_text_red_flags(
+        str(resolution.get("text") or "")
+    )
+    if red_flags:
+        raise LabelCorrectionRedFlag(red_flags)
 
 
 def validate_normalized_label(label: Dict[str, Any]) -> Dict[str, Any]:
     """Revalidate a JSON-round-tripped normalized label before calculation."""
+    _scan_mapping_resolution_red_flags(label)
     if not isinstance(label, dict):
         raise NutritionLabelError("normalized label must be an object")
     if label.get("schema_version") != LABEL_SCHEMA_VERSION:
@@ -1079,7 +1607,7 @@ def validate_normalized_label(label: Dict[str, Any]) -> Dict[str, Any]:
     stored_rows = label.get("raw_nutrients")
     if not isinstance(stored_rows, list) or any(not isinstance(row, dict) for row in stored_rows):
         raise NutritionLabelError("raw_nutrients must be a list of objects")
-    normalized_rows, macros = _normalize_nutrient_rows(
+    normalized_rows, row_bindings = _bind_nutrient_rows(
         [
             {
                 "label": row.get("label"),
@@ -1090,6 +1618,43 @@ def validate_normalized_label(label: Dict[str, Any]) -> Dict[str, Any]:
             for row in stored_rows
         ],
         raw_label_text,
+    )
+
+    extraction_sha256 = _extraction_fingerprint(
+        product_name_original=product_name_original,
+        raw_label_text=raw_label_text,
+        model_basis=model_basis,
+        basis_text=basis_text,
+        package=package,
+        serving=serving,
+        energy=energy,
+        raw_rows=normalized_rows,
+    )
+    stored_provenance = label.get("provenance")
+    provenance = _normalize_provenance(stored_provenance, extraction_sha256)
+    if str((stored_provenance or {}).get("extraction_sha256") or "") != extraction_sha256:
+        raise NutritionLabelValidationError("label extraction fingerprint does not match")
+    if str((stored_provenance or {}).get("provenance_sha256") or "") != provenance["provenance_sha256"]:
+        raise NutritionLabelValidationError("label provenance fingerprint does not match")
+
+    mapping_resolution_value = label.get("nutrient_mapping_resolution")
+    mapping_resolution = None
+    confirmed_mapping = None
+    if mapping_resolution_value is not None:
+        mapping_resolution, confirmed_mapping = (
+            _normalize_stored_nutrient_mapping_resolution(
+                {
+                    "energy": energy,
+                    "raw_rows": normalized_rows,
+                    "row_bindings": row_bindings,
+                    "provenance": provenance,
+                },
+                mapping_resolution_value,
+            )
+        )
+    macros = _resolve_macro_values(
+        normalized_rows,
+        confirmed_mapping,
     )
     declared = label.get("declared")
     if not isinstance(declared, dict):
@@ -1114,23 +1679,6 @@ def validate_normalized_label(label: Dict[str, Any]) -> Dict[str, Any]:
         expected_declared["fat_g"],
         expected_declared["carb_g"],
     )
-
-    extraction_sha256 = _extraction_fingerprint(
-        product_name_original=product_name_original,
-        raw_label_text=raw_label_text,
-        model_basis=model_basis,
-        basis_text=basis_text,
-        package=package,
-        serving=serving,
-        energy=energy,
-        raw_rows=normalized_rows,
-    )
-    stored_provenance = label.get("provenance")
-    provenance = _normalize_provenance(stored_provenance, extraction_sha256)
-    if str((stored_provenance or {}).get("extraction_sha256") or "") != extraction_sha256:
-        raise NutritionLabelValidationError("label extraction fingerprint does not match")
-    if str((stored_provenance or {}).get("provenance_sha256") or "") != provenance["provenance_sha256"]:
-        raise NutritionLabelValidationError("label provenance fingerprint does not match")
 
     basis = str(label.get("basis") or "").strip().lower()
     if basis not in SUPPORTED_BASES:
@@ -1168,6 +1716,8 @@ def validate_normalized_label(label: Dict[str, Any]) -> Dict[str, Any]:
     )
     if resolution is not None:
         validated["basis_resolution"] = resolution
+    if mapping_resolution is not None:
+        validated["nutrient_mapping_resolution"] = mapping_resolution
     return validated
 
 
@@ -1427,14 +1977,25 @@ def calculate_consumed_estimate(
 
     declared = label["declared"]
     totals = {key: round(float(declared[key]) * factor, 2) for key in ("kcal", "protein_g", "fat_g", "carb_g")}
+    nutrient_mapping_resolution = label.get(
+        "nutrient_mapping_resolution"
+    )
+    nutrient_mapping_resolution_sha256 = (
+        nutrient_mapping_resolution["resolution_sha256"]
+        if isinstance(nutrient_mapping_resolution, dict)
+        else None
+    )
     calculation_context_sha256 = _calculation_context_fingerprint(
         basis=label["basis"],
         package=label.get("package"),
         serving=label.get("serving"),
         declared=declared,
         extraction_sha256=label["provenance"]["extraction_sha256"],
+        nutrient_mapping_resolution_sha256=(
+            nutrient_mapping_resolution_sha256
+        ),
     )
-    return {
+    estimate = {
         "title": label["title"],
         **totals,
         "note": "с этикетки; база %s, множитель %.4g" % (label["basis"], factor),
@@ -1452,6 +2013,14 @@ def calculate_consumed_estimate(
         "basis_resolution": json.loads(json.dumps(label.get("basis_resolution"), ensure_ascii=False)),
         "provenance": json.loads(json.dumps(label["provenance"], ensure_ascii=False)),
     }
+    if nutrient_mapping_resolution is not None:
+        estimate["nutrient_mapping_resolution"] = json.loads(
+            json.dumps(
+                nutrient_mapping_resolution,
+                ensure_ascii=False,
+            )
+        )
+    return estimate
 
 
 def estimate_from_consumption_text(label: Dict[str, Any], text: str) -> Dict[str, Any]:
@@ -1460,6 +2029,7 @@ def estimate_from_consumption_text(label: Dict[str, Any], text: str) -> Dict[str
 
 
 def _validated_label_estimate(estimate: Dict[str, Any]) -> Dict[str, Any]:
+    _scan_mapping_resolution_red_flags(estimate)
     if not isinstance(estimate, dict):
         raise NutritionLabelError("label estimate must be an object")
     title = _text(estimate.get("title"), "title", required=True, limit=240)
@@ -1567,12 +2137,23 @@ def _validated_label_estimate(estimate: Dict[str, Any]) -> Dict[str, Any]:
     )
     if str(provenance_value.get("provenance_sha256") or "") != provenance["provenance_sha256"]:
         raise NutritionLabelValidationError("label estimate provenance fingerprint does not match")
+    nutrient_mapping_resolution = (
+        _normalize_nutrient_mapping_resolution_envelope(
+            estimate.get("nutrient_mapping_resolution"),
+            provenance,
+        )
+    )
     calculation_context_sha256 = _calculation_context_fingerprint(
         basis=basis,
         package=package,
         serving=serving,
         declared=declared,
         extraction_sha256=extraction_sha256,
+        nutrient_mapping_resolution_sha256=(
+            nutrient_mapping_resolution["resolution_sha256"]
+            if nutrient_mapping_resolution is not None
+            else None
+        ),
     )
     if str(estimate.get("calculation_context_sha256") or "") != calculation_context_sha256:
         raise NutritionLabelValidationError("label estimate calculation context fingerprint does not match")
@@ -1597,6 +2178,10 @@ def _validated_label_estimate(estimate: Dict[str, Any]) -> Dict[str, Any]:
             "provenance": provenance,
         }
     )
+    if nutrient_mapping_resolution is not None:
+        normalized["nutrient_mapping_resolution"] = (
+            nutrient_mapping_resolution
+        )
     return normalized
 
 
