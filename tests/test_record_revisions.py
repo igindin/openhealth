@@ -55,11 +55,26 @@ def db(tmp_path):
 def test_telegram_links_resolve_exact_record_and_cannot_be_reassigned(db):
     index.link_telegram_message(db, 111, 10, "obs-meal-synthetic-1", "source_message")
     index.link_telegram_message(db, 111, 11, "obs-meal-synthetic-1", "bot_reply")
+    index.link_telegram_message(
+        db,
+        111,
+        12,
+        "obs-meal-synthetic-1",
+        "confirmation_reply",
+    )
     assert index.resolve_telegram_reply(db, 111, 10) == "obs-meal-synthetic-1"
     assert index.resolve_telegram_reply(db, 111, 11) == "obs-meal-synthetic-1"
+    assert index.resolve_telegram_reply(db, 111, 12) == "obs-meal-synthetic-1"
     assert index.resolve_telegram_reply(db, 222, 11) is None
 
     index.link_telegram_message(db, 111, 11, "obs-meal-synthetic-1", "bot_reply")
+    index.link_telegram_message(
+        db,
+        111,
+        12,
+        "obs-meal-synthetic-1",
+        "confirmation_reply",
+    )
     with pytest.raises(ValueError, match="already linked"):
         index.link_telegram_message(db, 111, 11, "another-record", "bot_reply")
     with pytest.raises(ValueError, match="already linked"):

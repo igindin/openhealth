@@ -8,7 +8,12 @@ class RecordRevisionConflict(RuntimeError):
     """The record changed after a caller prepared a correction."""
 
 
-TELEGRAM_LINK_RELATIONS = {"source_message", "bot_reply", "correction_reply"}
+TELEGRAM_LINK_RELATIONS = {
+    "source_message",
+    "bot_reply",
+    "correction_reply",
+    "confirmation_reply",
+}
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
@@ -222,7 +227,7 @@ def link_telegram_message(
     record_id: str,
     relation: str,
 ) -> None:
-    """Link a Telegram source or bot message to one record.
+    """Link a Telegram source, bot, correction, or confirmation to one record.
 
     Re-linking the same message to the same record and relation is an
     idempotent no-op. Reassigning either field is rejected: reply routing and
