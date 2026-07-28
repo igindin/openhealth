@@ -84,6 +84,23 @@ Create credentials:
 5. Copy Client ID and Client Secret (the secret is server-side only).
 6. Export `OPENHEALTH_WHOOP_CLIENT_ID`, `OPENHEALTH_WHOOP_CLIENT_SECRET`, `OPENHEALTH_WHOOP_REDIRECT_URI` (optionally `OPENHEALTH_WHOOP_SCOPES`), then run `openhealth whoop-auth-url` and `openhealth whoop-exchange-code` to finish the flow; `openhealth whoop-sync` pulls data.
 
+### Daily body-measurement snapshots
+
+WHOOP's public body-measurement endpoint exposes the current values, not a
+historical collection. `openhealth whoop-body-sync` therefore stores one
+idempotent snapshot per local fetch date. Re-running it on the same date updates
+that date; later dates are retained. If WHOOP does not include a measurement
+timestamp, OpenHealth explicitly records that the date came from fetch time.
+
+On macOS, install the daily 12:15 local-time LaunchAgent (which also runs at
+login):
+
+```bash
+./scripts/install-whoop-body-sync-launchagent.sh
+```
+
+The runner loads WHOOP credentials from the repository's gitignored `.env`.
+
 Rate limits: per-app defaults around 100 req/min and 10,000/day — a daily sync uses a handful of calls.
 
 ### Oura Ring — supported (export connector + live OAuth2 v2 connector)

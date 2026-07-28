@@ -18,6 +18,7 @@ from .whoop import (
     load_credentials_from_env,
     save_tokens,
     sync_whoop,
+    sync_whoop_body_measurements,
     verify_webhook_signature,
 )
 
@@ -69,6 +70,12 @@ def build_parser() -> argparse.ArgumentParser:
     whoop_sync.add_argument("--owner", default="user", help="Owner label stored in the WHOOP source manifest.")
     whoop_sync.add_argument("--no-profile", action="store_true", help="Skip syncing WHOOP profile.")
     whoop_sync.add_argument("--no-body-measurements", action="store_true", help="Skip syncing WHOOP body measurements.")
+
+    whoop_body_sync = subparsers.add_parser(
+        "whoop-body-sync",
+        help="Capture WHOOP's current body measurements as an idempotent daily snapshot.",
+    )
+    whoop_body_sync.add_argument("--owner", default="user", help="Owner label stored in the WHOOP source manifest.")
 
     subparsers.add_parser("whoop-capabilities", help="Show WHOOP collections and gaps in the public API.")
     subparsers.add_parser("whoop-latest", help="Show the latest WHOOP timestamps from local OpenHealth data.")
@@ -226,6 +233,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             include_profile=not args.no_profile,
             include_body_measurements=not args.no_body_measurements,
         )
+    elif args.command == "whoop-body-sync":
+        result = sync_whoop_body_measurements(root=repo_root, owner=args.owner)
     elif args.command == "whoop-capabilities":
         result = CAPABILITIES
     elif args.command == "whoop-latest":

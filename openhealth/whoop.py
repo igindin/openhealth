@@ -379,6 +379,110 @@ def sync_whoop(
     }
 
 
+def sync_whoop_body_measurements(
+    root: Path,
+    owner: str = "user",
+    client: Optional[Any] = None,
+    fetched_at: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Fetch and persist a dated snapshot of WHOOP's current body measurements.
+
+    WHOOP's public body-measurement endpoint returns the current values rather
+    than a historical collection. This lightweight sync is therefore intended
+    for a daily local scheduler. Repeated runs on the same date are idempotent;
+    runs on later dates retain earlier snapshots.
+    """
+    paths = ensure_repo_structure(root)
+    index.init_db(paths.db_path)
+    if client is None:
+        credentials = load_credentials_from_env()
+        tokens = ensure_valid_tokens(paths.whoop_tokens_path, credentials)
+        client = WhoopClient(credentials, tokens)
+
+    # Use the machine's local offset for the daily bucket so a morning fetch
+    # near midnight UTC is still stored under the person's local calendar date.
+    snapshot_at = fetched_at or datetime.now().astimezone().replace(microsecond=0).isoformat()
+    sync_stamp = snapshot_at.replace(":", "").replace("+00:00", "z")
+    payload = client.get_body_measurements()
+    artifact = archive_whoop_payload(
+        paths=paths,
+        dataset_name="body_measurements",
+        endpoint_path="/user/measurement/body",
+        payload=payload,
+        sync_stamp=sync_stamp,
+        page_index=1,
+    )
+    records = normalize_body_measurements(
+        payload=payload,
+        artifact_id=artifact["artifact_id"],
+        source_id=WHOOP_SOURCE_ID,
+        fetched_at=snapshot_at,
+    )
+
+    write_json(paths.artifact_manifests / ("%s.json" % artifact["artifact_id"]), artifact)
+    index.upsert_artifact(paths.db_path, artifact)
+    for record in records:
+        index.upsert_record(paths.db_path, record)
+
+    all_records = index.list_records_by_source(paths.db_path, WHOOP_SOURCE_ID)
+    coverage_points = [
+        record.get("date") or record.get("start_date")
+        for record in all_records
+        if record.get("date") or record.get("start_date")
+    ]
+    existing_source = next(
+        (source for source in index.list_sources(paths.db_path) if source["source_id"] == WHOOP_SOURCE_ID),
+        None,
+    )
+    source_files = list((existing_source or {}).get("files") or [])
+    if artifact["archived_path"] not in source_files:
+        source_files.append(artifact["archived_path"])
+    source_notes = list((existing_source or {}).get("notes") or [])
+    timestamp_note = (
+        "WHOOP current body measurements are dated by fetch time when the provider "
+        "does not return a measurement timestamp."
+    )
+    if timestamp_note not in source_notes:
+        source_notes.append(timestamp_note)
+    source_metadata = dict((existing_source or {}).get("metadata") or {})
+    source_metadata["latest_body_snapshot"] = {
+        "fetched_at": snapshot_at,
+        "records": len(records),
+        "endpoint": "/user/measurement/body",
+    }
+    source = SourceManifest(
+        source_id=WHOOP_SOURCE_ID,
+        source_type="whoop",
+        owner=owner,
+        label=(existing_source or {}).get("label") or "WHOOP live sync",
+        created_at=(existing_source or {}).get("created_at") or snapshot_at,
+        coverage_start=min(coverage_points) if coverage_points else snapshot_at[:10],
+        coverage_end=max(coverage_points) if coverage_points else snapshot_at[:10],
+        files=source_files,
+        parser_status="synced",
+        notes=source_notes,
+        metadata=source_metadata,
+    )
+    write_json(paths.source_manifests / ("%s.json" % WHOOP_SOURCE_ID), source.to_dict())
+    index.upsert_source(paths.db_path, source.to_dict())
+    source_brief = build_source_brief(
+        source.to_dict(),
+        index.list_artifacts(paths.db_path),
+        all_records,
+    )
+    write_text(paths.briefs / ("%s.md" % WHOOP_SOURCE_ID), source_brief)
+    context_stats = refresh_contexts(paths, index)
+    return {
+        "source_id": WHOOP_SOURCE_ID,
+        "snapshot_at": snapshot_at,
+        "snapshot_date": snapshot_at[:10],
+        "records_imported": len(records),
+        "artifact_id": artifact["artifact_id"],
+        "archived_path": artifact["archived_path"],
+        "contexts": context_stats,
+    }
+
+
 def archive_whoop_payload(
     paths,
     dataset_name: str,
@@ -457,12 +561,23 @@ def normalize_profile(payload: Dict[str, Any], artifact_id: str, source_id: str,
     return [note.to_dict()]
 
 
-def normalize_body_measurements(payload: Dict[str, Any], artifact_id: str, source_id: str, fetched_at: str) -> List[Dict[str, Any]]:
+def normalize_body_measurements(
+    payload: Dict[str, Any],
+    artifact_id: str,
+    source_id: str,
+    fetched_at: str,
+) -> List[Dict[str, Any]]:
     measurements = payload.get("records") if isinstance(payload.get("records"), list) else [payload]
     records: List[Dict[str, Any]] = []
     for item in measurements:
-        measured_at = item.get("updated_at") or item.get("created_at") or fetched_at
-        date_value = measured_at[:10]
+        provider_timestamp = item.get("updated_at") or item.get("created_at")
+        date_value = (provider_timestamp or fetched_at)[:10]
+        metadata = dict(item)
+        metadata["openhealth_snapshot"] = {
+            "fetched_at": fetched_at,
+            "provider_measurement_timestamp": provider_timestamp,
+            "date_basis": "provider_timestamp" if provider_timestamp else "fetch_timestamp",
+        }
         for metric_name, unit in (
             ("height_meter", "m"),
             ("weight_kilogram", "kg"),
@@ -473,18 +588,18 @@ def normalize_body_measurements(payload: Dict[str, Any], artifact_id: str, sourc
                 continue
             records.append(
                 Observation(
-                    id="whoop-body-%s" % slugify(metric_name),
+                    id="whoop-body-%s-%s" % (slugify(metric_name), date_value),
                     record_type="Observation",
                     source_id=source_id,
-                    title="WHOOP %s" % metric_name.replace("_", " "),
-                    summary="WHOOP body measurement %s synced." % metric_name,
+                    title="WHOOP current %s snapshot" % metric_name.replace("_", " "),
+                    summary="WHOOP current body measurement %s captured on %s." % (metric_name, fetched_at),
                     artifact_ids=[artifact_id],
                     evidence_class="personal",
                     confidence=0.95,
-                    captured_at=measured_at,
+                    captured_at=fetched_at,
                     date=date_value,
                     tags=["whoop", "body-measurement"],
-                    metadata=item,
+                    metadata=metadata,
                     observation_kind="whoop_body_measurement",
                     metric_name=metric_name,
                     value=value,
@@ -748,6 +863,11 @@ def purge_existing_whoop_records(db_path: Path, new_records: List[Dict[str, Any]
         record_date = record.get("date") or record.get("start_date")
         if record["id"] in target_ids:
             target_ids.add(record["id"])
+        elif record.get("observation_kind") == "whoop_body_measurement":
+            # The public API exposes only the current body measurement, so
+            # daily local snapshots are the history. Never remove an older
+            # snapshot merely because a full sync window overlaps its date.
+            continue
         elif record_date and start[:10] <= record_date <= end[:10]:
             target_ids.add(record["id"])
     to_delete = sorted(target_ids)

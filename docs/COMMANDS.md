@@ -100,6 +100,7 @@ python -m openhealth module --id recovery --payload-json '{ ... }'
 python -m openhealth whoop-auth-url                      # start OAuth, get a URL
 python -m openhealth whoop-exchange-code --code <code>   # exchange the code for tokens
 python -m openhealth whoop-sync --days-back 30           # pull recovery/sleep/strain/HRV
+python -m openhealth whoop-body-sync                     # save today's current body-metric snapshot
 python -m openhealth whoop-capabilities                  # what the public API exposes
 python -m openhealth whoop-latest                        # latest synced timestamps
 ```
