@@ -1153,6 +1153,193 @@ class ConsumptionTests(unittest.TestCase):
         with self.assertRaises(nutrition_label.NutritionLabelNeedsClarification):
             nutrition_label.parse_label_basis_text("100 г")
 
+    def test_combined_basis_reply_requires_explicit_consumption(self):
+        basis_only = nutrition_label.parse_basis_and_consumption_text(
+            "Да всю упаковку"
+        )
+        self.assertEqual(
+            basis_only["basis"],
+            nutrition_label.BASIS_PER_CONTAINER,
+        )
+        self.assertIsNone(basis_only["consumed"])
+
+        combined = nutrition_label.parse_basis_and_consumption_text(
+            "цифры за всю упаковку, съел всё"
+        )
+        self.assertEqual(
+            combined["basis"],
+            nutrition_label.BASIS_PER_CONTAINER,
+        )
+        self.assertEqual(combined["consumed"]["fraction"], 1.0)
+
+        measured = nutrition_label.parse_basis_and_consumption_text(
+            "значения за 100 г, съел 150 г"
+        )
+        self.assertEqual(
+            measured["basis"],
+            nutrition_label.BASIS_PER_100G,
+        )
+        self.assertEqual(measured["consumed"]["amount"], 150.0)
+
+        serving = nutrition_label.parse_basis_and_consumption_text(
+            "за порцию, съел 2 порции"
+        )
+        self.assertEqual(
+            serving["basis"],
+            nutrition_label.BASIS_PER_SERVING,
+        )
+        self.assertEqual(serving["consumed"]["count"], 2.0)
+
+        for text, expected_count in (
+            ("за порцию, съел 1/2 порции", 0.5),
+            ("за порцию, съел половину порции", 0.5),
+            ("за порцию, съел четверть порции", 0.25),
+            ("за порцию, съел две порции", 2.0),
+            ("за порцию, съел полторы порции", 1.5),
+            ("за порцию, съел 1 1/2 порции", 1.5),
+            ("за порцию, съел две с половиной порции", 2.5),
+            ("за порцию, съел одну с половиной порцию", 1.5),
+        ):
+            with self.subTest(text=text):
+                fractional_serving = (
+                    nutrition_label.parse_basis_and_consumption_text(
+                        text
+                    )
+                )
+                self.assertEqual(
+                    fractional_serving["basis"],
+                    nutrition_label.BASIS_PER_SERVING,
+                )
+                self.assertEqual(
+                    fractional_serving["consumed"]["kind"],
+                    "servings",
+                )
+                self.assertEqual(
+                    fractional_serving["consumed"]["count"],
+                    expected_count,
+                )
+
+        consumption_only = (
+            nutrition_label.parse_basis_and_consumption_text(
+                "всю упаковку съел"
+            )
+        )
+        self.assertIsNone(consumption_only["basis"])
+        self.assertEqual(
+            consumption_only["consumed"]["fraction"],
+            1.0,
+        )
+
+        for text in (
+            "съел за раз всю упаковку",
+            "выпил за день всю бутылку",
+            "съел за обедом всю упаковку",
+        ):
+            with self.subTest(text=text):
+                temporal = (
+                    nutrition_label.parse_basis_and_consumption_text(
+                        text
+                    )
+                )
+                self.assertIsNone(temporal["basis"])
+                self.assertEqual(
+                    temporal["consumed"]["fraction"],
+                    1.0,
+                )
+
+        for text in (
+            "съел за одну порцию 150 г",
+            "выпил за одну порцию 200 мл",
+            "съел за всю упаковку 150 г",
+        ):
+            with self.subTest(text=text):
+                action_order = (
+                    nutrition_label.parse_basis_and_consumption_text(
+                        text
+                    )
+                )
+                self.assertIsNone(action_order["basis"])
+                self.assertIsNone(action_order["consumed"])
+
+        negated = nutrition_label.parse_basis_and_consumption_text(
+            "не съел всю упаковку"
+        )
+        self.assertIsNone(negated["basis"])
+        self.assertIsNone(negated["consumed"])
+
+        for text in (
+            "цифры за всю упаковку, не съедено всё",
+            "цифры за всю упаковку, не выпито всё",
+        ):
+            with self.subTest(text=text):
+                negated_combined = (
+                    nutrition_label.parse_basis_and_consumption_text(
+                        text
+                    )
+                )
+                self.assertEqual(
+                    negated_combined["basis"],
+                    nutrition_label.BASIS_PER_CONTAINER,
+                )
+                self.assertIsNone(
+                    negated_combined["consumed"]
+                )
+
+        for text in (
+            "цифры за всю упаковку, съел всё кроме 50 г",
+            "цифры за всю упаковку, съел всю упаковку без 50 г",
+            "цифры за всю упаковку, съел всё за исключением 50 г",
+            "цифры за всю упаковку, выпил всё кроме пары глотков",
+        ):
+            with self.subTest(text=text):
+                subtractive = (
+                    nutrition_label.parse_basis_and_consumption_text(
+                        text
+                    )
+                )
+                self.assertEqual(
+                    subtractive["basis"],
+                    nutrition_label.BASIS_PER_CONTAINER,
+                )
+                self.assertIsNone(subtractive["consumed"])
+
+        for text in (
+            "съел половину упаковки 200 г",
+            "съел 1/2 от 200 г",
+            "съел 50% от 200 г",
+            "съел всё 150 г",
+            "всё нормально",
+            "всё правильно",
+            "всё ок",
+            "да, всё нормально",
+            "да — всё нормально",
+            "ага, всё нормально",
+            "ну всё нормально",
+            "всё супер",
+            "всё отлично",
+            "всё так",
+            "всё сходится",
+            "да, всё супер",
+            "полностью согласен",
+            "полностью верно",
+            "съел одиннадцать порций",
+            "съел несколько порций",
+        ):
+            with self.subTest(text=text):
+                with self.assertRaises(
+                    nutrition_label.NutritionLabelNeedsClarification
+                ):
+                    nutrition_label.parse_consumed_amount(text)
+
+        ambiguous = nutrition_label.parse_basis_and_consumption_text(
+            "за 100 г, 150"
+        )
+        self.assertEqual(
+            ambiguous["basis"],
+            nutrition_label.BASIS_PER_100G,
+        )
+        self.assertIsNone(ambiguous["consumed"])
+
     def test_user_basis_resolution_is_strict_after_json_roundtrip(self):
         label = nutrition_label.normalize_label_extraction(_armenian_label(nutrition_basis="unknown", basis_text=""))
         label["basis"] = nutrition_label.BASIS_PER_CONTAINER
@@ -1176,6 +1363,128 @@ class ConsumptionTests(unittest.TestCase):
         }
         with self.assertRaises(nutrition_label.NutritionLabelNeedsClarification):
             nutrition_label.validate_normalized_label(json.loads(json.dumps(label, ensure_ascii=False)))
+
+    def test_contextual_basis_resolution_is_source_bound(self):
+        label = nutrition_label.normalize_label_extraction(
+            _armenian_label(
+                nutrition_basis="unknown",
+                basis_text="",
+            )
+        )
+        challenge = nutrition_label.prepare_label_basis_challenge(
+            label
+        )
+        resolved = nutrition_label.apply_confirmed_label_basis(
+            label,
+            challenge,
+            {
+                "schema_version": (
+                    nutrition_label.BASIS_RESOLUTION_SCHEMA_VERSION
+                ),
+                "source": "user_reply",
+                "confirmation_id": "telegram-42-11",
+                "text": "Да всю упаковку",
+                "artifact_ids": ["reply-contextual-1"],
+                "challenge_sha256": challenge["challenge_sha256"],
+            },
+        )
+        validated = nutrition_label.validate_normalized_label(
+            json.loads(json.dumps(resolved, ensure_ascii=False))
+        )
+        self.assertEqual(
+            validated["basis"],
+            nutrition_label.BASIS_PER_CONTAINER,
+        )
+        self.assertEqual(
+            validated["basis_resolution"]["confirmation_id"],
+            "telegram-42-11",
+        )
+        estimate = nutrition_label.estimate_from_consumption_text(
+            validated,
+            "всё",
+        )
+        self.assertEqual(estimate["scale_factor"], 1.0)
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ):
+            nutrition_label.apply_confirmed_label_basis(
+                validated,
+                challenge,
+                {
+                    "schema_version": (
+                        nutrition_label.BASIS_RESOLUTION_SCHEMA_VERSION
+                    ),
+                    "source": "user_reply",
+                    "confirmation_id": "telegram-42-12",
+                    "text": "значения за 100 г",
+                    "artifact_ids": ["reply-contextual-2"],
+                    "challenge_sha256": (
+                        challenge["challenge_sha256"]
+                    ),
+                },
+            )
+
+        tampered = json.loads(
+            json.dumps(resolved, ensure_ascii=False)
+        )
+        mutations = {
+            "confirmation_id": "telegram-42-12",
+            "text": "значения за 100 г",
+            "source": "unknown",
+            "artifact_ids": ["different-artifact"],
+            "basis": nutrition_label.BASIS_PER_100G,
+            "challenge_sha256": "1" * 64,
+            "resolution_sha256": "2" * 64,
+        }
+        for field, value in mutations.items():
+            with self.subTest(field=field):
+                tampered = json.loads(
+                    json.dumps(resolved, ensure_ascii=False)
+                )
+                tampered["basis_resolution"][field] = value
+                with self.assertRaises(
+                    nutrition_label.NutritionLabelValidationError
+                ):
+                    nutrition_label.validate_normalized_label(
+                        tampered
+                    )
+
+        stale = dict(challenge)
+        stale["challenge_sha256"] = "0" * 64
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ):
+            nutrition_label.apply_confirmed_label_basis(
+                label,
+                stale,
+                {
+                    "schema_version": (
+                        nutrition_label.BASIS_RESOLUTION_SCHEMA_VERSION
+                    ),
+                    "source": "user_reply",
+                    "confirmation_id": "telegram-42-11",
+                    "text": "Да всю упаковку",
+                    "artifact_ids": ["reply-contextual-1"],
+                    "challenge_sha256": "0" * 64,
+                },
+            )
+
+        other_label = nutrition_label.normalize_label_extraction(
+            _armenian_label(
+                nutrition_basis="unknown",
+                basis_text="",
+                product_name_original="Այլ ապուր",
+            )
+        )
+        other_challenge = (
+            nutrition_label.prepare_label_basis_challenge(
+                other_label
+            )
+        )
+        self.assertNotEqual(
+            challenge["challenge_sha256"],
+            other_challenge["challenge_sha256"],
+        )
 
 
 class LabelCorrectionLedgerTests(unittest.TestCase):

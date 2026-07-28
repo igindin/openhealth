@@ -124,10 +124,16 @@ them with `python -m openhealth modules`.
 - Text and locally transcribed voice replies may revise the linked meal record,
   but the raw photo/message/transcript stays immutable and every change must be
   idempotent, auditable, and recoverable if delivery or the process fails.
-- Treat a final "Верно?" as a source-bound acknowledgement, not a correction:
-  an exact text or locally transcribed voice Reply of yes/no must never enter
-  amount parsing or a provider call; stale and unthreaded answers fail closed,
-  and every applied acknowledgement remains auditable.
+- A single reply may resolve label basis and consumed amount only when they are
+  stated in independent, explicit clauses (for example, "values per 100 g, ate
+  150 g"). Never reuse the same words as both basis and amount, and fail closed
+  on negation, subtraction, ranges, or conflicting quantity signals.
+- Do not require another acknowledgement after explicit basis and consumption
+  answers have committed a label record: the final summary is informational and
+  correctable via Reply. If a final or legacy prompt asks "Верно?", treat exact
+  text or locally transcribed voice yes/no as a source-bound acknowledgement,
+  never amount parsing or a provider call; stale and unthreaded answers fail
+  closed, and every applied acknowledgement remains auditable.
 - Archive exact provider-response bytes locally before parsing them, bound to
   the source message, attempt, photo artifact, and a hash of the exact request.
   A malformed archived response fails closed and must never trigger an

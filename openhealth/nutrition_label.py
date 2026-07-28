@@ -44,6 +44,7 @@ LABEL_CONFIDENCE_LEVEL = evidence.Confidence.C2.value
 LABEL_CONFIDENCE = evidence.confidence_to_numeric(evidence.Confidence.C2)
 LABEL_SCHEMA_VERSION = 2
 NUTRIENT_MAPPING_SCHEMA_VERSION = 1
+BASIS_RESOLUTION_SCHEMA_VERSION = 1
 
 _MACRO_FIELDS = ("protein_g", "fat_g", "carb_g")
 _NUTRIENT_MAPPING_SOURCES = {"user_reply", "voice_transcript"}
@@ -103,6 +104,11 @@ _FULL_RE = re.compile(
     r"\b(?:все|всё|всю|весь|целиком|полностью|целую|целый)\b",
     re.IGNORECASE,
 )
+_NON_AMOUNT_ACKNOWLEDGEMENT_RE = re.compile(
+    r"\b(?:все|всё)\b.{0,30}"
+    r"\b(?:нормально|правильно|верно|ок(?:ей)?|хорошо)\b",
+    re.IGNORECASE,
+)
 _HALF_RE = re.compile(r"\b(?:половин(?:а|у|ы)?|пол-?упаковки)\b", re.IGNORECASE)
 _QUARTER_RE = re.compile(r"\b(?:четверт(?:ь|и|ую))\b", re.IGNORECASE)
 _THIRD_RE = re.compile(r"\b(?:треть|третью)\b", re.IGNORECASE)
@@ -114,6 +120,33 @@ _AMOUNT_RE = re.compile(
 )
 _SERVING_RE = re.compile(
     r"(?:(\d+(?:[.,]\d+)?)\s*)?(?:порци(?:я|и|ю|й)|servings?)\b",
+    re.IGNORECASE,
+)
+_SERVING_TOKEN_RE = re.compile(
+    r"\b(?:порци\w*|servings?)\b",
+    re.IGNORECASE,
+)
+_MIXED_SERVING_RE = re.compile(
+    r"(?<!\d)(\d+)\s+([1-9]\d*)\s*/\s*([1-9]\d*)"
+    r"\s*(?:порци\w*|servings?)\b",
+    re.IGNORECASE,
+)
+_WORD_SERVING_RE = re.compile(
+    r"\b(одн(?:у|а|ой)|целую|целая|две|два|три|четыре|пять|шесть|семь|"
+    r"восемь|девять|десять|полторы|полтора|one|two|three|four|"
+    r"five|six|seven|eight|nine|ten|a|whole)\s+"
+    r"(?:порци\w*|servings?)\b",
+    re.IGNORECASE,
+)
+_WORD_AND_HALF_SERVING_RE = re.compile(
+    r"\b(одн(?:у|а|ой)|две|два|три|четыре|пять|шесть|семь|"
+    r"восемь|девять|десять)\s+с\s+половиной\s+"
+    r"(?:порци\w*)\b",
+    re.IGNORECASE,
+)
+_AMBIGUOUS_SERVING_COUNT_RE = re.compile(
+    r"\b(?:несколько|пару|пара|около|примерно|some|several|couple)"
+    r"\s+(?:порци\w*|servings?)\b",
     re.IGNORECASE,
 )
 _EXPLICIT_BASIS_100G_RE = re.compile(
@@ -130,15 +163,30 @@ _BASIS_CONTAINER_RE = re.compile(
     re.IGNORECASE,
 )
 _PARTIAL_CAVEAT_RE = re.compile(
-    r"\b(?:не|почти|оставил(?:а)?|осталось|недоел(?:а)?|недопил(?:а)?)\b",
+    r"\b(?:"
+    r"не|почти|оставил(?:а)?|осталось|недоел(?:а)?|недопил(?:а)?|"
+    r"кроме|без|исключени\w*|минус|except|without|minus"
+    r")\b",
+    re.IGNORECASE,
+)
+_BASIS_SEMANTIC_MARKER_RE = re.compile(
+    r"\b(?:значени[яй]|цифры|этикетк\w*|values?|label|per)\b",
     re.IGNORECASE,
 )
 _EXPLICIT_BASIS_SERVING_RE = re.compile(
-    r"(?:\b(?:на|за|значени[яй]|цифры|этикетк\w*)\b.{0,40}" r"\bпорци\w*\b|\bper\s+(?:one\s+)?serving\b)",
+    r"(?:"
+    r"\b(?:на|за)\s+(?:одн(?:у|ой)\s+)?порци\w*\b|"
+    r"\b(?:значени[яй]|цифры|этикетк\w*)\b.{0,40}"
+    r"\bпорци\w*\b|"
+    r"\bper\s+(?:one\s+)?serving\b"
+    r")",
     re.IGNORECASE,
 )
 _EXPLICIT_BASIS_CONTAINER_RE = re.compile(
-    r"(?:\b(?:на|за|значени[яй]|цифры|этикетк\w*)\b.{0,40}"
+    r"(?:"
+    r"\b(?:на|за)\s+(?:(?:всю|весь|целую|целый|одну)\s+)?"
+    r"(?:упаковк\w*|бутылк\w*|банк\w*|контейнер\w*)\b|"
+    r"\b(?:значени[яй]|цифры|этикетк\w*)\b.{0,40}"
     r"\b(?:упаковк\w*|бутылк\w*|банк\w*|контейнер\w*)\b|"
     r"\bper\s+(?:the\s+)?(?:package|container|bottle)\b)",
     re.IGNORECASE,
@@ -148,6 +196,22 @@ _RANGE_AMOUNT_RE = re.compile(
     re.IGNORECASE,
 )
 _NUMBER_TOKEN_RE = re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)?(?![\d.,])")
+_CONSUMPTION_ACTION_RE = re.compile(
+    r"\b(?:"
+    r"съел(?:а|и)?|съедено|выпил(?:а|и)?|выпито|"
+    r"доел(?:а|и)?|допил(?:а|и)?|"
+    r"ate|drank|consumed|finished"
+    r")\b",
+    re.IGNORECASE,
+)
+_NEGATED_CONSUMPTION_ACTION_RE = re.compile(
+    r"\b(?:не|not)\s+(?:"
+    r"съел(?:а|и)?|съедено|выпил(?:а|и)?|выпито|"
+    r"доел(?:а|и)?|допил(?:а|и)?|"
+    r"ate|drank|consumed|finished"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 class NutritionLabelError(ValueError):
@@ -913,6 +977,7 @@ def _calculation_context_fingerprint(
     declared: Dict[str, Any],
     extraction_sha256: str,
     nutrient_mapping_resolution_sha256: Optional[str] = None,
+    basis_resolution_sha256: Optional[str] = None,
 ) -> str:
     payload = {
         "basis": basis,
@@ -924,6 +989,10 @@ def _calculation_context_fingerprint(
     if nutrient_mapping_resolution_sha256 is not None:
         payload["nutrient_mapping_resolution_sha256"] = (
             nutrient_mapping_resolution_sha256
+        )
+    if basis_resolution_sha256 is not None:
+        payload["basis_resolution_sha256"] = (
+            basis_resolution_sha256
         )
     return _json_sha256(payload)
 
@@ -1685,7 +1754,12 @@ def validate_normalized_label(label: Dict[str, Any]) -> Dict[str, Any]:
         raise NutritionLabelNeedsClarification("nutrition basis is invalid")
     resolution = label.get("basis_resolution")
     if resolution is not None:
-        resolution = _normalize_basis_resolution(resolution, basis)
+        resolution = _normalize_basis_resolution(
+            resolution,
+            basis,
+            provenance=provenance,
+            basis_verification=basis_verification,
+        )
     elif basis != basis_verification["basis"]:
         raise NutritionLabelValidationError("normalized basis does not match visible label text")
     if basis == BASIS_PER_SERVING and serving is None:
@@ -1721,6 +1795,36 @@ def validate_normalized_label(label: Dict[str, Any]) -> Dict[str, Any]:
     return validated
 
 
+def _whole_consumption_is_explicit(text: str) -> bool:
+    if _CONSUMPTION_ACTION_RE.search(text):
+        return True
+    tokens = re.findall(
+        r"[^\W\d_]+",
+        unicodedata.normalize("NFKC", text).casefold(),
+        re.UNICODE,
+    )
+    if not tokens:
+        return False
+    allowed = {
+        "все",
+        "всё",
+        "всю",
+        "весь",
+        "целиком",
+        "полностью",
+        "целую",
+        "целый",
+    }
+    return all(
+        token in allowed
+        or token.startswith("упаковк")
+        or token.startswith("бутылк")
+        or token.startswith("банк")
+        or token.startswith("контейнер")
+        for token in tokens
+    )
+
+
 def parse_consumed_amount(text: str) -> Dict[str, Any]:
     """Parse a short Russian/English answer about how much was consumed.
 
@@ -1731,6 +1835,10 @@ def parse_consumed_amount(text: str) -> Dict[str, Any]:
     raw = str(text or "").strip()
     if not raw:
         raise NutritionLabelNeedsClarification("consumed amount is missing")
+    if _NON_AMOUNT_ACKNOWLEDGEMENT_RE.search(raw):
+        raise NutritionLabelNeedsClarification(
+            "acknowledgement is not a consumed amount"
+        )
     if _PARTIAL_CAVEAT_RE.search(raw):
         raise NutritionLabelNeedsClarification("ambiguous or partial consumption needs an explicit amount")
     if _RANGE_AMOUNT_RE.search(raw):
@@ -1749,6 +1857,18 @@ def parse_consumed_amount(text: str) -> Dict[str, Any]:
     if len(amount_matches) > 1:
         raise NutritionLabelNeedsClarification("more than one consumed amount is ambiguous")
     if amount_matches:
+        if (
+            _FRACTION_RE.search(amount_source)
+            or _PERCENT_RE.search(amount_source)
+            or _HALF_RE.search(amount_source)
+            or _QUARTER_RE.search(amount_source)
+            or _THIRD_RE.search(amount_source)
+            or _FULL_RE.search(amount_source)
+            or _SERVING_TOKEN_RE.search(amount_source)
+        ):
+            raise NutritionLabelNeedsClarification(
+                "consumed amount contains conflicting quantity signals"
+            )
         amount_match = amount_matches[0]
         amount = _finite_number(amount_match.group(1).replace(",", "."), "consumed amount", positive=True)
         unit = normalize_unit(amount_match.group(2))
@@ -1756,8 +1876,134 @@ def parse_consumed_amount(text: str) -> Dict[str, Any]:
             raise NutritionLabelNeedsClarification("consumed amount unit must be g or ml")
         return {"kind": "amount", "amount": amount, "unit": unit, "raw_text": raw}
 
+    serving_word = _SERVING_TOKEN_RE.search(raw)
+    fraction_match = _FRACTION_RE.search(raw)
+    percent_match = _PERCENT_RE.search(raw)
+    mixed_serving = _MIXED_SERVING_RE.search(raw)
+    if mixed_serving:
+        whole = float(mixed_serving.group(1))
+        numerator = float(mixed_serving.group(2))
+        denominator = float(mixed_serving.group(3))
+        count = whole + (numerator / denominator)
+        if not math.isfinite(count) or count <= 0:
+            raise NutritionLabelNeedsClarification(
+                "mixed serving count is invalid"
+            )
+        return {
+            "kind": "servings",
+            "count": count,
+            "raw_text": raw,
+        }
+    if serving_word and fraction_match:
+        numerator = float(fraction_match.group(1))
+        denominator = float(fraction_match.group(2))
+        count = numerator / denominator
+        if not (0 < count <= 1):
+            raise NutritionLabelNeedsClarification(
+                "fractional serving must be between 0 and 1"
+            )
+        return {
+            "kind": "servings",
+            "count": count,
+            "raw_text": raw,
+        }
+    if serving_word and percent_match:
+        count = float(
+            percent_match.group(1).replace(",", ".")
+        ) / 100.0
+        if not (0 < count <= 1):
+            raise NutritionLabelNeedsClarification(
+                "serving percent must be between 0 and 100"
+            )
+        return {
+            "kind": "servings",
+            "count": count,
+            "raw_text": raw,
+        }
+    if serving_word:
+        for pattern, count in (
+            (_HALF_RE, 0.5),
+            (_QUARTER_RE, 0.25),
+            (_THIRD_RE, 1.0 / 3.0),
+        ):
+            if pattern.search(raw):
+                return {
+                    "kind": "servings",
+                    "count": count,
+                    "raw_text": raw,
+                }
+
+    word_counts = {
+        "одну": 1.0,
+        "одна": 1.0,
+        "одной": 1.0,
+        "целую": 1.0,
+        "целая": 1.0,
+        "две": 2.0,
+        "два": 2.0,
+        "три": 3.0,
+        "четыре": 4.0,
+        "пять": 5.0,
+        "шесть": 6.0,
+        "семь": 7.0,
+        "восемь": 8.0,
+        "девять": 9.0,
+        "десять": 10.0,
+        "полторы": 1.5,
+        "полтора": 1.5,
+        "one": 1.0,
+        "two": 2.0,
+        "three": 3.0,
+        "four": 4.0,
+        "five": 5.0,
+        "six": 6.0,
+        "seven": 7.0,
+        "eight": 8.0,
+        "nine": 9.0,
+        "ten": 10.0,
+        "a": 1.0,
+        "whole": 1.0,
+    }
+    word_and_half = _WORD_AND_HALF_SERVING_RE.search(raw)
+    if word_and_half:
+        return {
+            "kind": "servings",
+            "count": (
+                word_counts[word_and_half.group(1).casefold()]
+                + 0.5
+            ),
+            "raw_text": raw,
+        }
+    word_serving = _WORD_SERVING_RE.search(raw)
+    if word_serving:
+        return {
+            "kind": "servings",
+            "count": word_counts[word_serving.group(1).casefold()],
+            "raw_text": raw,
+        }
+    if _AMBIGUOUS_SERVING_COUNT_RE.search(raw):
+        raise NutritionLabelNeedsClarification(
+            "serving count must be explicit"
+        )
+
     serving_match = _SERVING_RE.search(raw)
     if serving_match:
+        if serving_match.group(1) is None:
+            prefix_words = re.findall(
+                r"[^\W\d_]+",
+                raw[: serving_match.start()],
+                re.UNICODE,
+            )
+            if (
+                prefix_words
+                and _CONSUMPTION_ACTION_RE.fullmatch(
+                    prefix_words[-1]
+                )
+                is None
+            ):
+                raise NutritionLabelNeedsClarification(
+                    "serving count modifier is unsupported"
+                )
         count = _finite_number(
             (serving_match.group(1) or "1").replace(",", "."),
             "serving count",
@@ -1765,7 +2011,6 @@ def parse_consumed_amount(text: str) -> Dict[str, Any]:
         )
         return {"kind": "servings", "count": count, "raw_text": raw}
 
-    fraction_match = _FRACTION_RE.search(raw)
     if fraction_match:
         numerator = float(fraction_match.group(1))
         denominator = float(fraction_match.group(2))
@@ -1774,7 +2019,6 @@ def parse_consumed_amount(text: str) -> Dict[str, Any]:
             raise NutritionLabelNeedsClarification("package fraction must be between 0 and 1")
         return {"kind": "package_fraction", "fraction": fraction, "raw_text": raw}
 
-    percent_match = _PERCENT_RE.search(raw)
     if percent_match:
         fraction = float(percent_match.group(1).replace(",", ".")) / 100.0
         if not (0 < fraction <= 1):
@@ -1788,6 +2032,10 @@ def parse_consumed_amount(text: str) -> Dict[str, Any]:
     if _THIRD_RE.search(raw):
         return {"kind": "package_fraction", "fraction": 1.0 / 3.0, "raw_text": raw}
     if _FULL_RE.search(raw):
+        if not _whole_consumption_is_explicit(raw):
+            raise NutritionLabelNeedsClarification(
+                "whole-package wording contains non-amount context"
+            )
         return {"kind": "package_fraction", "fraction": 1.0, "raw_text": raw}
 
     raise NutritionLabelNeedsClarification("say whether the whole package was consumed or give grams/ml")
@@ -1803,30 +2051,422 @@ def parse_label_basis_text(text: str) -> str:
     return basis
 
 
+def parse_basis_and_consumption_text(text: str) -> Dict[str, Any]:
+    """Parse a basis-question reply without double-counting the same words.
+
+    A basis is accepted from strict basis wording (``за 100 г``,
+    ``цифры за упаковку``), or contextually from a basis-only answer such as
+    ``Да всю упаковку``.  Once an eating/drinking action is present, broad
+    container wording is treated as consumption rather than as a basis.  The
+    consumed amount is parsed only from the independent action clause.
+    """
+    raw = str(text or "").strip()
+    red_flags = evidence.scan_text_red_flags(raw)
+    if red_flags:
+        raise LabelCorrectionRedFlag(red_flags)
+
+    strict_basis = detect_explicit_basis_correction(raw)
+    action = _CONSUMPTION_ACTION_RE.search(raw)
+    negated_action = _NEGATED_CONSUMPTION_ACTION_RE.search(raw)
+    basis: Optional[str] = strict_basis
+    if (
+        basis is None
+        and action is None
+        and not _PARTIAL_CAVEAT_RE.search(raw)
+    ):
+        try:
+            basis = parse_label_basis_text(raw)
+        except NutritionLabelNeedsClarification:
+            basis = None
+
+    consumed = None
+    if (
+        action is not None
+        and negated_action is None
+        and not _PARTIAL_CAVEAT_RE.search(raw)
+    ):
+        try:
+            consumption_source = (
+                raw[action.start() :]
+                if strict_basis is not None
+                else raw
+            )
+            consumed = parse_consumed_amount(consumption_source)
+        except NutritionLabelNeedsClarification:
+            consumed = None
+    return {
+        "basis": basis,
+        "consumed": consumed,
+        "raw_text": raw,
+    }
+
+
 def detect_explicit_basis_correction(text: str) -> Optional[str]:
     """Return a basis only when a consumption reply explicitly corrects it."""
     raw = str(text or "").strip()
-    matches = []
-    if _EXPLICIT_BASIS_100G_RE.search(raw):
-        matches.append(BASIS_PER_100G)
-    if _EXPLICIT_BASIS_100ML_RE.search(raw):
-        matches.append(BASIS_PER_100ML)
-    if _EXPLICIT_BASIS_SERVING_RE.search(raw):
-        matches.append(BASIS_PER_SERVING)
-    if _EXPLICIT_BASIS_CONTAINER_RE.search(raw):
-        matches.append(BASIS_PER_CONTAINER)
-    unique = list(dict.fromkeys(matches))
+    patterns = {
+        BASIS_PER_100G: _EXPLICIT_BASIS_100G_RE,
+        BASIS_PER_100ML: _EXPLICIT_BASIS_100ML_RE,
+        BASIS_PER_SERVING: _EXPLICIT_BASIS_SERVING_RE,
+        BASIS_PER_CONTAINER: _EXPLICIT_BASIS_CONTAINER_RE,
+    }
+    evidence_matches = {
+        basis: list(pattern.finditer(raw))
+        for basis, pattern in patterns.items()
+    }
+    unique = [
+        basis
+        for basis, matches in evidence_matches.items()
+        if matches
+    ]
     if len(unique) > 1:
         raise NutritionLabelNeedsClarification("basis correction contains more than one basis")
-    return unique[0] if unique else None
+    if not unique:
+        return None
+    basis = unique[0]
+    action = _CONSUMPTION_ACTION_RE.search(raw)
+    if action is None:
+        return basis
+    for match in evidence_matches[basis]:
+        if match.start() < action.start():
+            return basis
+        prefix = raw[max(0, match.start() - 60) : match.start()]
+        if (
+            _BASIS_SEMANTIC_MARKER_RE.search(match.group(0))
+            or _BASIS_SEMANTIC_MARKER_RE.search(prefix)
+        ):
+            return basis
+    return None
+
+
+def _prepare_label_basis_challenge_from_context(
+    provenance: Any,
+    basis_verification: Any,
+    *,
+    require_unresolved: bool,
+) -> Dict[str, Any]:
+    if not isinstance(provenance, dict):
+        raise NutritionLabelNeedsClarification(
+            "label basis challenge requires provenance",
+            code="basis_challenge_invalid",
+        )
+    extraction_sha256 = str(
+        provenance.get("extraction_sha256") or ""
+    ).strip()
+    provenance_sha256 = str(
+        provenance.get("provenance_sha256") or ""
+    ).strip()
+    if (
+        not re.fullmatch(r"[0-9a-f]{64}", extraction_sha256)
+        or not re.fullmatch(r"[0-9a-f]{64}", provenance_sha256)
+    ):
+        raise NutritionLabelNeedsClarification(
+            "label basis challenge requires fingerprinted provenance",
+            code="basis_challenge_invalid",
+        )
+    if not isinstance(basis_verification, dict):
+        raise NutritionLabelNeedsClarification(
+            "label basis verification is invalid",
+            code="basis_challenge_invalid",
+        )
+    expected_keys = {
+        "status",
+        "model_basis",
+        "visible_basis",
+        "basis_text_is_raw_fragment",
+        "basis",
+    }
+    if set(basis_verification) != expected_keys:
+        raise NutritionLabelNeedsClarification(
+            "label basis verification is invalid",
+            code="basis_challenge_invalid",
+        )
+    normalized_verification = json.loads(
+        json.dumps(
+            basis_verification,
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    )
+    if (
+        normalized_verification.get("basis") not in SUPPORTED_BASES
+        or normalized_verification.get("model_basis") not in SUPPORTED_BASES
+        or normalized_verification.get("visible_basis") not in SUPPORTED_BASES
+        or normalized_verification.get("status")
+        not in {"verified", "unverified"}
+        or not isinstance(
+            normalized_verification.get("basis_text_is_raw_fragment"),
+            bool,
+        )
+    ):
+        raise NutritionLabelNeedsClarification(
+            "label basis verification is invalid",
+            code="basis_challenge_invalid",
+        )
+    if (
+        require_unresolved
+        and normalized_verification["basis"] != BASIS_UNKNOWN
+    ):
+        raise NutritionLabelNeedsClarification(
+            "label basis is already visible",
+            code="basis_challenge_not_required",
+        )
+    challenge = {
+        "schema_version": BASIS_RESOLUTION_SCHEMA_VERSION,
+        "kind": "nutrition_label_basis",
+        "extraction_sha256": extraction_sha256,
+        "provenance_sha256": provenance_sha256,
+        "basis_verification": normalized_verification,
+    }
+    challenge["challenge_sha256"] = _json_sha256(challenge)
+    return challenge
+
+
+def prepare_label_basis_challenge(
+    label: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build a source-bound prompt challenge for one unresolved label basis."""
+    validated = validate_normalized_label(label)
+    if (
+        validated["basis"] != BASIS_UNKNOWN
+        or validated.get("basis_resolution") is not None
+    ):
+        raise NutritionLabelNeedsClarification(
+            "label basis is already resolved",
+            code="basis_challenge_not_required",
+        )
+    return _prepare_label_basis_challenge_from_context(
+        validated["provenance"],
+        validated["basis_verification"],
+        require_unresolved=True,
+    )
+
+
+def _normalize_basis_confirmation(
+    confirmation: Any,
+    challenge: Dict[str, Any],
+) -> Dict[str, Any]:
+    if not isinstance(confirmation, dict):
+        raise NutritionLabelNeedsClarification(
+            "label basis confirmation must be an object",
+            code="basis_confirmation_invalid",
+        )
+    text = str(confirmation.get("text") or "").strip()
+    red_flags = evidence.scan_text_red_flags(text)
+    if red_flags:
+        raise LabelCorrectionRedFlag(red_flags)
+    if (
+        confirmation.get("schema_version")
+        != BASIS_RESOLUTION_SCHEMA_VERSION
+    ):
+        raise NutritionLabelNeedsClarification(
+            "label basis confirmation schema is invalid",
+            code="basis_confirmation_invalid",
+        )
+    source = str(confirmation.get("source") or "").strip()
+    if source not in {
+        "user_reply",
+        "voice_transcript",
+        "user_correction",
+    }:
+        raise NutritionLabelNeedsClarification(
+            "label basis confirmation source is invalid",
+            code="basis_confirmation_invalid",
+        )
+    confirmation_id = str(
+        confirmation.get("confirmation_id") or ""
+    ).strip()
+    if (
+        not text
+        or len(text) > 500
+        or not confirmation_id
+        or len(confirmation_id) > 240
+    ):
+        raise NutritionLabelNeedsClarification(
+            "label basis confirmation text and id are required",
+            code="basis_confirmation_invalid",
+        )
+    if (
+        str(confirmation.get("challenge_sha256") or "").strip()
+        != challenge["challenge_sha256"]
+    ):
+        raise NutritionLabelNeedsClarification(
+            "label basis confirmation is stale",
+            code="basis_confirmation_stale",
+        )
+    artifact_ids = confirmation.get("artifact_ids")
+    normalized_artifact_ids = (
+        [str(item).strip() for item in artifact_ids]
+        if isinstance(artifact_ids, list)
+        else []
+    )
+    if (
+        not normalized_artifact_ids
+        or any(
+            not item or len(item) > 240
+            for item in normalized_artifact_ids
+        )
+    ):
+        raise NutritionLabelNeedsClarification(
+            "label basis confirmation artifacts are required",
+            code="basis_confirmation_invalid",
+        )
+    parsed = parse_basis_and_consumption_text(text)
+    basis = parsed["basis"]
+    if basis is None:
+        raise NutritionLabelNeedsClarification(
+            "label basis confirmation is not explicit",
+            code="basis_confirmation_not_explicit",
+        )
+    return {
+        "schema_version": BASIS_RESOLUTION_SCHEMA_VERSION,
+        "source": source,
+        "confirmation_id": confirmation_id,
+        "text": text,
+        "artifact_ids": list(
+            dict.fromkeys(normalized_artifact_ids)
+        ),
+        "challenge_sha256": challenge["challenge_sha256"],
+        "basis": basis,
+    }
+
+
+def _build_basis_resolution(
+    challenge: Dict[str, Any],
+    confirmation: Any,
+) -> Dict[str, Any]:
+    normalized = _normalize_basis_confirmation(
+        confirmation,
+        challenge,
+    )
+    resolution = {
+        **normalized,
+        "basis_verification": json.loads(
+            json.dumps(
+                challenge["basis_verification"],
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+        ),
+    }
+    resolution["resolution_sha256"] = _json_sha256(resolution)
+    return resolution
+
+
+def apply_confirmed_label_basis(
+    label: Dict[str, Any],
+    challenge: Dict[str, Any],
+    confirmation: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Apply one exact source-bound basis reply to an unresolved label."""
+    if isinstance(confirmation, dict):
+        red_flags = evidence.scan_text_red_flags(
+            str(confirmation.get("text") or "")
+        )
+        if red_flags:
+            raise LabelCorrectionRedFlag(red_flags)
+    validated = validate_normalized_label(label)
+    if (
+        validated["basis"] != BASIS_UNKNOWN
+        or validated.get("basis_resolution") is not None
+    ):
+        raise NutritionLabelNeedsClarification(
+            "label basis is already resolved",
+            code="basis_challenge_not_required",
+        )
+    expected_challenge = _prepare_label_basis_challenge_from_context(
+        validated["provenance"],
+        validated["basis_verification"],
+        require_unresolved=True,
+    )
+    if challenge != expected_challenge:
+        raise NutritionLabelNeedsClarification(
+            "label basis challenge does not match the extraction",
+            code="basis_challenge_invalid",
+        )
+    resolution = _build_basis_resolution(
+        expected_challenge,
+        confirmation,
+    )
+    resolved = json.loads(
+        json.dumps(validated, ensure_ascii=False, allow_nan=False)
+    )
+    resolved["basis"] = resolution["basis"]
+    resolved["basis_resolution"] = resolution
+    return validate_normalized_label(resolved)
 
 
 def _normalize_basis_resolution(
     resolution: Any,
     basis: str,
+    *,
+    provenance: Optional[Dict[str, Any]] = None,
+    basis_verification: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     if not isinstance(resolution, dict):
         raise NutritionLabelNeedsClarification("basis resolution is invalid")
+    v1_markers = {
+        "schema_version",
+        "confirmation_id",
+        "challenge_sha256",
+        "basis_verification",
+        "resolution_sha256",
+        "basis",
+    }
+    if any(key in resolution for key in v1_markers):
+        try:
+            if (
+                resolution.get("schema_version")
+                != BASIS_RESOLUTION_SCHEMA_VERSION
+            ):
+                raise NutritionLabelNeedsClarification(
+                    "basis resolution schema is unsupported",
+                    code="basis_resolution_invalid",
+                )
+            challenge = _prepare_label_basis_challenge_from_context(
+                provenance,
+                resolution.get("basis_verification"),
+                require_unresolved=False,
+            )
+            if (
+                basis_verification is not None
+                and resolution.get("basis_verification")
+                != basis_verification
+            ):
+                raise NutritionLabelNeedsClarification(
+                    "basis resolution verification context is stale",
+                    code="basis_resolution_invalid",
+                )
+            expected = _build_basis_resolution(
+                challenge,
+                {
+                    "schema_version": resolution.get(
+                        "schema_version"
+                    ),
+                    "source": resolution.get("source"),
+                    "confirmation_id": resolution.get(
+                        "confirmation_id"
+                    ),
+                    "text": resolution.get("text"),
+                    "artifact_ids": resolution.get("artifact_ids"),
+                    "challenge_sha256": resolution.get(
+                        "challenge_sha256"
+                    ),
+                },
+            )
+        except LabelCorrectionRedFlag:
+            raise
+        except NutritionLabelError as exc:
+            raise NutritionLabelValidationError(
+                "basis resolution is invalid",
+                code="basis_resolution_invalid",
+            ) from exc
+        if resolution != expected or expected["basis"] != basis:
+            raise NutritionLabelValidationError(
+                "basis resolution fingerprint does not match",
+                code="basis_resolution_invalid",
+            )
+        return expected
     source = str(resolution.get("source") or "")
     text = str(resolution.get("text") or "").strip()
     artifact_ids = resolution.get("artifact_ids")
@@ -1985,6 +2625,16 @@ def calculate_consumed_estimate(
         if isinstance(nutrient_mapping_resolution, dict)
         else None
     )
+    basis_resolution = label.get("basis_resolution")
+    basis_resolution_sha256 = (
+        basis_resolution["resolution_sha256"]
+        if (
+            isinstance(basis_resolution, dict)
+            and basis_resolution.get("schema_version")
+            == BASIS_RESOLUTION_SCHEMA_VERSION
+        )
+        else None
+    )
     calculation_context_sha256 = _calculation_context_fingerprint(
         basis=label["basis"],
         package=label.get("package"),
@@ -1994,6 +2644,7 @@ def calculate_consumed_estimate(
         nutrient_mapping_resolution_sha256=(
             nutrient_mapping_resolution_sha256
         ),
+        basis_resolution_sha256=basis_resolution_sha256,
     )
     estimate = {
         "title": label["title"],
@@ -2143,6 +2794,16 @@ def _validated_label_estimate(estimate: Dict[str, Any]) -> Dict[str, Any]:
             provenance,
         )
     )
+    resolution_value = estimate.get("basis_resolution")
+    resolution = (
+        _normalize_basis_resolution(
+            resolution_value,
+            basis,
+            provenance=provenance,
+        )
+        if resolution_value is not None
+        else None
+    )
     calculation_context_sha256 = _calculation_context_fingerprint(
         basis=basis,
         package=package,
@@ -2154,12 +2815,19 @@ def _validated_label_estimate(estimate: Dict[str, Any]) -> Dict[str, Any]:
             if nutrient_mapping_resolution is not None
             else None
         ),
+        basis_resolution_sha256=(
+            resolution["resolution_sha256"]
+            if (
+                resolution is not None
+                and resolution.get("schema_version")
+                == BASIS_RESOLUTION_SCHEMA_VERSION
+            )
+            else None
+        ),
     )
     if str(estimate.get("calculation_context_sha256") or "") != calculation_context_sha256:
         raise NutritionLabelValidationError("label estimate calculation context fingerprint does not match")
 
-    resolution_value = estimate.get("basis_resolution")
-    resolution = _normalize_basis_resolution(resolution_value, basis) if resolution_value is not None else None
     normalized.update(
         {
             "note": _text(estimate.get("note"), "note", limit=500),
