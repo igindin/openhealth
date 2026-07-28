@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from openhealth import index
+from openhealth.contexts import build_source_status_context
 from openhealth.storage import ensure_repo_structure
 from openhealth.whoop import (
     WHOOP_SOURCE_ID,
@@ -145,6 +146,22 @@ class WhoopBodySnapshotTests(unittest.TestCase):
         }
         self.assertIn(old_body["id"], remaining_ids)
         self.assertNotIn(old_cycle["id"], remaining_ids)
+
+    def test_source_status_tolerates_legacy_manifest_without_parser_status(self):
+        context = build_source_status_context(
+            sources=[
+                {
+                    "source_id": "legacy-source",
+                    "source_type": "legacy",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                }
+            ],
+            artifacts=[],
+            records=[],
+        )
+
+        self.assertIn("`legacy-source`", context)
+        self.assertIn("status=unknown", context)
 
 
 if __name__ == "__main__":
