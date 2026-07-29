@@ -378,14 +378,88 @@ _KILOJOULE_UNIT_WORDS = {
     "кдж",
     "կջ",
 }
+_PROHIBITED_NORMALIZED_NUMBER_MARKERS = {
+    "+",
+    "-",
+    "<",
+    ">",
+    "±",
+    "~",
+    "≈",
+    "≤",
+    "≥",
+    "−",
+    "﹣",
+    "－",
+    "%",
+    "٪",
+    "‰",
+    "‱",
+    "％",
+}
+_PROHIBITED_NUMBER_MARKER_NAMES = (
+    "APPROXIMATELY",
+    "GREATER-THAN",
+    "LESS-THAN",
+    "MINUS",
+    "PERCENT",
+    "PER MILLE",
+    "PER TEN THOUSAND",
+    "PLUS",
+    "TILDE",
+)
+
+
+def _is_prohibited_number_marker(char: str) -> bool:
+    normalized = unicodedata.normalize("NFKC", char)
+    if (
+        unicodedata.category(char)
+        in {"Cf", "Me", "Mn", "Pd", "Sc", "Sm"}
+        and normalized != "="
+    ):
+        return True
+    if any(
+        item in _PROHIBITED_NORMALIZED_NUMBER_MARKERS
+        for item in normalized
+    ):
+        return True
+    name = unicodedata.name(char, "").upper()
+    return any(
+        marker_name in name
+        for marker_name in _PROHIBITED_NUMBER_MARKER_NAMES
+    )
+
+
+def _number_has_prohibited_prefix(
+    text: str,
+    number_start: int,
+) -> bool:
+    prefix = text[:number_start]
+    if any(
+        _is_prohibited_number_marker(char)
+        for char in prefix
+    ):
+        return True
+    attached = prefix.rstrip()
+    return bool(
+        attached
+        and unicodedata.category(attached[-1]) == "Pd"
+    )
 
 
 def _is_kilojoule_bridge(text: str) -> bool:
-    words = re.findall(r"[^\W\d_]+", text, flags=re.UNICODE)
+    words = list(
+        re.finditer(r"[^\W\d_]+", text, flags=re.UNICODE)
+    )
     return (
         not any(char.isdigit() for char in text)
         and len(words) == 1
-        and words[0].casefold() in _KILOJOULE_UNIT_WORDS
+        and words[0].group(0).casefold()
+        in _KILOJOULE_UNIT_WORDS
+        and not any(
+            _is_prohibited_number_marker(char)
+            for char in text[: words[0].start()]
+        )
     )
 
 
@@ -400,10 +474,20 @@ def _bound_value_unit_spans(
     numbers = list(_NUMBER_TOKEN_RE.finditer(text))
     candidates: List[tuple[int, int]] = []
     exact_energy_occurrences: List[tuple[int, int]] = []
+    invalid_energy_occurrence = False
     for number_index, number in enumerate(numbers):
         if not allow_prior_energy_kj and number_index > 0:
             break
         if not _number_is(value, number.group(0)):
+            continue
+        if _number_has_prohibited_prefix(
+            text,
+            number.start(),
+        ):
+            invalid_energy_occurrence = (
+                invalid_energy_occurrence
+                or allow_prior_energy_kj
+            )
             continue
         next_number_start = (
             numbers[number_index + 1].start()
@@ -420,9 +504,26 @@ def _bound_value_unit_spans(
             )
             if unit_start < 0:
                 break
-            if not any(
-                char.isalnum()
-                for char in value_suffix[:unit_start]
+            before_unit = value_suffix[:unit_start]
+            after_unit = value_suffix[
+                unit_start + len(raw_unit) :
+            ].lstrip()
+            post_unit_separator = []
+            for char in after_unit:
+                if char.isalnum():
+                    break
+                post_unit_separator.append(char)
+            if (
+                not any(char.isalnum() for char in before_unit)
+                and not any(
+                    _is_prohibited_number_marker(char)
+                    or unicodedata.category(char) == "Pd"
+                    for char in before_unit
+                )
+                and not any(
+                    _is_prohibited_number_marker(char)
+                    for char in post_unit_separator
+                )
             ):
                 value_unit_spans.append(
                     (
@@ -432,6 +533,8 @@ def _bound_value_unit_spans(
                         + len(raw_unit),
                     )
                 )
+            elif allow_prior_energy_kj:
+                invalid_energy_occurrence = True
             unit_search_start = unit_start + 1
         if allow_prior_energy_kj:
             exact_energy_occurrences.extend(value_unit_spans)
@@ -448,7 +551,11 @@ def _bound_value_unit_spans(
         else:
             first_number = numbers[0]
             if (
-                any(
+                _number_has_prohibited_prefix(
+                    text,
+                    first_number.start(),
+                )
+                or any(
                     char.isalnum()
                     for char in text[: first_number.start()]
                 )
@@ -462,7 +569,10 @@ def _bound_value_unit_spans(
         candidates.extend(value_unit_spans)
     if (
         allow_prior_energy_kj
-        and len(set(exact_energy_occurrences)) != 1
+        and (
+            invalid_energy_occurrence
+            or len(set(exact_energy_occurrences)) != 1
+        )
     ):
         return []
     return list(dict.fromkeys(candidates))
