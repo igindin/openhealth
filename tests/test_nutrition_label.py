@@ -265,6 +265,42 @@ class LabelNormalizationTests(unittest.TestCase):
             second_source_row,
         )
 
+    def test_energy_prior_number_requires_exact_kilojoule_bridge(self):
+        valid_row = "Energy: 1278 kJ / 305.4 kcal"
+        payload = _armenian_label(
+            energy={
+                "label": "Energy",
+                "value": 305.4,
+                "unit": "kcal",
+                "raw_row_text": valid_row,
+            },
+        )
+
+        label = nutrition_label.normalize_label_extraction(payload)
+
+        self.assertEqual(label["declared"]["kcal"], 305.4)
+        self.assertEqual(label["energy"]["raw_row_text"], valid_row)
+
+        unrelated_field = json.loads(
+            json.dumps(payload, ensure_ascii=False)
+        )
+        invalid_row = (
+            "Energy: 50 kJ; Calories from fat: 305.4 kcal"
+        )
+        unrelated_field["raw_label_text"] = (
+            unrelated_field["raw_label_text"].replace(
+                valid_row,
+                invalid_row,
+            )
+        )
+        unrelated_field["energy"]["raw_row_text"] = invalid_row
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ):
+            nutrition_label.normalize_label_extraction(
+                unrelated_field
+            )
+
     def test_energy_and_all_macros_can_share_one_reconciled_row(self):
         shared_row = (
             "Energy: 208 kcal,Protein: 12 g,"

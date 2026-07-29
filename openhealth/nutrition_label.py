@@ -373,6 +373,86 @@ def _contains_literal_token(text: str, token: str) -> bool:
         start = index + 1
 
 
+_KILOJOULE_UNIT_WORDS = {
+    "kj",
+    "кдж",
+    "կջ",
+}
+
+
+def _is_kilojoule_bridge(text: str) -> bool:
+    words = re.findall(r"[^\W\d_]+", text, flags=re.UNICODE)
+    return (
+        len(words) == 1
+        and words[0].casefold() in _KILOJOULE_UNIT_WORDS
+    )
+
+
+def _bound_value_unit_spans(
+    text: str,
+    value: float,
+    raw_unit: str,
+    *,
+    allow_prior_energy_kj: bool = False,
+) -> List[tuple[int, int]]:
+    """Bind one value/unit, allowing only an explicit kJ-to-kcal bridge."""
+    numbers = list(_NUMBER_TOKEN_RE.finditer(text))
+    candidates: List[tuple[int, int]] = []
+    for number_index, number in enumerate(numbers):
+        if number_index > (1 if allow_prior_energy_kj else 0):
+            break
+        if not _number_is(value, number.group(0)):
+            continue
+        if number_index == 0:
+            if any(
+                char.isalnum()
+                for char in text[: number.start()]
+            ):
+                continue
+        else:
+            first_number = numbers[0]
+            if (
+                any(
+                    char.isalnum()
+                    for char in text[: first_number.start()]
+                )
+                or not _is_kilojoule_bridge(
+                    text[
+                        first_number.end() : number.start()
+                    ]
+                )
+            ):
+                continue
+        next_number_start = (
+            numbers[number_index + 1].start()
+            if number_index + 1 < len(numbers)
+            else len(text)
+        )
+        value_suffix = text[number.end() : next_number_start]
+        unit_search_start = 0
+        while True:
+            unit_start = value_suffix.find(
+                raw_unit,
+                unit_search_start,
+            )
+            if unit_start < 0:
+                break
+            if not any(
+                char.isalnum()
+                for char in value_suffix[:unit_start]
+            ):
+                candidates.append(
+                    (
+                        number.start(),
+                        number.end()
+                        + unit_start
+                        + len(raw_unit),
+                    )
+                )
+            unit_search_start = unit_start + 1
+    return list(dict.fromkeys(candidates))
+
+
 def _raw_fragment_has_field_boundary(
     raw_label_text: str,
     raw_row_text: str,
@@ -498,7 +578,7 @@ def _bind_raw_row(
     raw_row_text: Any,
     raw_label_text: str,
     field: str,
-    allow_prior_numbers: bool = False,
+    allow_prior_energy_kj: bool = False,
 ) -> str:
     row_text = _text(
         raw_row_text,
@@ -526,20 +606,16 @@ def _bind_raw_row(
         raise NutritionLabelNeedsClarification("%s label must be copied exactly from the start of its raw row" % field)
 
     suffix = leading[len(label) :]
-    number_matches = list(_NUMBER_TOKEN_RE.finditer(suffix))
-    if not number_matches:
-        raise NutritionLabelNeedsClarification("%s raw row does not contain its numeric value" % field)
-    matching_index = next(
-        (index for index, match in enumerate(number_matches) if _number_is(value, match.group(0))),
-        None,
+    spans = _bound_value_unit_spans(
+        suffix,
+        value,
+        raw_unit,
+        allow_prior_energy_kj=allow_prior_energy_kj,
     )
-    if matching_index is None or (matching_index != 0 and not allow_prior_numbers):
-        raise NutritionLabelNeedsClarification("%s value is not the first value associated with its label" % field)
-    match = number_matches[matching_index]
-    next_start = number_matches[matching_index + 1].start() if matching_index + 1 < len(number_matches) else len(suffix)
-    value_suffix = suffix[match.end() : next_start]
-    if not _contains_literal_token(value_suffix, raw_unit):
-        raise NutritionLabelNeedsClarification("%s unit must be copied exactly next to its value" % field)
+    if len(spans) != 1:
+        raise NutritionLabelNeedsClarification(
+            "%s value/unit must bind once to its label" % field
+        )
     return row_text
 
 
@@ -550,7 +626,7 @@ def _nutrient_span_in_raw_row(
     raw_unit: str,
     row_text: str,
     field: str,
-    allow_prior_numbers: bool = False,
+    allow_prior_energy_kj: bool = False,
 ) -> tuple[int, int]:
     """Bind one exact label/value/unit span inside a shared literal row."""
     candidates: List[tuple[int, int]] = []
@@ -560,55 +636,19 @@ def _nutrient_span_in_raw_row(
         if label_start < 0:
             break
         suffix = row_text[label_start + len(label) :]
-        numbers = list(_NUMBER_TOKEN_RE.finditer(suffix))
-        if numbers:
-            number_indexes = (
-                range(len(numbers))
-                if allow_prior_numbers
-                else range(min(1, len(numbers)))
-            )
-            for number_index in number_indexes:
-                number = numbers[number_index]
-                between_label_and_value = suffix[: number.start()]
-                if (
-                    not allow_prior_numbers
-                    and any(
-                        char.isalnum()
-                        for char in between_label_and_value
-                    )
-                ):
-                    continue
-                if not _number_is(value, number.group(0)):
-                    continue
-                next_number_start = (
-                    numbers[number_index + 1].start()
-                    if number_index + 1 < len(numbers)
-                    else len(suffix)
+        value_spans = _bound_value_unit_spans(
+            suffix,
+            value,
+            raw_unit,
+            allow_prior_energy_kj=allow_prior_energy_kj,
+        )
+        for _, value_end in value_spans:
+            candidates.append(
+                (
+                    label_start,
+                    label_start + len(label) + value_end,
                 )
-                value_suffix = suffix[
-                    number.end() : next_number_start
-                ]
-                unit_search_start = 0
-                while True:
-                    unit_start = value_suffix.find(
-                        raw_unit,
-                        unit_search_start,
-                    )
-                    if unit_start < 0:
-                        break
-                    before_unit = value_suffix[:unit_start]
-                    if not any(char.isalnum() for char in before_unit):
-                        candidates.append(
-                            (
-                                label_start,
-                                label_start
-                                + len(label)
-                                + number.end()
-                                + unit_start
-                                + len(raw_unit),
-                            )
-                        )
-                    unit_search_start = unit_start + 1
+            )
         search_start = label_start + 1
 
     unique = list(dict.fromkeys(candidates))
@@ -631,7 +671,7 @@ def _energy_row_binding(
         row_text=row_text,
         field="energy",
         # A physical energy field may print kJ before the selected kcal.
-        allow_prior_numbers=True,
+        allow_prior_energy_kj=True,
     )
     return row_text, span, "energy"
 
@@ -991,7 +1031,7 @@ def _energy_from_payload(
             field="energy",
             # Energy rows commonly put kJ before kcal. The selected kcal still
             # has to be paired with the exact copied kcal unit.
-            allow_prior_numbers=True,
+            allow_prior_energy_kj=True,
         )
         return {
             "label": label,
@@ -1025,7 +1065,7 @@ def _energy_from_payload(
         raw_row_text=payload.get("energy_raw_row_text"),
         raw_label_text=raw_label_text,
         field="energy",
-        allow_prior_numbers=True,
+        allow_prior_energy_kj=True,
     )
     return {
         "label": label,
