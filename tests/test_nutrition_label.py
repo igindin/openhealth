@@ -301,6 +301,30 @@ class LabelNormalizationTests(unittest.TestCase):
                 unrelated_field
             )
 
+        for duplicate_row in (
+            "Energy: 305.4 kcal / 305.4 kcal",
+            "Energy: 1278 kJ / 305.4 kcal / 305.4 kcal",
+            "Energy: 50 kJ / 99% / 305.4 kcal",
+            "Energy: 50 kJ / 2 / 3 / 305.4 kcal",
+        ):
+            with self.subTest(duplicate_row=duplicate_row):
+                duplicate = json.loads(
+                    json.dumps(payload, ensure_ascii=False)
+                )
+                duplicate["raw_label_text"] = (
+                    duplicate["raw_label_text"].replace(
+                        valid_row,
+                        duplicate_row,
+                    )
+                )
+                duplicate["energy"]["raw_row_text"] = duplicate_row
+                with self.assertRaises(
+                    nutrition_label.NutritionLabelNeedsClarification
+                ):
+                    nutrition_label.normalize_label_extraction(
+                        duplicate
+                    )
+
     def test_energy_and_all_macros_can_share_one_reconciled_row(self):
         shared_row = (
             "Energy: 208 kcal,Protein: 12 g,"

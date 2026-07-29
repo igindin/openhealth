@@ -383,7 +383,8 @@ _KILOJOULE_UNIT_WORDS = {
 def _is_kilojoule_bridge(text: str) -> bool:
     words = re.findall(r"[^\W\d_]+", text, flags=re.UNICODE)
     return (
-        len(words) == 1
+        not any(char.isdigit() for char in text)
+        and len(words) == 1
         and words[0].casefold() in _KILOJOULE_UNIT_WORDS
     )
 
@@ -398,10 +399,45 @@ def _bound_value_unit_spans(
     """Bind one value/unit, allowing only an explicit kJ-to-kcal bridge."""
     numbers = list(_NUMBER_TOKEN_RE.finditer(text))
     candidates: List[tuple[int, int]] = []
+    exact_energy_occurrences: List[tuple[int, int]] = []
     for number_index, number in enumerate(numbers):
-        if number_index > (1 if allow_prior_energy_kj else 0):
+        if not allow_prior_energy_kj and number_index > 0:
             break
         if not _number_is(value, number.group(0)):
+            continue
+        next_number_start = (
+            numbers[number_index + 1].start()
+            if number_index + 1 < len(numbers)
+            else len(text)
+        )
+        value_suffix = text[number.end() : next_number_start]
+        value_unit_spans: List[tuple[int, int]] = []
+        unit_search_start = 0
+        while True:
+            unit_start = value_suffix.find(
+                raw_unit,
+                unit_search_start,
+            )
+            if unit_start < 0:
+                break
+            if not any(
+                char.isalnum()
+                for char in value_suffix[:unit_start]
+            ):
+                value_unit_spans.append(
+                    (
+                        number.start(),
+                        number.end()
+                        + unit_start
+                        + len(raw_unit),
+                    )
+                )
+            unit_search_start = unit_start + 1
+        if allow_prior_energy_kj:
+            exact_energy_occurrences.extend(value_unit_spans)
+        if not value_unit_spans:
+            continue
+        if allow_prior_energy_kj and number_index > 1:
             continue
         if number_index == 0:
             if any(
@@ -423,33 +459,12 @@ def _bound_value_unit_spans(
                 )
             ):
                 continue
-        next_number_start = (
-            numbers[number_index + 1].start()
-            if number_index + 1 < len(numbers)
-            else len(text)
-        )
-        value_suffix = text[number.end() : next_number_start]
-        unit_search_start = 0
-        while True:
-            unit_start = value_suffix.find(
-                raw_unit,
-                unit_search_start,
-            )
-            if unit_start < 0:
-                break
-            if not any(
-                char.isalnum()
-                for char in value_suffix[:unit_start]
-            ):
-                candidates.append(
-                    (
-                        number.start(),
-                        number.end()
-                        + unit_start
-                        + len(raw_unit),
-                    )
-                )
-            unit_search_start = unit_start + 1
+        candidates.extend(value_unit_spans)
+    if (
+        allow_prior_energy_kj
+        and len(set(exact_energy_occurrences)) != 1
+    ):
+        return []
     return list(dict.fromkeys(candidates))
 
 
