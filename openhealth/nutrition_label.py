@@ -390,6 +390,106 @@ def _raw_fragment_has_field_boundary(
         start = index + 1
 
 
+def _expand_raw_row_to_field_boundary(
+    raw_label_text: str,
+    raw_row_text: str,
+) -> str:
+    """Expand one unique literal suffix back to its physical field boundary."""
+    if _raw_fragment_has_field_boundary(raw_label_text, raw_row_text):
+        return raw_row_text
+    index = raw_label_text.find(raw_row_text)
+    if index < 0 or raw_label_text.find(
+        raw_row_text,
+        index + 1,
+    ) >= 0:
+        return raw_row_text
+    separators = "\n\r|/;"
+    boundary = max(
+        raw_label_text.rfind(char, 0, index)
+        for char in separators
+    )
+    return raw_label_text[
+        boundary + 1 : index + len(raw_row_text)
+    ]
+
+
+def _raw_row_starts_with_bound_value(
+    row_text: str,
+    value: float,
+    raw_unit: str,
+) -> bool:
+    """Return whether a suffix starts with the exact value/unit evidence."""
+    numbers = list(_NUMBER_TOKEN_RE.finditer(row_text))
+    if not numbers:
+        return False
+    number = numbers[0]
+    if (
+        any(char.isalnum() for char in row_text[: number.start()])
+        or not _number_is(value, number.group(0))
+    ):
+        return False
+    next_start = (
+        numbers[1].start()
+        if len(numbers) > 1
+        else len(row_text)
+    )
+    return _contains_literal_token(
+        row_text[number.end() : next_start],
+        raw_unit,
+    )
+
+
+def _resolve_raw_row_fragment(
+    raw_label_text: str,
+    raw_row_text: str,
+    *,
+    field: str,
+    code: Optional[str] = None,
+) -> str:
+    """Return the exact source fragment for a row with safe whitespace drift.
+
+    Provider envelopes occasionally preserve the same visible row with spaces
+    in one field and line breaks (or no separator) in another.  Reconciliation
+    is limited to whitespace: every non-whitespace character must match, in
+    order, and the compacted row must occur exactly once in the source text.
+    """
+    compact_row = "".join(
+        char for char in raw_row_text if not char.isspace()
+    )
+    compact_label_chars: List[str] = []
+    compact_label_offsets: List[int] = []
+    for offset, char in enumerate(raw_label_text):
+        if char.isspace():
+            continue
+        compact_label_chars.append(char)
+        compact_label_offsets.append(offset)
+    compact_label = "".join(compact_label_chars)
+
+    matches: List[tuple[int, int]] = []
+    start = 0
+    while compact_row:
+        index = compact_label.find(compact_row, start)
+        if index < 0:
+            break
+        raw_start = compact_label_offsets[index]
+        raw_end = compact_label_offsets[
+            index + len(compact_row) - 1
+        ] + 1
+        matches.append((raw_start, raw_end))
+        start = index + 1
+
+    if len(matches) != 1:
+        raise NutritionLabelNeedsClarification(
+            "%s raw row must match one unambiguous whitespace-only "
+            "fragment of raw_label_text" % field,
+            code=code,
+        )
+    if raw_row_text in raw_label_text:
+        return raw_row_text
+    raw_start, raw_end = matches[0]
+    return raw_label_text[raw_start:raw_end]
+
+
 def _bind_raw_row(
     *,
     label: str,
@@ -406,7 +506,12 @@ def _bind_raw_row(
         required=True,
         limit=1000,
     )
-    if row_text not in raw_label_text or not _raw_fragment_has_field_boundary(
+    row_text = _resolve_raw_row_fragment(
+        raw_label_text,
+        row_text,
+        field=field,
+    )
+    if not _raw_fragment_has_field_boundary(
         raw_label_text,
         row_text,
     ):
@@ -445,8 +550,9 @@ def _nutrient_span_in_raw_row(
     raw_unit: str,
     row_text: str,
     field: str,
+    allow_prior_numbers: bool = False,
 ) -> tuple[int, int]:
-    """Bind one nutrient inside a literal row that may contain peer fields."""
+    """Bind one exact label/value/unit span inside a shared literal row."""
     candidates: List[tuple[int, int]] = []
     search_start = 0
     while True:
@@ -456,15 +562,27 @@ def _nutrient_span_in_raw_row(
         suffix = row_text[label_start + len(label) :]
         numbers = list(_NUMBER_TOKEN_RE.finditer(suffix))
         if numbers:
-            number = numbers[0]
-            between_label_and_value = suffix[: number.start()]
-            if (
-                not any(char.isalnum() for char in between_label_and_value)
-                and _number_is(value, number.group(0))
-            ):
+            number_indexes = (
+                range(len(numbers))
+                if allow_prior_numbers
+                else range(min(1, len(numbers)))
+            )
+            for number_index in number_indexes:
+                number = numbers[number_index]
+                between_label_and_value = suffix[: number.start()]
+                if (
+                    not allow_prior_numbers
+                    and any(
+                        char.isalnum()
+                        for char in between_label_and_value
+                    )
+                ):
+                    continue
+                if not _number_is(value, number.group(0)):
+                    continue
                 next_number_start = (
-                    numbers[1].start()
-                    if len(numbers) > 1
+                    numbers[number_index + 1].start()
+                    if number_index + 1 < len(numbers)
                     else len(suffix)
                 )
                 value_suffix = suffix[
@@ -502,6 +620,22 @@ def _nutrient_span_in_raw_row(
     return unique[0]
 
 
+def _energy_row_binding(
+    energy: Dict[str, Any],
+) -> tuple[str, tuple[int, int], str]:
+    row_text = energy["raw_row_text"]
+    span = _nutrient_span_in_raw_row(
+        label=energy["label"],
+        value=energy["value"],
+        raw_unit=energy["raw_unit"],
+        row_text=row_text,
+        field="energy",
+        # A physical energy field may print kJ before the selected kcal.
+        allow_prior_numbers=True,
+    )
+    return row_text, span, "energy"
+
+
 def _bind_nutrient_raw_row(
     *,
     label: str,
@@ -517,11 +651,16 @@ def _bind_nutrient_raw_row(
         required=True,
         limit=1000,
     )
-    if row_text not in raw_label_text:
-        raise NutritionLabelNeedsClarification(
-            "%s raw row must be a literal fragment of raw_label_text" % field,
-            code="nutrient_raw_row_not_literal",
-        )
+    source_row_text = _resolve_raw_row_fragment(
+        raw_label_text,
+        row_text,
+        field=field,
+        code="nutrient_raw_row_not_literal",
+    )
+    row_text = _expand_raw_row_to_field_boundary(
+        raw_label_text,
+        source_row_text,
+    )
 
     if not _raw_fragment_has_field_boundary(
         raw_label_text,
@@ -539,18 +678,57 @@ def _bind_nutrient_raw_row(
         row_text=row_text,
         field=field,
     )
+    if row_text != source_row_text:
+        added_prefix_length = len(row_text) - len(source_row_text)
+        if span[1] <= added_prefix_length:
+            raise NutritionLabelNeedsClarification(
+                "%s original raw row does not overlap its target field"
+                % field,
+                code="nutrient_raw_row_not_target",
+            )
+        if (
+            span[0] < added_prefix_length
+            and not _raw_row_starts_with_bound_value(
+                source_row_text,
+                value,
+                raw_unit,
+            )
+        ):
+            raise NutritionLabelNeedsClarification(
+                "%s may add only its missing leading label" % field,
+                code="nutrient_raw_row_not_target",
+            )
     return row_text, span
 
 
 def _validate_nutrient_row_boundaries(
     bindings: List[tuple[str, tuple[int, int], str]],
 ) -> None:
-    """Require exact field boundaries while allowing adjacent shared fields."""
+    """Require exact ordered field boundaries on shared label rows."""
     rows: Dict[str, List[tuple[tuple[int, int], str]]] = {}
     for row_text, span, field in bindings:
         rows.setdefault(row_text, []).append((span, field))
 
     for row_text, row_bindings in rows.items():
+        for index in range(1, len(row_bindings)):
+            prior_span, prior_field = row_bindings[index - 1]
+            span, field = row_bindings[index]
+            if max(span[0], prior_span[0]) < min(
+                span[1],
+                prior_span[1],
+            ):
+                raise NutritionLabelNeedsClarification(
+                    "label spans overlap between %s and %s"
+                    % (prior_field, field),
+                    code="nutrient_spans_overlap",
+                )
+            if span[0] <= prior_span[0]:
+                raise NutritionLabelNeedsClarification(
+                    "label spans are out of order between %s and %s"
+                    % (prior_field, field),
+                    code="nutrient_spans_out_of_order",
+                )
+
         for index, (span, field) in enumerate(row_bindings):
             if index == 0:
                 prefix = row_text[: span[0]]
@@ -611,21 +789,6 @@ def _bind_nutrient_rows(
             raw_label_text=raw_label_text,
             field="nutrients[%d]" % index,
         )
-        for prior_row, prior_span, prior_field in row_bindings:
-            if prior_row != raw_row_text:
-                continue
-            if max(span[0], prior_span[0]) < min(span[1], prior_span[1]):
-                raise NutritionLabelNeedsClarification(
-                    "nutrient spans overlap between %s and nutrients[%d]"
-                    % (prior_field, index),
-                    code="nutrient_spans_overlap",
-                )
-            if span[0] <= prior_span[0]:
-                raise NutritionLabelNeedsClarification(
-                    "nutrient spans are out of order between %s and "
-                    "nutrients[%d]" % (prior_field, index),
-                    code="nutrient_spans_out_of_order",
-                )
         row_bindings.append(
             (
                 raw_row_text,
@@ -641,7 +804,6 @@ def _bind_nutrient_rows(
             "canonical": canonical,
         }
         raw_rows.append(normalized_row)
-    _validate_nutrient_row_boundaries(row_bindings)
     return raw_rows, row_bindings
 
 
@@ -1055,6 +1217,9 @@ def _normalize_extraction_context(payload: Dict[str, Any]) -> Dict[str, Any]:
     raw_rows, row_bindings = _bind_nutrient_rows(
         payload.get("nutrients"),
         raw_label_text,
+    )
+    _validate_nutrient_row_boundaries(
+        [_energy_row_binding(energy)] + row_bindings
     )
 
     extraction_sha256 = _extraction_fingerprint(
@@ -1687,6 +1852,9 @@ def validate_normalized_label(label: Dict[str, Any]) -> Dict[str, Any]:
             for row in stored_rows
         ],
         raw_label_text,
+    )
+    _validate_nutrient_row_boundaries(
+        [_energy_row_binding(energy)] + row_bindings
     )
 
     extraction_sha256 = _extraction_fingerprint(

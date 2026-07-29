@@ -188,6 +188,378 @@ class LabelNormalizationTests(unittest.TestCase):
         )
         self.assertEqual(label["basis"], nutrition_label.BASIS_UNKNOWN)
 
+    def test_energy_and_macros_accept_unique_whitespace_reconciled_rows(
+        self,
+    ):
+        energy_and_protein = "Energy: 230 kcalProtein: 20 g"
+        fat_and_carbs = "Fat: 10 gCarbohydrates: 15 g"
+        payload = _armenian_label(
+            product_name_original="Synthetic bar A",
+            product_name_ru="Синтетический батончик А",
+            language="en",
+            nutrition_basis="per_container",
+            basis_text="Nutrition per container",
+            package_amount=180,
+            package_unit="g",
+            package_raw_row_text="Net weight: 180 g",
+            energy={
+                "label": "Energy",
+                "value": 230,
+                "unit": "kcal",
+                "raw_row_text": energy_and_protein,
+            },
+            nutrients=[
+                {
+                    "label": "Protein",
+                    "value": 20,
+                    "unit": "g",
+                    "raw_row_text": energy_and_protein,
+                },
+                {
+                    "label": "Fat",
+                    "value": 10,
+                    "unit": "g",
+                    "raw_row_text": fat_and_carbs,
+                },
+                {
+                    "label": "Carbohydrates",
+                    "value": 15,
+                    "unit": "g",
+                    "raw_row_text": fat_and_carbs,
+                },
+            ],
+        )
+        first_source_row = "Energy: 230 kcal\nProtein: 20 g"
+        second_source_row = "Fat: 10 g\nCarbohydrates: 15 g"
+        payload["raw_label_text"] = "\n".join(
+            [
+                "Synthetic bar A",
+                "Net weight: 180 g",
+                "Nutrition per container",
+                first_source_row,
+                second_source_row,
+            ]
+        )
+
+        label = nutrition_label.normalize_label_extraction(payload)
+
+        self.assertEqual(
+            label["declared"],
+            {
+                "kcal": 230.0,
+                "protein_g": 20.0,
+                "fat_g": 10.0,
+                "carb_g": 15.0,
+            },
+        )
+        self.assertEqual(
+            label["energy"]["raw_row_text"],
+            first_source_row,
+        )
+        self.assertEqual(
+            label["raw_nutrients"][0]["raw_row_text"],
+            first_source_row,
+        )
+        self.assertEqual(
+            label["raw_nutrients"][1]["raw_row_text"],
+            second_source_row,
+        )
+
+    def test_energy_and_all_macros_can_share_one_reconciled_row(self):
+        shared_row = (
+            "Energy: 208 kcal,Protein: 12 g,"
+            "Fat: 8 g,Carbohydrates: 22 g"
+        )
+        source_row = (
+            "Energy: 208 kcal, Protein: 12 g,\n"
+            "Fat: 8 g, Carbohydrates: 22 g"
+        )
+        payload = _armenian_label(
+            product_name_original="Synthetic bar B",
+            product_name_ru="Синтетический батончик Б",
+            language="en",
+            nutrition_basis="unknown",
+            basis_text="",
+            package_amount=250,
+            package_unit="g",
+            package_raw_row_text="Net weight: 250 g",
+            energy={
+                "label": "Energy",
+                "value": 208,
+                "unit": "kcal",
+                "raw_row_text": shared_row,
+            },
+            nutrients=[
+                {
+                    "label": "Protein",
+                    "value": 12,
+                    "unit": "g",
+                    "raw_row_text": shared_row,
+                },
+                {
+                    "label": "Fat",
+                    "value": 8,
+                    "unit": "g",
+                    "raw_row_text": shared_row,
+                },
+                {
+                    "label": "Carbohydrates",
+                    "value": 22,
+                    "unit": "g",
+                    "raw_row_text": shared_row,
+                },
+            ],
+        )
+        payload["raw_label_text"] = "\n".join(
+            [
+                "Synthetic bar B",
+                "Net weight: 250 g",
+                source_row,
+            ]
+        )
+
+        label = nutrition_label.normalize_label_extraction(payload)
+
+        self.assertEqual(
+            label["declared"],
+            {
+                "kcal": 208.0,
+                "protein_g": 12.0,
+                "fat_g": 8.0,
+                "carb_g": 22.0,
+            },
+        )
+        self.assertEqual(label["energy"]["raw_row_text"], source_row)
+        self.assertTrue(
+            all(
+                row["raw_row_text"] == source_row
+                for row in label["raw_nutrients"]
+            )
+        )
+        round_tripped = json.loads(
+            json.dumps(label, ensure_ascii=False)
+        )
+        self.assertEqual(
+            nutrition_label.validate_normalized_label(
+                round_tripped
+            )["declared"],
+            label["declared"],
+        )
+
+    def test_shared_row_can_expand_one_unique_missing_leading_label(
+        self,
+    ):
+        energy_and_protein = "Energy: 230 kcalProtein: 20 g"
+        fat_and_carbs_without_label = (
+            "10 gCarbohydrates: 15 g"
+        )
+        first_source_row = "Energy: 230 kcal\nProtein: 20 g"
+        second_source_row = "Fat: 10 g\nCarbohydrates: 15 g"
+        payload = _armenian_label(
+            product_name_original="Synthetic bar C",
+            product_name_ru="Синтетический батончик В",
+            language="en",
+            nutrition_basis="unknown",
+            basis_text="",
+            package_amount=180,
+            package_unit="g",
+            package_raw_row_text="Net weight: 180 g",
+            energy={
+                "label": "Energy",
+                "value": 230,
+                "unit": "kcal",
+                "raw_row_text": energy_and_protein,
+            },
+            nutrients=[
+                {
+                    "label": "Protein",
+                    "value": 20,
+                    "unit": "g",
+                    "raw_row_text": energy_and_protein,
+                },
+                {
+                    "label": "Fat",
+                    "value": 10,
+                    "unit": "g",
+                    "raw_row_text": fat_and_carbs_without_label,
+                },
+                {
+                    "label": "Carbohydrates",
+                    "value": 15,
+                    "unit": "g",
+                    "raw_row_text": fat_and_carbs_without_label,
+                },
+            ],
+        )
+        payload["raw_label_text"] = "\n".join(
+            [
+                "Synthetic bar C",
+                "Net weight: 180 g",
+                first_source_row,
+                second_source_row,
+            ]
+        )
+
+        label = nutrition_label.normalize_label_extraction(payload)
+
+        self.assertEqual(
+            label["declared"],
+            {
+                "kcal": 230.0,
+                "protein_g": 20.0,
+                "fat_g": 10.0,
+                "carb_g": 15.0,
+            },
+        )
+        self.assertEqual(
+            label["raw_nutrients"][1]["raw_row_text"],
+            second_source_row,
+        )
+        self.assertEqual(
+            label["raw_nutrients"][2]["raw_row_text"],
+            second_source_row,
+        )
+
+        cross_field_capture = json.loads(
+            json.dumps(payload, ensure_ascii=False)
+        )
+        cross_field_capture["raw_label_text"] = (
+            cross_field_capture["raw_label_text"].replace(
+                second_source_row,
+                "Fat: 10 g, Carbohydrates: 15 g",
+            )
+        )
+        cross_field_capture["nutrients"][1]["raw_row_text"] = (
+            "Carbohydrates: 15 g"
+        )
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as raised:
+            nutrition_label.normalize_label_extraction(
+                cross_field_capture
+            )
+        self.assertEqual(
+            raised.exception.code,
+            "nutrient_raw_row_not_target",
+        )
+
+        unbound_prefix = json.loads(
+            json.dumps(payload, ensure_ascii=False)
+        )
+        unbound_prefix["raw_label_text"] = (
+            unbound_prefix["raw_label_text"].replace(
+                second_source_row,
+                "Fibre: 10 g\nCarbohydrates: 15 g",
+            )
+        )
+        del unbound_prefix["nutrients"][1]
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ):
+            nutrition_label.normalize_label_extraction(
+                unbound_prefix
+            )
+
+    def test_whitespace_reconciliation_stays_unambiguous_and_exact(self):
+        shared_row = (
+            "Energy: 208 kcal,Protein: 12 g,"
+            "Fat: 8 g,Carbohydrates: 22 g"
+        )
+        source_row = (
+            "Energy: 208 kcal, Protein: 12 g,\n"
+            "Fat: 8 g, Carbohydrates: 22 g"
+        )
+        payload = _armenian_label(
+            product_name_original="Synthetic duplicate label",
+            product_name_ru="Синтетическая повторяющаяся этикетка",
+            language="en",
+            nutrition_basis="unknown",
+            basis_text="",
+            package_amount=250,
+            package_unit="g",
+            package_raw_row_text="Net weight: 250 g",
+            energy={
+                "label": "Energy",
+                "value": 208,
+                "unit": "kcal",
+                "raw_row_text": shared_row,
+            },
+            nutrients=[
+                {
+                    "label": "Protein",
+                    "value": 12,
+                    "unit": "g",
+                    "raw_row_text": shared_row,
+                },
+                {
+                    "label": "Fat",
+                    "value": 8,
+                    "unit": "g",
+                    "raw_row_text": shared_row,
+                },
+                {
+                    "label": "Carbohydrates",
+                    "value": 22,
+                    "unit": "g",
+                    "raw_row_text": shared_row,
+                },
+            ],
+        )
+        payload["raw_label_text"] = "\n".join(
+            [
+                "Synthetic duplicate label",
+                "Net weight: 250 g",
+                source_row,
+                source_row,
+            ]
+        )
+
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ):
+            nutrition_label.normalize_label_extraction(payload)
+
+        exact_duplicate = json.loads(
+            json.dumps(payload, ensure_ascii=False)
+        )
+        exact_duplicate["raw_label_text"] = "\n".join(
+            [
+                "Synthetic duplicate label",
+                "Net weight: 250 g",
+                source_row,
+                shared_row,
+            ]
+        )
+        exact_duplicate["energy"]["raw_row_text"] = source_row
+        for nutrient in exact_duplicate["nutrients"]:
+            nutrient["raw_row_text"] = source_row
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ):
+            nutrition_label.normalize_label_extraction(
+                exact_duplicate
+            )
+
+        non_whitespace_change = json.loads(
+            json.dumps(payload, ensure_ascii=False)
+        )
+        non_whitespace_change["raw_label_text"] = "\n".join(
+            [
+                "Synthetic duplicate label",
+                "Net weight: 250 g",
+                source_row,
+            ]
+        )
+        non_whitespace_change["energy"]["raw_row_text"] = (
+            shared_row.replace("kcal,", "kcal/")
+        )
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ):
+            nutrition_label.normalize_label_extraction(
+                non_whitespace_change
+            )
+
     def test_shared_macro_row_still_rejects_swapped_values(self):
         macro_row = "Ս՝ 10 գ Ճ՝ 5 գ Ածխ՝ 20 գ"
         payload = _armenian_label(
