@@ -86,6 +86,17 @@ fi
         fake_python.chmod(0o755)
         return fake_python
 
+    def _fake_plutil(self, root: Path) -> Path:
+        fake_plutil = root / "fake-plutil"
+        fake_plutil.write_text(
+            """#!/usr/bin/env bash
+exec "$OPENHEALTH_TEST_REAL_PYTHON" -E -s "$OPENHEALTH_TEST_PLUTIL_SCRIPT" "$@"
+""",
+            encoding="utf-8",
+        )
+        fake_plutil.chmod(0o755)
+        return fake_plutil
+
     def _environment(
         self,
         runtime: Path,
@@ -242,6 +253,16 @@ fi
             root = Path(tmp)
             runtime, data_root = self._roots(root)
             rendered = root / "rendered/daily.plist"
+            fake_plutil = self._fake_plutil(root)
+            plutil = shutil.which("plutil") or str(fake_plutil)
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "OPENHEALTH_PLUTIL_BIN": plutil,
+                    "OPENHEALTH_TEST_REAL_PYTHON": sys.executable,
+                    "OPENHEALTH_TEST_PLUTIL_SCRIPT": str(REPO_ROOT / "tests/fixtures/fake_plutil.py"),
+                }
+            )
 
             completed = subprocess.run(
                 [
@@ -261,7 +282,7 @@ fi
                 check=False,
                 capture_output=True,
                 text=True,
-                env=os.environ.copy(),
+                env=environment,
             )
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             parsed = plistlib.loads(rendered.read_bytes())

@@ -135,54 +135,6 @@ esac
         )
         launchctl.chmod(0o755)
 
-        plutil_script = root / "fake-plutil.py"
-        plutil_script.write_text(
-            """import plistlib
-import sys
-from pathlib import Path
-
-
-def resolve(payload, key_path):
-    cursor = payload
-    for part in key_path.split("."):
-        cursor = cursor[int(part)] if isinstance(cursor, list) else cursor[part]
-    return cursor
-
-
-def parent_and_key(payload, key_path):
-    parts = key_path.split(".")
-    cursor = payload
-    for part in parts[:-1]:
-        cursor = cursor[int(part)] if isinstance(cursor, list) else cursor[part]
-    key = int(parts[-1]) if isinstance(cursor, list) else parts[-1]
-    return cursor, key
-
-
-command, *args = sys.argv[1:]
-destination = Path(args[-1])
-payload = plistlib.loads(destination.read_bytes())
-if command == "-lint":
-    print(f"{destination}: OK")
-elif command == "-extract":
-    value = resolve(payload, args[0])
-    print(len(value) if isinstance(value, list) else value)
-else:
-    parent, key = parent_and_key(payload, args[0])
-    if command == "-remove":
-        del parent[key]
-    elif command == "-insert":
-        if isinstance(parent, list):
-            parent.insert(key, args[2])
-        else:
-            parent[key] = args[2]
-    elif command == "-replace":
-        parent[key] = args[2]
-    else:
-        raise SystemExit(f"unsupported synthetic plutil command: {command}")
-    destination.write_bytes(plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=False))
-""",
-            encoding="utf-8",
-        )
         plutil = fake_bin / "plutil"
         plutil.write_text(
             """#!/usr/bin/env bash
@@ -195,15 +147,16 @@ exec "$OPENHEALTH_TEST_REAL_PYTHON" -E -s "$OPENHEALTH_TEST_PLUTIL_SCRIPT" "$@"
 
     def _environment(self, root: Path, launchctl: Path, launchctl_log: Path) -> dict[str, str]:
         environment = os.environ.copy()
+        plutil = shutil.which("plutil") or str(root / "fake-bin/plutil")
         environment.update(
             {
                 "HOME": str(root / "home"),
                 "OPENHEALTH_LAUNCH_AGENTS_DIR": str(root / "LaunchAgents"),
                 "OPENHEALTH_LAUNCHCTL_BIN": str(launchctl),
-                "OPENHEALTH_PLUTIL_BIN": str(root / "fake-bin/plutil"),
+                "OPENHEALTH_PLUTIL_BIN": plutil,
                 "OPENHEALTH_LAUNCH_DOMAIN": "gui/501",
                 "OPENHEALTH_TEST_REAL_PYTHON": sys.executable,
-                "OPENHEALTH_TEST_PLUTIL_SCRIPT": str(root / "fake-plutil.py"),
+                "OPENHEALTH_TEST_PLUTIL_SCRIPT": str(REPO_ROOT / "tests/fixtures/fake_plutil.py"),
                 "OPENHEALTH_TEST_LAUNCHCTL_LOG": str(launchctl_log),
                 "OPENHEALTH_TEST_LAUNCHCTL_STATE": str(root / "launchctl.state"),
                 "OPENHEALTH_TEST_FAIL_MARKER": str(root / "launchctl.fail-once"),
