@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 
 class RecordRevisionConflict(RuntimeError):
@@ -134,6 +134,112 @@ def upsert_source(db_path: Path, payload: Dict[str, Any]) -> None:
     connection.close()
 
 
+def _merge_source_coverage_on_connection(
+    connection: sqlite3.Connection,
+    payload: Dict[str, Any],
+    coverage_dates: List[str],
+) -> None:
+    """Upsert one source without committing the caller's transaction."""
+    source_id = str(payload["source_id"])
+    row = connection.execute(
+        "SELECT payload_json FROM sources WHERE source_id = ?",
+        (source_id,),
+    ).fetchone()
+    existing = json.loads(row["payload_json"]) if row else {}
+    merged = {**existing, **payload}
+    for key in ("created_at", "owner", "label"):
+        if existing.get(key):
+            merged[key] = existing[key]
+    merged["metadata"] = {
+        **(existing.get("metadata") or {}),
+        **(payload.get("metadata") or {}),
+    }
+    if existing.get("notes"):
+        merged["notes"] = existing["notes"]
+
+    files: List[Any] = []
+    for manifest in (existing.get("files"), payload.get("files")):
+        if not isinstance(manifest, list):
+            continue
+        for item in manifest:
+            if item not in files:
+                files.append(item)
+    merged["files"] = files
+
+    points = [
+        str(point)
+        for point in (
+            *coverage_dates,
+            existing.get("coverage_start"),
+            existing.get("coverage_end"),
+            payload.get("coverage_start"),
+            payload.get("coverage_end"),
+        )
+        if point
+    ]
+    rows = connection.execute(
+        """
+        SELECT date, start_date, end_date
+        FROM records
+        WHERE source_id = ?
+        """,
+        (source_id,),
+    ).fetchall()
+    for record in rows:
+        points.extend(
+            str(point)
+            for point in (
+                record["date"],
+                record["start_date"],
+                record["end_date"],
+            )
+            if point
+        )
+    merged["coverage_start"] = min(points) if points else None
+    merged["coverage_end"] = max(points) if points else None
+
+    connection.execute(
+        """
+        INSERT OR REPLACE INTO sources (
+            source_id, source_type, owner, created_at, coverage_start,
+            coverage_end, parser_status, payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            source_id,
+            merged["source_type"],
+            merged["owner"],
+            merged["created_at"],
+            merged.get("coverage_start"),
+            merged.get("coverage_end"),
+            merged["parser_status"],
+            json.dumps(merged, ensure_ascii=False),
+        ),
+    )
+
+
+def merge_source_coverage(
+    db_path: Path,
+    payload: Dict[str, Any],
+    coverage_dates: List[str],
+) -> None:
+    """Atomically upsert a source while widening, never shrinking, coverage."""
+    connection = connect(db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        _merge_source_coverage_on_connection(
+            connection,
+            payload,
+            coverage_dates,
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
 def upsert_artifact(db_path: Path, payload: Dict[str, Any]) -> None:
     connection = connect(db_path)
     with connection:
@@ -159,54 +265,90 @@ def upsert_artifact(db_path: Path, payload: Dict[str, Any]) -> None:
     connection.close()
 
 
-def upsert_record(db_path: Path, payload: Dict[str, Any]) -> None:
-    """Insert a record, preserving an audited user-corrected current view.
+def _upsert_record_on_connection(
+    connection: sqlite3.Connection,
+    payload: Dict[str, Any],
+) -> None:
+    """Insert one record without committing the caller's transaction.
 
     Source re-imports are allowed to be repeatable, but they must not silently
     replace the head of an append-only correction ledger. If revisions exist,
     their latest ``after`` payload remains the current record.
     """
+    stored_payload = payload
+    revisions_table = connection.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = 'table' AND name = 'record_revisions'
+        """
+    ).fetchone()
+    if revisions_table:
+        head = connection.execute(
+            """
+            SELECT after_json
+            FROM record_revisions
+            WHERE record_id = ?
+            ORDER BY revision DESC
+            LIMIT 1
+            """,
+            (payload["id"],),
+        ).fetchone()
+        if head:
+            stored_payload = json.loads(head["after_json"])
+    connection.execute(
+        """
+        INSERT OR REPLACE INTO records (
+            record_id, source_id, record_type, date, start_date, end_date,
+            evidence_class, payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            stored_payload["id"],
+            stored_payload["source_id"],
+            stored_payload["record_type"],
+            stored_payload.get("date"),
+            stored_payload.get("start_date"),
+            stored_payload.get("end_date"),
+            stored_payload["evidence_class"],
+            json.dumps(stored_payload, ensure_ascii=False),
+        ),
+    )
+
+
+def upsert_record(db_path: Path, payload: Dict[str, Any]) -> None:
+    """Insert a record, preserving an audited user-corrected current view."""
     connection = connect(db_path)
     with connection:
-        stored_payload = payload
-        revisions_table = connection.execute(
-            """
-            SELECT 1
-            FROM sqlite_master
-            WHERE type = 'table' AND name = 'record_revisions'
-            """
-        ).fetchone()
-        if revisions_table:
-            head = connection.execute(
-                """
-                SELECT after_json
-                FROM record_revisions
-                WHERE record_id = ?
-                ORDER BY revision DESC
-                LIMIT 1
-                """,
-                (payload["id"],),
-            ).fetchone()
-            if head:
-                stored_payload = json.loads(head["after_json"])
-        connection.execute(
-            """
-            INSERT OR REPLACE INTO records (
-                record_id, source_id, record_type, date, start_date, end_date, evidence_class, payload_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                stored_payload["id"],
-                stored_payload["source_id"],
-                stored_payload["record_type"],
-                stored_payload.get("date"),
-                stored_payload.get("start_date"),
-                stored_payload.get("end_date"),
-                stored_payload["evidence_class"],
-                json.dumps(stored_payload, ensure_ascii=False),
-            ),
-        )
+        _upsert_record_on_connection(connection, payload)
     connection.close()
+
+
+def merge_source_coverage_and_upsert_records(
+    db_path: Path,
+    source: Dict[str, Any],
+    coverage_dates: List[str],
+    records: Iterable[Dict[str, Any]],
+) -> int:
+    """Atomically widen source coverage and upsert all supplied records."""
+    pending = list(records)
+    connection = connect(db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        _merge_source_coverage_on_connection(
+            connection,
+            source,
+            coverage_dates,
+        )
+        for record in pending:
+            _upsert_record_on_connection(connection, record)
+        connection.commit()
+        return len(pending)
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def get_record(db_path: Path, record_id: str) -> Optional[Dict[str, Any]]:

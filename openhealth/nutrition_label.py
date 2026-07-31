@@ -191,6 +191,14 @@ _EXPLICIT_BASIS_CONTAINER_RE = re.compile(
     r"\bper\s+(?:the\s+)?(?:package|container|bottle)\b)",
     re.IGNORECASE,
 )
+_COMPACT_CONTAINER_BASIS_PREFIX_RE = re.compile(
+    r"\s*"
+    r"(?:(?:да|yes)\s*[,;:—–-]?\s*)?"
+    r"(?:(?:значени[яй]|цифры|values?)\s+)?"
+    r"(?:на|за)\s+(?:всю|весь|целую|целый)"
+    r"\s*[,;:—–-]?\s*",
+    re.IGNORECASE,
+)
 _RANGE_AMOUNT_RE = re.compile(
     r"(?<!\d)\d+(?:[.,]\d+)?\s*" r"(?:[-–—]|\b(?:до|to|or)\b)\s*" r"\d+(?:[.,]\d+)?",
     re.IGNORECASE,
@@ -1135,6 +1143,92 @@ def _energy_from_payload(
     raw_label_text: str,
 ) -> Dict[str, Any]:
     energy = payload.get("energy")
+    if isinstance(energy, dict):
+        energy_fields_absent = (
+            all(
+                value is None or not str(value).strip()
+                for value in (
+                    energy.get("label"),
+                    energy.get("raw_unit") or energy.get("unit"),
+                    energy.get("raw_row_text"),
+                )
+            )
+            and (
+                energy.get("value") is None
+                or not str(energy.get("value")).strip()
+                or (
+                    isinstance(energy.get("value"), (int, float))
+                    and not isinstance(energy.get("value"), bool)
+                    and float(energy["value"]) == 0.0
+                )
+            )
+        )
+    else:
+        energy_fields_absent = (
+            all(
+                value is None or not str(value).strip()
+                for value in (
+                    payload.get("energy_label"),
+                    payload.get("energy_unit"),
+                    payload.get("energy_raw_row_text"),
+                )
+            )
+            and (
+                payload.get("energy_kcal") is None
+                or not str(payload.get("energy_kcal")).strip()
+                or (
+                    isinstance(
+                        payload.get("energy_kcal"),
+                        (int, float),
+                    )
+                    and not isinstance(
+                        payload.get("energy_kcal"),
+                        bool,
+                    )
+                    and float(payload["energy_kcal"]) == 0.0
+                )
+            )
+        )
+    normalized_raw_label_text = unicodedata.normalize(
+        "NFKC",
+        raw_label_text,
+    ).casefold()
+
+    def contains_energy_unit(unit: str) -> bool:
+        unit = unit.casefold()
+        start = 0
+        while True:
+            index = normalized_raw_label_text.find(unit, start)
+            if index < 0:
+                return False
+            before = (
+                normalized_raw_label_text[index - 1]
+                if index > 0
+                else ""
+            )
+            after_index = index + len(unit)
+            after = (
+                normalized_raw_label_text[after_index]
+                if after_index < len(normalized_raw_label_text)
+                else ""
+            )
+            if (
+                (not before or not before.isalpha())
+                and (not after or not after.isalnum())
+            ):
+                return True
+            start = index + 1
+
+    raw_mentions_kcal = any(
+        contains_energy_unit(unit)
+        for unit in _KCAL_UNITS
+    )
+    if energy_fields_absent and not raw_mentions_kcal:
+        raise NutritionLabelNeedsClarification(
+            "declared energy is not present in the visible label text",
+            code="energy_missing",
+        )
+
     if isinstance(energy, dict):
         label = _text(energy.get("label"), "energy.label", required=True, limit=160)
         value = _finite_number(energy.get("value"), "energy.value", positive=True)
@@ -2401,7 +2495,25 @@ def parse_basis_and_consumption_text(text: str) -> Dict[str, Any]:
     strict_basis = detect_explicit_basis_correction(raw)
     action = _CONSUMPTION_ACTION_RE.search(raw)
     negated_action = _NEGATED_CONSUMPTION_ACTION_RE.search(raw)
+    action_clause_start = (
+        negated_action.start()
+        if negated_action is not None
+        else action.start()
+        if action is not None
+        else None
+    )
     basis: Optional[str] = strict_basis
+    if (
+        basis is None
+        and action_clause_start is not None
+        and _COMPACT_CONTAINER_BASIS_PREFIX_RE.fullmatch(
+            raw[:action_clause_start]
+        )
+    ):
+        # In a direct basis-question reply, people naturally elide the noun:
+        # "за всю, съел всё".  The independent eating/drinking clause keeps
+        # this narrower than broad "всю" wording inside a consumption report.
+        basis = BASIS_PER_CONTAINER
     if (
         basis is None
         and action is None

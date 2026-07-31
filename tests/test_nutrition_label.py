@@ -945,6 +945,46 @@ class LabelNormalizationTests(unittest.TestCase):
         with self.assertRaises(nutrition_label.NutritionLabelNeedsClarification):
             nutrition_label.normalize_label_extraction(payload)
 
+    def test_missing_energy_has_a_distinct_clarification_code(self):
+        payload = _armenian_label()
+        energy_row = payload["energy"]["raw_row_text"]
+        payload["raw_label_text"] = payload["raw_label_text"].replace(
+            energy_row + "\n",
+            "",
+        )
+        payload["energy"] = {
+            "label": "",
+            "value": 0,
+            "unit": "",
+            "raw_row_text": "",
+        }
+
+        with self.assertRaises(
+            nutrition_label.NutritionLabelNeedsClarification
+        ) as raised:
+            nutrition_label.normalize_label_extraction(payload)
+
+        self.assertEqual(raised.exception.code, "energy_missing")
+
+        raw_without_energy = payload["raw_label_text"]
+        for compact_energy in (
+            "ENERGY: 200KCAL",
+            "ЭНЕРГИЯ: 200ккал",
+            "ԷՆԵՐԳԻԱ՝ 200կկալ",
+        ):
+            with self.subTest(compact_energy=compact_energy):
+                payload["raw_label_text"] = (
+                    raw_without_energy + "\n" + compact_energy
+                )
+                with self.assertRaises(
+                    nutrition_label.NutritionLabelNeedsClarification
+                ) as visible_but_unread:
+                    nutrition_label.normalize_label_extraction(payload)
+                self.assertNotEqual(
+                    visible_but_unread.exception.code,
+                    "energy_missing",
+                )
+
 
 class NutrientMappingConfirmationTests(unittest.TestCase):
     proposal = {
@@ -1635,6 +1675,24 @@ class ConsumptionTests(unittest.TestCase):
             nutrition_label.BASIS_PER_CONTAINER,
         )
         self.assertEqual(combined["consumed"]["fraction"], 1.0)
+
+        compact = nutrition_label.parse_basis_and_consumption_text(
+            "За всю, съел все"
+        )
+        self.assertEqual(
+            compact["basis"],
+            nutrition_label.BASIS_PER_CONTAINER,
+        )
+        self.assertEqual(compact["consumed"]["fraction"], 1.0)
+
+        compact_negated = nutrition_label.parse_basis_and_consumption_text(
+            "за всю, не съел всё"
+        )
+        self.assertEqual(
+            compact_negated["basis"],
+            nutrition_label.BASIS_PER_CONTAINER,
+        )
+        self.assertIsNone(compact_negated["consumed"])
 
         measured = nutrition_label.parse_basis_and_consumption_text(
             "значения за 100 г, съел 150 г"

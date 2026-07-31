@@ -1,6 +1,8 @@
 import json
+import sqlite3
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from openhealth import index, journal_store
@@ -129,6 +131,297 @@ class ToObservationsTests(unittest.TestCase):
 
 
 class CorrelationsPickupTests(unittest.TestCase):
+    def test_merge_source_coverage_unions_manifest_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "index.db"
+            index.init_db(db)
+            base = {
+                "source_id": journal_store.SOURCE_ID,
+                "source_type": "local-journal",
+                "owner": "existing-owner",
+                "label": "Existing journal",
+                "created_at": "2026-05-01T00:00:00+00:00",
+                "coverage_start": "2026-05-01",
+                "coverage_end": "2026-05-01",
+                "files": ["days/old.json", "days/shared.json"],
+                "parser_status": "manual-entry",
+            }
+            index.upsert_source(db, base)
+
+            index.merge_source_coverage(
+                db,
+                {
+                    **base,
+                    "coverage_start": "2026-06-01",
+                    "coverage_end": "2026-06-01",
+                    "files": ["days/shared.json", "days/new.json"],
+                },
+                ["2026-06-01"],
+            )
+
+            source = next(
+                source
+                for source in index.list_sources(db)
+                if source["source_id"] == journal_store.SOURCE_ID
+            )
+            self.assertEqual(
+                source["files"],
+                ["days/old.json", "days/shared.json", "days/new.json"],
+            )
+
+    def test_persist_day_registers_source_and_expands_coverage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            db = Path(tmp) / "index.db"
+            index.init_db(db)
+            index.upsert_source(db, {
+                "source_id": journal_store.SOURCE_ID,
+                "source_type": "local-journal",
+                "owner": "existing-owner",
+                "label": "Existing journal",
+                "created_at": "2026-05-01T00:00:00+00:00",
+                "coverage_start": None,
+                "coverage_end": None,
+                "parser_status": "manual-entry",
+            })
+            orphan = journal_store.to_observations(
+                {"habits": {"lifestyle.alcohol": False}},
+                date="2026-05-30",
+            )[0]
+            index.upsert_record(db, orphan)
+
+            journal_store.persist_day(
+                "2026-06-03",
+                {"habits": {"lifestyle.alcohol": False}},
+                db,
+                home=home,
+            )
+            first = next(
+                source
+                for source in index.list_sources(db)
+                if source["source_id"] == journal_store.SOURCE_ID
+            )
+            created_at = first["created_at"]
+
+            journal_store.persist_day(
+                "2026-06-01",
+                {"habits": {"lifestyle.alcohol": True}},
+                db,
+                home=home,
+            )
+            source = next(
+                source
+                for source in index.list_sources(db)
+                if source["source_id"] == journal_store.SOURCE_ID
+            )
+            self.assertEqual(source["source_type"], "local-journal")
+            self.assertEqual(source["parser_status"], "manual-entry")
+            self.assertEqual(source["coverage_start"], "2026-05-30")
+            self.assertEqual(source["coverage_end"], "2026-06-03")
+            self.assertEqual(source["created_at"], created_at)
+
+    def test_persist_day_rolls_back_source_and_all_records_on_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            db = Path(tmp) / "index.db"
+            index.init_db(db)
+            original_source = {
+                "source_id": journal_store.SOURCE_ID,
+                "source_type": "local-journal",
+                "owner": "existing-owner",
+                "label": "Existing journal",
+                "created_at": "2026-05-01T00:00:00+00:00",
+                "coverage_start": "2026-06-01",
+                "coverage_end": "2026-06-01",
+                "files": ["days/2026-06-01.json"],
+                "parser_status": "manual-entry",
+            }
+            index.upsert_source(db, original_source)
+            connection = index.connect(db)
+            with connection:
+                connection.execute(
+                    """
+                    CREATE TRIGGER fail_second_journal_record
+                    BEFORE INSERT ON records
+                    WHEN NEW.record_id = 'obs-journal-2026-06-03-custom.z'
+                    BEGIN
+                        SELECT RAISE(ABORT, 'synthetic journal record failure');
+                    END
+                    """
+                )
+            connection.close()
+
+            with self.assertRaisesRegex(
+                sqlite3.IntegrityError,
+                "synthetic journal record failure",
+            ):
+                journal_store.persist_day(
+                    "2026-06-03",
+                    {
+                        "habits": {
+                            "custom.a": True,
+                            "custom.z": False,
+                        }
+                    },
+                    db,
+                    home=home,
+                )
+
+            source = next(
+                source
+                for source in index.list_sources(db)
+                if source["source_id"] == journal_store.SOURCE_ID
+            )
+            self.assertEqual(source, original_source)
+            self.assertEqual(
+                index.list_records_by_source(db, journal_store.SOURCE_ID),
+                [],
+            )
+            self.assertIsNotNone(
+                journal_store.load_day("2026-06-03", home=home)
+            )
+
+    def test_persist_day_keeps_audited_record_revision_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            db = Path(tmp) / "index.db"
+            index.init_db(db)
+            journal_store.persist_day(
+                "2026-06-03",
+                {"survey": {"energy": 4}},
+                db,
+                home=home,
+            )
+            record_id = "obs-survey-2026-06-03-survey_energy"
+            corrected = index.get_record(db, record_id)
+            corrected["value"] = 2.0
+            corrected["summary"] = "Audited synthetic correction."
+            index.apply_record_revision(
+                db,
+                updated_record=corrected,
+                revision_id="synthetic-journal-revision-1",
+                created_at="2026-06-03T12:00:00+00:00",
+                reason="Synthetic correction",
+                actor="test-user",
+                expected_revision=0,
+            )
+
+            journal_store.persist_day(
+                "2026-06-03",
+                {"survey": {"energy": 4}},
+                db,
+                home=home,
+            )
+
+            current = index.get_record(db, record_id)
+            self.assertEqual(current["value"], 2.0)
+            self.assertEqual(current["metadata"]["revision"], 1)
+            self.assertEqual(
+                len(index.list_record_revisions(db, record_id)),
+                1,
+            )
+
+    def test_merge_preserves_existing_day_sections(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            db = Path(tmp) / "index.db"
+            index.init_db(db)
+            journal_store.persist_day(
+                "2026-06-03",
+                {
+                    "habits": {
+                        "lifestyle.alcohol": False,
+                        "custom.existing": True,
+                    },
+                    "mood": {"word": "ровно", "energy": 3},
+                    "survey": {"stress": 2},
+                    "notes": "existing note",
+                    "meds_taken": ["synthetic"],
+                },
+                db,
+                home=home,
+            )
+
+            written = journal_store.persist_day(
+                "2026-06-03",
+                {
+                    "habits": {"nutrition.late_meal": True},
+                    "survey": {"energy": 4, "mood": 5},
+                },
+                db,
+                home=home,
+                merge=True,
+            )
+
+            day = journal_store.load_day("2026-06-03", home=home)
+            self.assertEqual(day["notes"], "existing note")
+            self.assertEqual(day["mood"]["word"], "ровно")
+            self.assertEqual(day["meds_taken"], ["synthetic"])
+            self.assertTrue(day["habits"]["custom.existing"])
+            self.assertTrue(day["habits"]["nutrition.late_meal"])
+            self.assertEqual(
+                day["survey"],
+                {"stress": 2, "energy": 4, "mood": 5},
+            )
+            self.assertEqual(written, 8)
+
+    def test_merge_refuses_to_overwrite_a_corrupt_existing_day(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            db = Path(tmp) / "index.db"
+            index.init_db(db)
+            path = journal_store.day_path("2026-06-03", home=home)
+            path.parent.mkdir(parents=True)
+            original = b"{recoverable but corrupt bytes"
+            path.write_bytes(original)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "refusing partial merge",
+            ):
+                journal_store.persist_day(
+                    "2026-06-03",
+                    {"survey": {"energy": 4}},
+                    db,
+                    home=home,
+                    merge=True,
+                )
+
+            self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(
+                index.list_records_by_source(
+                    db,
+                    journal_store.SOURCE_ID,
+                ),
+                [],
+            )
+
+    def test_concurrent_days_do_not_lose_source_coverage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            db = Path(tmp) / "index.db"
+            index.init_db(db)
+            days = ["2026-06-%02d" % day for day in range(1, 7)]
+
+            def persist(day):
+                journal_store.persist_day(
+                    day,
+                    {"habits": {"lifestyle.alcohol": False}},
+                    db,
+                    home=home,
+                )
+
+            with ThreadPoolExecutor(max_workers=6) as executor:
+                list(executor.map(persist, reversed(days)))
+
+            source = next(
+                source
+                for source in index.list_sources(db)
+                if source["source_id"] == journal_store.SOURCE_ID
+            )
+            self.assertEqual(source["coverage_start"], days[0])
+            self.assertEqual(source["coverage_end"], days[-1])
+
     def test_persist_day_feeds_correlations_from_index(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
