@@ -99,11 +99,35 @@ python -m openhealth module --id recovery --payload-json '{ ... }'
 ```bash
 python -m openhealth whoop-auth-url                      # start OAuth, get a URL
 python -m openhealth whoop-exchange-code --code <code>   # exchange the code for tokens
+# Add --allow-scope-reduction only for an intentional credential downgrade.
 python -m openhealth whoop-sync --days-back 30           # pull recovery/sleep/strain/HRV
 python -m openhealth whoop-body-sync                     # save today's current body-metric snapshot
 python -m openhealth whoop-capabilities                  # what the public API exposes
 python -m openhealth whoop-latest                        # latest synced timestamps
 ```
+
+Pinned macOS scheduling keeps executable code separate from the live data
+workspace. Build and re-verify the committed, non-writable allowlisted release
+first:
+
+```bash
+python3 scripts/build_pinned_runtime.py build \
+  --source /absolute/source --releases-root /absolute/runtime-releases --revision <full-sha>
+python3 scripts/build_pinned_runtime.py verify \
+  --release /absolute/runtime-releases/<sha> --revision <full-sha>
+```
+
+Both installers from that release then require the same explicit runtime SHA:
+
+```bash
+/absolute/runtime/<sha>/scripts/install-whoop-body-sync-launchagent.sh \
+  --runtime-root /absolute/runtime/<sha> --data-root /absolute/data-root --revision <full-sha>
+/absolute/runtime/<sha>/scripts/install-daily-sync-launchagent.sh \
+  --runtime-root /absolute/runtime/<sha> --data-root /absolute/data-root --revision <full-sha>
+```
+
+Add `--render-only /absolute/output.plist` to validate either configuration
+without loading or replacing a service.
 
 **Withings** (scales, OAuth)
 ```bash

@@ -79,10 +79,32 @@ Create credentials:
 
 1. Sign in at https://developer-dashboard.whoop.com/ with your WHOOP account (the dashboard where apps are created).
 2. Create a Team (once), then **Create App** (up to 5 apps per account).
-3. Scopes: `read:profile`, `read:recovery`, `read:cycles`, `read:sleep` (`read:workout` optional). If your app is **not** granted some of these (e.g. no `read:profile` / `read:body_measurement`), request only the granted ones — otherwise the authorize step returns `invalid_scope`. Set `OPENHEALTH_WHOOP_SCOPES` (space- or comma-separated) or pass `--scope` to `whoop-auth-url`, and run `whoop-sync --no-profile --no-body-measurements` to skip endpoints you lack access to.
+3. A full sync always needs `read:cycles`, `read:recovery`, `read:sleep`,
+   `read:workout`, and `offline`. By default it also reads the profile and body
+   measurements, so add `read:profile` and `read:body_measurement`; alternatively,
+   omit those two scopes and run
+   `whoop-sync --no-profile --no-body-measurements`. Set
+   `OPENHEALTH_WHOOP_SCOPES` (space- or
+   comma-separated) or repeat `--scope` on `whoop-auth-url` to request exactly
+   the scopes enabled for your app. Requesting a scope the app was not granted
+   makes WHOOP return `invalid_scope`.
 4. Add a redirect URL, e.g. `http://localhost:8765/callback` — it must match the OAuth request exactly.
 5. Copy Client ID and Client Secret (the secret is server-side only).
 6. Export `OPENHEALTH_WHOOP_CLIENT_ID`, `OPENHEALTH_WHOOP_CLIENT_SECRET`, `OPENHEALTH_WHOOP_REDIRECT_URI` (optionally `OPENHEALTH_WHOOP_SCOPES`), then run `openhealth whoop-auth-url` and `openhealth whoop-exchange-code` to finish the flow; `openhealth whoop-sync` pulls data.
+
+OpenHealth keeps one rotating WHOOP credential per workspace. Token refreshes
+are process-locked and written atomically with owner-only permissions. If the
+final file promotion is interrupted, the next locked access automatically
+recovers the durable pending token before contacting WHOOP again. A new
+authorization is refused when it would silently replace the existing token with
+fewer scopes; use `--allow-scope-reduction` on the exchange command only when
+that downgrade is intentional. A token shared by scheduled full and body syncs
+needs their exact union:
+`read:profile read:cycles read:recovery read:sleep read:workout read:body_measurement offline`.
+If the full sync uses `--no-profile`, its union with the body scheduler is
+`read:cycles read:recovery read:sleep read:workout read:body_measurement offline`;
+adding `--no-body-measurements` to that full sync does not narrow the union,
+because the separate body scheduler still needs `read:body_measurement`.
 
 ### Daily body-measurement snapshots
 
@@ -92,14 +114,70 @@ idempotent snapshot per local fetch date. Re-running it on the same date updates
 that date; later dates are retained. If WHOOP does not include a measurement
 timestamp, OpenHealth explicitly records that the date came from fetch time.
 
-On macOS, install the daily 12:15 local-time LaunchAgent (which also runs at
-login):
+On macOS, the body snapshot and the full WHOOP/Oura daily sync can run from the
+same immutable code release while continuing to read credentials, tokens, the
+database, and derived output from the separate local data workspace. A release
+root must be an absolute, non-symlink directory containing the committed tree
+and a `REVISION` file with its full 40-character Git SHA. The data root must be
+a different absolute path containing `.env` and `data/`.
+
+Build that owner-only release directly from the committed Git object, not from
+the working tree. The builder archives only the `openhealth` package, the two
+sync runners and their installer/plist files, and the dashboard-data builder;
+it records every payload checksum and mode in `MANIFEST.json` and removes write
+permissions before publishing the release:
 
 ```bash
-./scripts/install-whoop-body-sync-launchagent.sh
+python3 scripts/build_pinned_runtime.py build \
+  --source /absolute/path/to/openhealth-source \
+  --releases-root /absolute/path/to/whoop-runtime-releases \
+  --revision <full-sha>
+python3 scripts/build_pinned_runtime.py verify \
+  --release /absolute/path/to/whoop-runtime-releases/<sha> \
+  --revision <full-sha>
 ```
 
-The runner loads WHOOP credentials from the repository's gitignored `.env`.
+Building the same SHA again repeats verification and fails closed if an existing
+release was modified. A WHOOP-specific releases root may be used; do not add
+files to an already-installed bot runtime.
+
+Render and validate a LaunchAgent without touching `launchctl`:
+
+```bash
+/absolute/path/to/whoop-runtime-releases/<sha>/scripts/install-whoop-body-sync-launchagent.sh \
+  --runtime-root /absolute/path/to/whoop-runtime-releases/<sha> \
+  --data-root /absolute/path/to/openhealth-data \
+  --revision <full-sha> \
+  --render-only /tmp/whoop-body-sync.plist
+```
+
+After reviewing that plist, install the daily 12:15 body snapshot (which also
+runs at login):
+
+```bash
+/absolute/path/to/whoop-runtime-releases/<sha>/scripts/install-whoop-body-sync-launchagent.sh \
+  --runtime-root /absolute/path/to/whoop-runtime-releases/<sha> \
+  --data-root /absolute/path/to/openhealth-data \
+  --revision <full-sha>
+```
+
+Install the committed replacement for the mutable
+`~/.openhealth/daily-sync.sh` runner with the **same** three pinning arguments:
+
+```bash
+/absolute/path/to/whoop-runtime-releases/<sha>/scripts/install-daily-sync-launchagent.sh \
+  --runtime-root /absolute/path/to/whoop-runtime-releases/<sha> \
+  --data-root /absolute/path/to/openhealth-data \
+  --revision <full-sha>
+```
+
+Both runners source the data workspace's gitignored `.env`, use its token files
+and database, and import Python only from the pinned runtime (`python -P`,
+`PYTHONSAFEPATH=1`). The installer validates a staged plist before stopping an
+existing service. The prior plist and runtime runner remain intact until the
+replacement has successfully bootstrapped; a failed bootstrap restarts the
+previous loaded service. Keep old runtime release directories until both
+LaunchAgents have been verified on the new SHA.
 
 Rate limits: per-app defaults around 100 req/min and 10,000/day — a daily sync uses a handful of calls.
 

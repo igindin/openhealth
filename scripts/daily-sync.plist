@@ -4,11 +4,11 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>org.openhealth.whoop-body-sync</string>
+  <string>com.openhealth.daily-sync</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>__RUNTIME_ROOT__/scripts/whoop-body-sync-run.sh</string>
+    <string>__RUNTIME_ROOT__/scripts/daily-sync-run.sh</string>
   </array>
   <key>WorkingDirectory</key>
   <string>__RUNTIME_ROOT__</string>
@@ -34,17 +34,27 @@
     <string>1</string>
   </dict>
   <key>RunAtLoad</key>
-  <true/>
+  <false/>
   <key>Umask</key>
   <integer>63</integer>
   <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>12</integer>
-    <key>Minute</key><integer>15</integer>
-  </dict>
+  <array>
+    <dict>
+      <key>Hour</key><integer>9</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key><integer>14</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key><integer>21</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+  </array>
   <key>StandardOutPath</key>
-  <string>__DATA_ROOT__/data/index/whoop-body-sync.log</string>
+  <string>__DATA_ROOT__/data/index/daily-sync.log</string>
   <key>StandardErrorPath</key>
-  <string>__DATA_ROOT__/data/index/whoop-body-sync.err</string>
+  <string>__DATA_ROOT__/data/index/daily-sync.log</string>
 </dict>
 </plist>

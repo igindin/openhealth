@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-06-10",
+  "updated": "2026-07-31",
   "env_pattern": "OPENHEALTH_<PROVIDER>_<CREDENTIAL>",
   "notes": "Catalog of device/data providers for direct-API integrations. Clean-room: compiled from public developer documentation only. Where no official open API exists the provider is marked export_only and the honest workaround (file export or local bridge) is described instead of pretending an API exists.",
   "providers": [
@@ -16,7 +16,8 @@
       "key_steps": [
         "Open https://developer-dashboard.whoop.com/ and sign in with your WHOOP account (this is the actual app-creation dashboard).",
         "Create a Team (required once), then 'Create App' (up to 5 apps per account).",
-        "Select scopes: read:profile, read:recovery, read:cycles, read:sleep (read:workout optional).",
+        "For whoop-sync, select read:cycles, read:recovery, read:sleep, read:workout, and offline. Add read:profile and read:body_measurement for the default full sync, or use --no-profile and --no-body-measurements.",
+        "A token shared by scheduled default full and body syncs needs the exact union: read:profile, read:cycles, read:recovery, read:sleep, read:workout, read:body_measurement, offline.",
         "Add a redirect URL, e.g. http://localhost:8765/callback — it must match your OAuth request exactly.",
         "Copy the Client ID and Client Secret from the app page (secret is server-side only, never log it).",
         "Export OPENHEALTH_WHOOP_CLIENT_ID, OPENHEALTH_WHOOP_CLIENT_SECRET, OPENHEALTH_WHOOP_REDIRECT_URI, then run 'openhealth whoop-auth-url' and 'openhealth whoop-exchange-code' to finish the OAuth flow."
@@ -38,7 +39,8 @@
       "env_vars": [
         "OPENHEALTH_WHOOP_CLIENT_ID",
         "OPENHEALTH_WHOOP_CLIENT_SECRET",
-        "OPENHEALTH_WHOOP_REDIRECT_URI"
+        "OPENHEALTH_WHOOP_REDIRECT_URI",
+        "OPENHEALTH_WHOOP_SCOPES"
       ]
     },
     {

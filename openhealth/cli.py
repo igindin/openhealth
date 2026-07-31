@@ -55,6 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     whoop_exchange = subparsers.add_parser("whoop-exchange-code", help="Exchange a WHOOP OAuth code for tokens.")
     whoop_exchange.add_argument("--code", required=True, help="Authorization code returned by WHOOP.")
+    whoop_exchange.add_argument(
+        "--allow-scope-reduction",
+        action="store_true",
+        help="Allow a new authorization to replace an existing WHOOP token with fewer scopes.",
+    )
 
     whoop_exchange_url = subparsers.add_parser(
         "whoop-exchange-redirect-url",
@@ -62,6 +67,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     whoop_exchange_url.add_argument("--url", required=True, help="Full redirect URL captured after WHOOP OAuth.")
     whoop_exchange_url.add_argument("--expected-state", help="Optional OAuth state to verify.")
+    whoop_exchange_url.add_argument(
+        "--allow-scope-reduction",
+        action="store_true",
+        help="Allow a new authorization to replace an existing WHOOP token with fewer scopes.",
+    )
 
     whoop_sync = subparsers.add_parser("whoop-sync", help="Sync WHOOP API data into OpenHealth.")
     whoop_sync.add_argument("--start", help="ISO-8601 UTC start timestamp, for example 2026-03-01T00:00:00Z.")
@@ -205,7 +215,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         paths = ensure_repo_structure(repo_root)
         credentials = load_credentials_from_env()
         tokens = exchange_code_for_tokens(credentials, args.code)
-        save_tokens(paths.whoop_tokens_path, tokens)
+        save_tokens(
+            paths.whoop_tokens_path,
+            tokens,
+            allow_scope_reduction=args.allow_scope_reduction,
+            fresh_authorization=True,
+        )
         result = {
             "token_path": str(paths.whoop_tokens_path),
             "expires_at": tokens["expires_at"],
@@ -216,7 +231,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         credentials = load_credentials_from_env()
         parsed = extract_code_from_redirect_url(args.url, args.expected_state)
         tokens = exchange_code_for_tokens(credentials, parsed["code"])
-        save_tokens(paths.whoop_tokens_path, tokens)
+        save_tokens(
+            paths.whoop_tokens_path,
+            tokens,
+            allow_scope_reduction=args.allow_scope_reduction,
+            fresh_authorization=True,
+        )
         result = {
             "token_path": str(paths.whoop_tokens_path),
             "expires_at": tokens["expires_at"],

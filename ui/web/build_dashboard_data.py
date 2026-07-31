@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import sqlite3
+import tempfile
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -799,8 +800,8 @@ def build_correlations_block(con: sqlite3.Connection) -> dict:
         repo_root = str(Path(__file__).resolve().parents[2])
         if repo_root not in sys.path:
             sys.path.insert(0, repo_root)
-        from openhealth.modules import correlations as _corr
         from openhealth import params as _params
+        from openhealth.modules import correlations as _corr
     except Exception:
         _corr = None
         _params = None
@@ -1078,6 +1079,43 @@ def build_payload(db_path: Path) -> dict:
     return payload
 
 
+def _write_private_json(path: Path, payload: dict) -> None:
+    """Atomically publish derived personal data with owner-only permissions."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    temporary_path = Path(temporary_name)
+    complete = False
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
+        else:
+            os.chmod(temporary_path, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+        path.chmod(0o600)
+        if os.name != "nt":
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        complete = True
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if not complete and temporary_path.exists():
+            temporary_path.unlink()
+
+
 def main() -> None:
     default_db = Path(os.path.expanduser("~/health-os/data/index/health_os.sqlite3"))
     ap = argparse.ArgumentParser(description=__doc__)
@@ -1095,7 +1133,7 @@ def main() -> None:
         )
 
     payload = build_payload(args.db)
-    args.out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), "utf-8")
+    _write_private_json(args.out, payload)
 
     rec = payload.get("recovery")
     bm = len(payload.get("biomarkers", []))

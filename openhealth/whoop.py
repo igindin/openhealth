@@ -1,15 +1,18 @@
 import base64
+import errno
 import hashlib
 import hmac
 import json
 import os
 import subprocess
+import tempfile
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.error import URLError
-from urllib.error import HTTPError
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Set, Tuple
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlencode, urlparse
 from urllib.request import Request, urlopen
 
@@ -18,11 +21,33 @@ from .contexts import build_source_brief, refresh_contexts
 from .models import ArtifactManifest, ContextNote, Observation, SourceManifest, TimelineEvent
 from .storage import ensure_repo_structure, now_utc, sha256sum, slugify, write_json, write_text
 
+if os.name == "nt":
+    import msvcrt as _file_locking
+else:
+    import fcntl as _file_locking
 
 AUTHORIZATION_URL = "https://api.prod.whoop.com/oauth/oauth2/auth"
 TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
 API_BASE_URL = "https://api.prod.whoop.com/developer/v2"
 WHOOP_SOURCE_ID = "whoop-live"
+HTTP_TIMEOUT_SECONDS = 30
+CURL_CONNECT_TIMEOUT_SECONDS = 10
+CURL_MAX_TIME_SECONDS = 30
+CURL_PROCESS_TIMEOUT_SECONDS = CURL_MAX_TIME_SECONDS + 5
+TOKEN_TRANSACTION_FORMAT = "openhealth-whoop-token-transaction-v1"
+SAFE_HTTP_ERROR_CODES = {
+    "access_denied",
+    "insufficient_scope",
+    "invalid_client",
+    "invalid_grant",
+    "invalid_request",
+    "invalid_scope",
+    "invalid_token",
+    "server_error",
+    "temporarily_unavailable",
+    "unauthorized_client",
+    "unsupported_grant_type",
+}
 # WHOOP sits behind Cloudflare, which bans the default urllib User-Agent
 # (Error 1010 "browser_signature_banned"). Send a browser-like UA so OAuth
 # token exchange and API calls are not blocked at the WAF.
@@ -180,13 +205,464 @@ def refresh_tokens(credentials: WhoopCredentials, refresh_token: str) -> Dict[st
         "refresh_token": refresh_token,
         "client_id": credentials.client_id,
         "client_secret": credentials.client_secret,
+        # WHOOP requires this scope when rotating an access/refresh-token pair.
+        "scope": "offline",
     }
     response = _post_form(TOKEN_URL, payload)
     return _normalize_token_response(response, refresh_token=refresh_token)
 
 
-def save_tokens(path: Path, payload: Dict[str, Any]) -> None:
-    write_json(path, payload)
+@contextmanager
+def _token_file_lock(path: Path) -> Iterator[None]:
+    """Serialize rotating-token reads and writes across local processes."""
+    with _exclusive_file_lock(path.with_name(path.name + ".lock")):
+        yield
+
+
+@contextmanager
+def _exclusive_file_lock(lock_path: Path) -> Iterator[None]:
+    """Hold one owner-only advisory lock across processes and threads."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    locked = False
+    try:
+        _set_owner_only(lock_path, descriptor)
+        _lock_descriptor(descriptor)
+        locked = True
+        yield
+    finally:
+        if locked:
+            _unlock_descriptor(descriptor)
+        os.close(descriptor)
+
+
+def _lock_descriptor(descriptor: int) -> None:
+    if os.name != "nt":
+        _file_locking.flock(descriptor, _file_locking.LOCK_EX)
+        return
+
+    # msvcrt locks byte ranges, so make sure byte zero exists. LK_NBLCK plus
+    # retry provides the blocking semantics of flock without its 10-second cap.
+    if os.fstat(descriptor).st_size == 0:
+        os.write(descriptor, b"\0")
+        os.fsync(descriptor)
+    while True:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        try:
+            _file_locking.locking(descriptor, _file_locking.LK_NBLCK, 1)
+            return
+        except OSError as exc:
+            if exc.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                raise
+            time.sleep(0.05)
+
+
+def _unlock_descriptor(descriptor: int) -> None:
+    if os.name != "nt":
+        _file_locking.flock(descriptor, _file_locking.LOCK_UN)
+        return
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    _file_locking.locking(descriptor, _file_locking.LK_UNLCK, 1)
+
+
+def _set_owner_only(path: Path, descriptor: Optional[int] = None) -> None:
+    if descriptor is not None and hasattr(os, "fchmod"):
+        os.fchmod(descriptor, 0o600)
+    else:
+        os.chmod(path, 0o600)
+
+
+def _fsync_parent_directory(path: Path) -> None:
+    """Persist same-directory renames on platforms that support directory fsync."""
+    if os.name == "nt":
+        return
+    descriptor = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _token_scopes(payload: Dict[str, Any]) -> Set[str]:
+    raw_scopes = payload.get("scope")
+    if raw_scopes is None and isinstance(payload.get("raw"), dict):
+        raw_scopes = payload["raw"].get("scope")
+    if isinstance(raw_scopes, str):
+        return set(parse_scopes(raw_scopes))
+    if isinstance(raw_scopes, (list, tuple, set)):
+        return {str(scope) for scope in raw_scopes if scope}
+    return set()
+
+
+def require_token_scopes(tokens: Dict[str, Any], required: Iterable[str], operation: str) -> None:
+    required_set = set(required)
+    missing = sorted(required_set - _token_scopes(tokens))
+    if missing:
+        raise WhoopApiError(
+            "WHOOP token is missing required scopes for %s: %s. "
+            "Reauthorize WHOOP with the required scopes."
+            % (operation, ", ".join(missing))
+        )
+    if "offline" in required_set and not str(tokens.get("refresh_token") or "").strip():
+        raise WhoopApiError(
+            "WHOOP token has no refresh token for %s. "
+            "Reauthorize WHOOP with the offline scope." % operation
+        )
+
+
+def _full_sync_required_scopes(
+    include_profile: bool,
+    include_body_measurements: bool,
+) -> Set[str]:
+    required = {
+        "offline",
+        "read:cycles",
+        "read:recovery",
+        "read:sleep",
+        "read:workout",
+    }
+    if include_profile:
+        required.add("read:profile")
+    if include_body_measurements:
+        required.add("read:body_measurement")
+    return required
+
+
+def _check_scope_reduction(
+    path: Path,
+    payload: Dict[str, Any],
+    allow_scope_reduction: bool,
+) -> None:
+    if allow_scope_reduction or not path.exists():
+        return
+    removed = sorted(_token_scopes(load_tokens(path)) - _token_scopes(payload))
+    if removed:
+        raise WhoopApiError(
+            "Refusing to replace the WHOOP token with narrower scopes; "
+            "the new token omits: %s. Pass --allow-scope-reduction only "
+            "when this downgrade is intentional." % ", ".join(removed)
+        )
+
+
+def _pending_token_path(path: Path) -> Path:
+    return path.with_name(path.name + ".pending")
+
+
+def _staged_token_paths(path: Path) -> List[Path]:
+    return list(path.parent.glob(path.name + ".pending.*.tmp"))
+
+
+def _promotion_token_paths(path: Path) -> List[Path]:
+    return list(path.parent.glob(path.name + ".promote.*.tmp"))
+
+
+def _token_recovery_paths(path: Path) -> List[Path]:
+    return [
+        candidate
+        for candidate in [
+            _pending_token_path(path),
+            *_staged_token_paths(path),
+            *_promotion_token_paths(path),
+        ]
+        if candidate.exists()
+    ]
+
+
+def _token_fingerprint(payload: Dict[str, Any]) -> str:
+    serialized = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(serialized).hexdigest()
+
+
+def _token_transaction(
+    base_payload: Optional[Dict[str, Any]],
+    successor_payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "format": TOKEN_TRANSACTION_FORMAT,
+        "base_fingerprint": _token_fingerprint(base_payload) if base_payload is not None else None,
+        "successor_fingerprint": _token_fingerprint(successor_payload),
+        "token": successor_payload,
+    }
+
+
+def _read_token_candidate(path: Path) -> Optional[Dict[str, Any]]:
+    try:
+        transaction = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(transaction, dict) or transaction.get("format") != TOKEN_TRANSACTION_FORMAT:
+        return None
+    payload = transaction.get("token")
+    base_fingerprint = transaction.get("base_fingerprint")
+    successor_fingerprint = transaction.get("successor_fingerprint")
+    if not isinstance(payload, dict) or not payload.get("access_token"):
+        return None
+    if base_fingerprint is not None and not isinstance(base_fingerprint, str):
+        return None
+    if successor_fingerprint != _token_fingerprint(payload):
+        return None
+    return transaction
+
+
+def _remove_token_recovery_files(path: Path, candidates: Iterable[Path]) -> None:
+    removed = False
+    for candidate in candidates:
+        if candidate.exists():
+            candidate.unlink()
+            removed = True
+    for candidate in _promotion_token_paths(path):
+        if candidate.exists():
+            candidate.unlink()
+            removed = True
+    if removed:
+        _fsync_parent_directory(path)
+
+
+def _quarantine_token_recovery_files(
+    path: Path,
+    candidates: Iterable[Path],
+) -> List[Path]:
+    """Preserve stale recovery evidence before a fresh OAuth authorization."""
+    existing = [candidate for candidate in candidates if candidate.exists()]
+    if not existing:
+        return []
+    quarantine = path.with_name(path.name + ".recovery-quarantine")
+    quarantine.mkdir(mode=0o700, parents=False, exist_ok=True)
+    if quarantine.is_symlink() or not quarantine.is_dir():
+        raise WhoopApiError(
+            "WHOOP token recovery quarantine is not a safe directory at %s."
+            % quarantine
+        )
+    quarantine.chmod(0o700)
+    moved = []
+    for ordinal, candidate in enumerate(existing):
+        destination = quarantine / (
+            "%s.%s.%s" % (candidate.name, time.time_ns(), ordinal)
+        )
+        try:
+            os.replace(candidate, destination)
+            _set_owner_only(destination)
+            _fsync_parent_directory(destination)
+        except OSError as exc:
+            raise WhoopApiError(
+                "Could not preserve stale WHOOP token recovery evidence at %s."
+                % candidate
+            ) from exc
+        moved.append(destination)
+    _fsync_parent_directory(path)
+    return moved
+
+
+def _write_token_file(path: Path, payload: Dict[str, Any], prefix: str) -> Path:
+    descriptor, temporary_name = tempfile.mkstemp(prefix=prefix, suffix=".tmp", dir=path.parent)
+    temporary_path = Path(temporary_name)
+    complete = False
+    try:
+        _set_owner_only(temporary_path, descriptor)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            descriptor = -1
+            json.dump(payload, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        complete = True
+        # Persist the directory entry as well as the file contents. This makes
+        # the staged recovery record durable before any rename is attempted.
+        _fsync_parent_directory(path)
+        return temporary_path
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary_path.exists() and not complete:
+            temporary_path.unlink()
+
+
+def _promote_pending_token_unlocked(
+    path: Path,
+    pending_path: Path,
+    transaction: Dict[str, Any],
+) -> None:
+    promotion_path = _write_token_file(
+        path,
+        transaction["token"],
+        prefix=path.name + ".promote.",
+    )
+    try:
+        os.replace(promotion_path, path)
+        _fsync_parent_directory(path)
+        _set_owner_only(path)
+    except OSError as exc:
+        if promotion_path.exists():
+            promotion_path.unlink()
+        raise WhoopApiError(
+            "Could not persist the WHOOP token; the new rotating token is "
+            "preserved at %s and will be recovered on the next attempt." % pending_path
+        ) from exc
+
+    try:
+        pending_path.unlink()
+        _fsync_parent_directory(path)
+    except OSError as exc:
+        # Canonical already contains the successor. The pending transaction is
+        # now a harmless duplicate and the next locked access will remove it.
+        raise WhoopApiError(
+            "WHOOP token was saved, but its duplicate pending transaction "
+            "could not be cleaned up at %s." % pending_path
+        ) from exc
+
+
+def _recover_pending_tokens_unlocked(path: Path) -> None:
+    """Recover a transaction only when it is the active token's successor."""
+    pending_path = _pending_token_path(path)
+    candidates = [candidate for candidate in [pending_path, *_staged_token_paths(path)] if candidate.exists()]
+    if not candidates:
+        _remove_token_recovery_files(path, [])
+        return
+
+    transactions = [(candidate, _read_token_candidate(candidate)) for candidate in candidates]
+    if any(transaction is None for _, transaction in transactions):
+        raise WhoopApiError(
+            "WHOOP token recovery data is incomplete at %s. "
+            "Keep these owner-only files and reauthorize WHOOP before syncing." % path.parent
+        )
+
+    active_payload = load_tokens(path) if path.exists() else None
+    active_fingerprint = _token_fingerprint(active_payload) if active_payload is not None else None
+    duplicates = []
+    successors = []
+    conflicts = []
+    for candidate, transaction in transactions:
+        if transaction["successor_fingerprint"] == active_fingerprint:
+            duplicates.append(candidate)
+        elif transaction["base_fingerprint"] == active_fingerprint:
+            successors.append((candidate, transaction))
+        else:
+            conflicts.append(candidate)
+
+    distinct_successors = {transaction["successor_fingerprint"] for _, transaction in successors}
+    if conflicts or len(distinct_successors) > 1:
+        raise WhoopApiError(
+            "WHOOP token recovery conflicts with the active credential at %s. "
+            "The canonical token was left unchanged; inspect the owner-only "
+            "pending transaction before syncing." % path
+        )
+
+    if not successors:
+        _remove_token_recovery_files(path, duplicates)
+        return
+
+    # Multiple files with the same base/successor are duplicate copies of one
+    # transaction. Prefer the fixed pending path when it is already present.
+    selected_path, selected_transaction = next(
+        (
+            (candidate, transaction)
+            for candidate, transaction in successors
+            if candidate == pending_path
+        ),
+        successors[0],
+    )
+    if selected_path != pending_path:
+        try:
+            os.replace(selected_path, pending_path)
+            _fsync_parent_directory(path)
+        except OSError as exc:
+            raise WhoopApiError(
+                "Could not finish WHOOP token recovery; the successor remains "
+                "preserved at %s. Retry after fixing the filesystem error." % selected_path
+            ) from exc
+    _set_owner_only(pending_path)
+    _promote_pending_token_unlocked(path, pending_path, selected_transaction)
+    _remove_token_recovery_files(path, [candidate for candidate, _ in successors] + duplicates)
+
+
+def _save_tokens_unlocked(
+    path: Path,
+    payload: Dict[str, Any],
+    *,
+    allow_scope_reduction: bool = False,
+) -> None:
+    _check_scope_reduction(path, payload, allow_scope_reduction)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pending_path = _pending_token_path(path)
+    base_payload = load_tokens(path) if path.exists() else None
+    transaction = _token_transaction(base_payload, payload)
+    temporary_path = _write_token_file(
+        path,
+        transaction,
+        prefix=path.name + ".pending.",
+    )
+    try:
+        os.replace(temporary_path, pending_path)
+        _fsync_parent_directory(path)
+        _set_owner_only(pending_path)
+    except OSError as exc:
+        preserved = pending_path if pending_path.exists() else temporary_path
+        raise WhoopApiError(
+            "Could not persist the WHOOP token; the new rotating token is "
+            "preserved at %s and will be recovered on the next attempt." % preserved
+        ) from exc
+    _promote_pending_token_unlocked(path, pending_path, transaction)
+
+
+def _save_fresh_authorization_tokens_unlocked(
+    path: Path,
+    payload: Dict[str, Any],
+    *,
+    allow_scope_reduction: bool = False,
+) -> None:
+    """Supersede stale recovery state with a newly authorized token pair."""
+    _check_scope_reduction(path, payload, allow_scope_reduction)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    base_payload = load_tokens(path) if path.exists() else None
+    transaction = _token_transaction(base_payload, payload)
+    stale_candidates = _token_recovery_paths(path)
+    temporary_path = _write_token_file(
+        path,
+        transaction,
+        prefix=path.name + ".pending.",
+    )
+    _quarantine_token_recovery_files(path, stale_candidates)
+    pending_path = _pending_token_path(path)
+    try:
+        os.replace(temporary_path, pending_path)
+        _fsync_parent_directory(path)
+        _set_owner_only(pending_path)
+    except OSError as exc:
+        preserved = pending_path if pending_path.exists() else temporary_path
+        raise WhoopApiError(
+            "Could not persist the newly authorized WHOOP token; it is "
+            "preserved at %s and will be recovered on the next attempt."
+            % preserved
+        ) from exc
+    _promote_pending_token_unlocked(path, pending_path, transaction)
+
+
+def save_tokens(
+    path: Path,
+    payload: Dict[str, Any],
+    *,
+    allow_scope_reduction: bool = False,
+    fresh_authorization: bool = False,
+) -> None:
+    with _token_file_lock(path):
+        if fresh_authorization:
+            _save_fresh_authorization_tokens_unlocked(
+                path,
+                payload,
+                allow_scope_reduction=allow_scope_reduction,
+            )
+            return
+        _recover_pending_tokens_unlocked(path)
+        _save_tokens_unlocked(
+            path,
+            payload,
+            allow_scope_reduction=allow_scope_reduction,
+        )
 
 
 def load_tokens(path: Path) -> Dict[str, Any]:
@@ -195,15 +671,39 @@ def load_tokens(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def ensure_valid_tokens(path: Path, credentials: WhoopCredentials) -> Dict[str, Any]:
-    tokens = load_tokens(path)
-    expires_at = _parse_iso_datetime(tokens.get("expires_at"))
-    if not expires_at or expires_at - timedelta(minutes=5) > datetime.now(timezone.utc):
-        return tokens
-    refreshed = refresh_tokens(credentials, tokens["refresh_token"])
-    refreshed.setdefault("scope", tokens.get("scope", list(credentials.scopes)))
-    save_tokens(path, refreshed)
-    return refreshed
+def ensure_valid_tokens(
+    path: Path,
+    credentials: WhoopCredentials,
+    *,
+    required_scopes: Optional[Iterable[str]] = None,
+    operation: str = "requested operation",
+) -> Dict[str, Any]:
+    with _token_file_lock(path):
+        _recover_pending_tokens_unlocked(path)
+        tokens = load_tokens(path)
+        _set_owner_only(path)
+        if required_scopes is not None:
+            require_token_scopes(tokens, required_scopes, operation)
+        expires_at = _parse_iso_datetime(tokens.get("expires_at"))
+        if not expires_at or expires_at - timedelta(minutes=5) > datetime.now(timezone.utc):
+            return tokens
+        refresh_token = str(tokens.get("refresh_token") or "").strip()
+        if not refresh_token:
+            raise WhoopApiError(
+                "WHOOP token has no refresh token for %s. "
+                "Reauthorize WHOOP with the offline scope." % operation
+            )
+        refreshed = refresh_tokens(credentials, refresh_token)
+        if not _token_scopes(refreshed):
+            inherited_scopes = sorted(_token_scopes(tokens))
+            refreshed["scope"] = inherited_scopes or list(credentials.scopes)
+        # WHOOP rotates both tokens during refresh. Persist the returned pair
+        # before rejecting a provider-side scope reduction, otherwise the old
+        # (now invalid) refresh token would be the only token left on disk.
+        _save_tokens_unlocked(path, refreshed, allow_scope_reduction=True)
+        if required_scopes is not None:
+            require_token_scopes(refreshed, required_scopes, operation)
+        return refreshed
 
 
 class WhoopClient:
@@ -270,11 +770,44 @@ def sync_whoop(
     client: Optional[Any] = None,
 ) -> Dict[str, Any]:
     paths = ensure_repo_structure(root)
+    lock_path = paths.whoop_tokens_path.with_name("whoop-sync.lock")
+    with _exclusive_file_lock(lock_path):
+        return _sync_whoop_unlocked(
+            root=root,
+            start=start,
+            end=end,
+            days_back=days_back,
+            owner=owner,
+            include_profile=include_profile,
+            include_body_measurements=include_body_measurements,
+            client=client,
+        )
+
+
+def _sync_whoop_unlocked(
+    root: Path,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    days_back: int = 30,
+    owner: str = "user",
+    include_profile: bool = True,
+    include_body_measurements: bool = True,
+    client: Optional[Any] = None,
+) -> Dict[str, Any]:
+    paths = ensure_repo_structure(root)
     index.init_db(paths.db_path)
     credentials = None
     if client is None:
         credentials = load_credentials_from_env()
-        tokens = ensure_valid_tokens(paths.whoop_tokens_path, credentials)
+        tokens = ensure_valid_tokens(
+            paths.whoop_tokens_path,
+            credentials,
+            required_scopes=_full_sync_required_scopes(
+                include_profile,
+                include_body_measurements,
+            ),
+            operation="full sync",
+        )
         client = WhoopClient(credentials, tokens)
     sync_started_at = now_utc()
     sync_stamp = sync_started_at.replace(":", "").replace("+00:00", "z")
@@ -385,6 +918,23 @@ def sync_whoop_body_measurements(
     client: Optional[Any] = None,
     fetched_at: Optional[str] = None,
 ) -> Dict[str, Any]:
+    paths = ensure_repo_structure(root)
+    lock_path = paths.whoop_tokens_path.with_name("whoop-sync.lock")
+    with _exclusive_file_lock(lock_path):
+        return _sync_whoop_body_measurements_unlocked(
+            root=root,
+            owner=owner,
+            client=client,
+            fetched_at=fetched_at,
+        )
+
+
+def _sync_whoop_body_measurements_unlocked(
+    root: Path,
+    owner: str = "user",
+    client: Optional[Any] = None,
+    fetched_at: Optional[str] = None,
+) -> Dict[str, Any]:
     """Fetch and persist a dated snapshot of WHOOP's current body measurements.
 
     WHOOP's public body-measurement endpoint returns the current values rather
@@ -396,7 +946,12 @@ def sync_whoop_body_measurements(
     index.init_db(paths.db_path)
     if client is None:
         credentials = load_credentials_from_env()
-        tokens = ensure_valid_tokens(paths.whoop_tokens_path, credentials)
+        tokens = ensure_valid_tokens(
+            paths.whoop_tokens_path,
+            credentials,
+            required_scopes={"read:body_measurement", "offline"},
+            operation="body sync",
+        )
         client = WhoopClient(credentials, tokens)
 
     # Use the machine's local offset for the daily bucket so a morning fetch
@@ -1085,15 +1640,34 @@ def _request_json(
     headers.setdefault("User-Agent", USER_AGENT)
     request = Request(url, data=data, headers=headers, method=method)
     try:
-        with urlopen(request, timeout=30) as response:
+        with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="ignore")
-        raise WhoopApiError("WHOOP %s failed: %s %s" % (path_hint or method, exc.code, detail))
+        error_code = _safe_http_error_code(detail)
+        suffix = " (%s)" % error_code if error_code else ""
+        # Provider error bodies can echo OAuth forms or bearer credentials.
+        # Keep the raw body out of both the exception and its chained context.
+        raise WhoopApiError(
+            "WHOOP %s failed with HTTP %s%s."
+            % (path_hint or method, exc.code, suffix)
+        ) from None
     except URLError as exc:
         if "CERTIFICATE_VERIFY_FAILED" not in str(exc.reason):
             raise
         return _request_json_with_curl(method, url, headers=headers, data=data, path_hint=path_hint)
+
+
+def _safe_http_error_code(detail: str) -> Optional[str]:
+    """Return only a fixed, non-secret OAuth/API error code."""
+    try:
+        payload = json.loads(detail)
+    except (TypeError, ValueError):
+        return None
+    error_code = payload.get("error") if isinstance(payload, dict) else None
+    if error_code in SAFE_HTTP_ERROR_CODES:
+        return str(error_code)
+    return None
 
 
 def _request_json_with_curl(
@@ -1103,16 +1677,51 @@ def _request_json_with_curl(
     data: Optional[bytes],
     path_hint: str,
 ) -> Dict[str, Any]:
-    command = ["curl", "-sS", "--fail-with-body", "-X", method]
+    # Keep authorization headers, OAuth form fields, and query parameters out
+    # of argv and exception objects. curl reads the complete request from an
+    # ephemeral stdin config instead.
+    command = ["curl", "--config", "-"]
+    config_lines = [
+        "silent",
+        "show-error",
+        "fail-with-body",
+        "connect-timeout = %s" % _curl_config_quote(str(CURL_CONNECT_TIMEOUT_SECONDS)),
+        "max-time = %s" % _curl_config_quote(str(CURL_MAX_TIME_SECONDS)),
+        "request = %s" % _curl_config_quote(method),
+        "url = %s" % _curl_config_quote(url),
+    ]
     for key, value in headers.items():
-        command.extend(["-H", "%s: %s" % (key, value)])
+        config_lines.append("header = %s" % _curl_config_quote("%s: %s" % (key, value)))
     if data is not None:
-        command.extend(["--data", data.decode("utf-8")])
-    command.append(url)
+        config_lines.append("data = %s" % _curl_config_quote(data.decode("utf-8")))
+    config = "\n".join(config_lines) + "\n"
     try:
-        output = subprocess.run(command, check=True, capture_output=True, text=True)
+        output = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            input=config,
+            text=True,
+            timeout=CURL_PROCESS_TIMEOUT_SECONDS,
+        )
     except subprocess.CalledProcessError as exc:
         raise WhoopApiError(
-            "WHOOP %s failed via curl fallback: %s" % (path_hint or method, exc.stderr.strip() or exc.stdout.strip())
-        )
+            "WHOOP %s failed via curl fallback with exit code %s."
+            % (path_hint or method, exc.returncode)
+        ) from None
+    except subprocess.TimeoutExpired:
+        raise WhoopApiError(
+            "WHOOP %s timed out via curl fallback after %s seconds."
+            % (path_hint or method, CURL_PROCESS_TIMEOUT_SECONDS)
+        ) from None
     return json.loads(output.stdout)
+
+
+def _curl_config_quote(value: str) -> str:
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+    )
+    return '"%s"' % escaped
