@@ -220,18 +220,46 @@ def apply_meal_correction(
     )
 
 
-def format_meal_correction_confirmation(estimate: Dict[str, Any]) -> str:
+def meal_correction_confirmation_required(
+    source_type: str,
+    prior_source_types: Optional[List[str]] = None,
+) -> bool:
+    """Return whether a committed correction still needs explicit confirmation.
+
+    A provider-backed update derived entirely from immutable text is already
+    auditable and can be corrected in a later reply, so a second yes/no adds no
+    safety. Voice, mixed, missing, and legacy source metadata stay fail-closed
+    because a transcription may not reflect the person's exact words.
+    """
+    sources = list(prior_source_types or []) + [source_type]
+    return any(
+        str(item or "").strip().lower() != "text" for item in sources
+    )
+
+
+def format_meal_correction_confirmation(
+    estimate: Dict[str, Any],
+    *,
+    confirmation_required: bool = True,
+) -> str:
     """Reader-facing C2 question for a revised estimate."""
     normalized = normalize_meal_estimate(estimate)
-    return (
+    summary = (
         "[C2 Weak signal] Could the revised estimate be ~%d kcal "
-        "(P%d / F%d / C%d)? Does that reflect your correction?"
+        "(P%d / F%d / C%d)?"
         % (
             normalized["kcal"],
             normalized["protein_g"],
             normalized["fat_g"],
             normalized["carb_g"],
         )
+    )
+    if confirmation_required:
+        return summary + " Does that reflect your correction?"
+    return (
+        summary
+        + " No second confirmation is needed; reply with a concrete correction "
+        "if this is wrong."
     )
 
 

@@ -124,6 +124,15 @@ them with `python -m openhealth modules`.
 - Text and locally transcribed voice replies may revise the linked meal record,
   but the raw photo/message/transcript stays immutable and every change must be
   idempotent, auditable, and recoverable if delivery or the process fails.
+- When a provider-backed meal update is derived entirely from explicit text,
+  commit the audited C2 revision and show one informational, Reply-correctable
+  summary; do not add a second yes/no ritual. Keep explicit confirmation for
+  voice, mixed text/voice, missing-source, and legacy flows.
+- Log privacy-safe successful intake transitions as structured events so the
+  path can be audited without opening health records. Include only stable event
+  and message identifiers, source kind, revision, and confirmation policy;
+  never log message text, meal names, nutrition values, tokens, paths, or raw
+  artifact contents.
 - A single reply may resolve label basis and consumed amount only when they are
   stated in independent, explicit clauses (for example, "values per 100 g, ate
   150 g"). Never reuse the same words as both basis and amount, and fail closed

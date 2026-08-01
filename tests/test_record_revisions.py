@@ -200,3 +200,46 @@ def test_russian_red_flag_short_circuits_meal_interpretation(db):
         )
     assert exc_info.value.flags[0].code == "chest_pain"
     assert index.list_record_revisions(db, "obs-meal-synthetic-1") == []
+
+
+@pytest.mark.parametrize(
+    ("source_type", "prior_source_types", "required"),
+    [
+        ("text", [], False),
+        ("text", ["text"], False),
+        ("voice", [], True),
+        ("text", ["voice"], True),
+        ("text", [""], True),
+        ("", [], True),
+    ],
+)
+def test_meal_correction_confirmation_policy_fails_closed(
+    source_type,
+    prior_source_types,
+    required,
+):
+    assert nutrition.meal_correction_confirmation_required(
+        source_type,
+        prior_source_types,
+    ) is required
+
+
+def test_text_only_correction_summary_is_informational_and_stays_c2():
+    message = nutrition.format_meal_correction_confirmation(
+        corrected_estimate(),
+        confirmation_required=False,
+    )
+
+    assert message.startswith("[C2 Weak signal]")
+    assert "Could the revised estimate" in message
+    assert "No second confirmation is needed" in message
+    assert "Does that reflect your correction?" not in message
+
+
+def test_voice_correction_summary_keeps_explicit_confirmation_by_default():
+    message = nutrition.format_meal_correction_confirmation(
+        corrected_estimate()
+    )
+
+    assert message.startswith("[C2 Weak signal]")
+    assert message.endswith("Does that reflect your correction?")
