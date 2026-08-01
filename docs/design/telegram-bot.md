@@ -17,11 +17,16 @@ The current implementation is in [`openhealth/bot.py`](../../openhealth/bot.py)
 - **Documents (PDF/CSV/JSON)** → routed to the lab-panel parser when the caption
   or filename hints at labs (`lab`, `blood`, `анализ`…), else the generic
   document parser. Lab values come back flagged in/out of range.
-- **Voice/audio** → stored and enveloped (transcription is a TODO, see below).
+- **Voice/audio** → stored and enveloped; an explicitly configured local
+  Whisper checkpoint can fill the transcript without a cloud fallback. The
+  transcript passes through the same immediate red-flag short circuit as text.
 - **Text** → note, with an **immediate red-flag safety response**: a message
   mentioning chest pain, shortness of breath, etc. gets an instant "see a
   clinician" reply and is not interpreted.
 - **/checkin, /status, /start** with a non-diagnostic disclaimer.
+- **Reply provenance** → envelopes keep `reply_to_message_id`; extensions can
+  link a reply to an exact record. Corrections use the append-only
+  `record_revisions` ledger while `records` remains the current view.
 
 ## Privacy (non-negotiable)
 

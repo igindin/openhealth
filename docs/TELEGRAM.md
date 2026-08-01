@@ -91,6 +91,7 @@ Useful flags for `run`:
 | `--once` | off | process one `getUpdates` batch and exit (smoke runs) |
 | `--poll-timeout` | 50 | long-poll hold in seconds |
 | `--bridge-url` | `$OPENHEALTH_BRIDGE_URL` | POST plain intake to this bridge's `/api/intake` for **real-time** indexing (e.g. `http://127.0.0.1:8770`); without it, envelopes stay on disk and reach the index via the batch import parser |
+| `--whisper-model` | `$OPENHEALTH_WHISPER_MODEL` or off | existing local OpenAI Whisper checkpoint; enables local voice transcription without downloading a model |
 
 ## Commands
 
@@ -140,7 +141,7 @@ agent-facing fields:
   "ts": 1781424900,
   "chat_id": 123456789,
   "source": "telegram",
-  "transcript": null,
+  "transcript": "исправление порции",
   "attachments": [
     {
       "kind": "voice",
@@ -148,17 +149,38 @@ agent-facing fields:
       "duration_s": 12,
       "mime_type": "audio/ogg",
       "path": "files/voice/tg-123456789-42.oga",
-      "transcript": null
+      "transcript": "исправление порции"
     }
   ],
   "tags": ["telegram", "voice"],
-  "metadata": {"update_id": 100, "message_id": 42, "from_id": 123456789, "received_at": "…"}
+  "metadata": {
+    "update_id": 100,
+    "message_id": 42,
+    "reply_to_message_id": 41,
+    "from_id": 123456789,
+    "received_at": "…",
+    "transcription": {
+      "status": "done",
+      "backend": "openai-whisper-local",
+      "model": "small.pt",
+      "language": "ru"
+    }
+  }
 }
 ```
 
-`transcript` is deliberately `null`: voice transcription is a **TODO hook**
-for a future local transcriber. The raw `.oga` is preserved either way — raw
-stays immutable.
+Without `--whisper-model`, `transcript` remains `null`. When configured, the
+checkpoint must already exist locally: the bot never downloads a model and
+has no cloud fallback. The optional `openai-whisper` package and `ffmpeg`
+binary must be installed in the bot process's `PATH` (including when it runs
+under launchd/systemd). The raw `.oga` is preserved either way — raw stays
+immutable.
+
+`reply_to_message_id` lets a local extension resolve a comment back to the
+exact record whose bot message was quoted. The index exposes an audited
+correction ledger (`record_revisions`) and Telegram message links so text and
+locally transcribed voice can update one current record without losing its
+before/after history.
 
 ## Reliability notes
 
@@ -175,7 +197,8 @@ stays immutable.
 
 ## Limitations
 
-- Voice is stored, not transcribed (yet) — `transcript: null` is the hook.
+- Voice needs an explicitly installed optional Whisper package plus a local
+  checkpoint; core installation remains dependency-free.
 - Designed for private one-person chats; groups are not a goal.
 - Documents/stickers/locations are not intake kinds yet.
 - `/today` only knows what `data.local.json` knows; rebuild it with

@@ -118,6 +118,10 @@ def update_to_envelope(update: Dict[str, Any], received_at: Optional[str] = None
 
     ts = message.get("date")
     message_id = message.get("message_id")
+    reply_to = message.get("reply_to_message")
+    reply_to_message_id = (
+        reply_to.get("message_id") if isinstance(reply_to, dict) else None
+    )
     submission_id = "tg-{}-{}".format(chat_id, message_id if message_id is not None else update.get("update_id"))
 
     text = message.get("text") if kind == KIND_TEXT else message.get("caption")
@@ -173,6 +177,7 @@ def update_to_envelope(update: Dict[str, Any], received_at: Optional[str] = None
         "metadata": {
             "update_id": update.get("update_id"),
             "message_id": message_id,
+            "reply_to_message_id": reply_to_message_id,
             "from_id": (message.get("from") or {}).get("id"),
             "media_group_id": message.get("media_group_id"),
             "received_at": received_at or iso_utc(None),
@@ -271,6 +276,9 @@ def render_card(envelope: Dict[str, Any], envelope_file: Optional[Path] = None) 
     text = envelope.get("text")
     if text:
         lines.extend(["", "## Text", "", str(text)])
+    transcript = envelope.get("transcript")
+    if transcript:
+        lines.extend(["", "## Transcript", "", str(transcript)])
     checkin = (envelope.get("metadata") or {}).get("checkin")
     if checkin:
         lines.extend(["", "## Check-in", ""])

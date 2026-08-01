@@ -36,6 +36,9 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import threading
+from contextlib import contextmanager
 from datetime import date as _date
 from datetime import timedelta
 from pathlib import Path
@@ -43,12 +46,20 @@ from typing import Any, Dict, List, Optional
 
 from . import journal_behaviors as catalog
 
+try:
+    import fcntl as _fcntl
+except ImportError:  # pragma: no cover - Windows fallback
+    _fcntl = None
+
 SOURCE_ID = "journal-ui"
+SOURCE_TYPE = "local-journal"
 
 DAYS_DIR = "days"
 FOCUS_FILE = "focus.json"
 
 MAX_FOCUS_ITEMS = 3
+_DAY_THREAD_LOCKS: Dict[str, threading.Lock] = {}
+_DAY_THREAD_LOCKS_GUARD = threading.Lock()
 
 # Survey answers that become numeric metrics (matches the dashboard stepper).
 SURVEY_FIELDS = ("energy", "stress", "sleep_quality", "pain", "mood")
@@ -75,12 +86,30 @@ def _ensure_private_dir(path: Path) -> None:
 
 def _write_private_json(path: Path, payload: Dict[str, Any]) -> None:
     """Atomic private write: temp file in the same dir, then replace."""
-    tmp = path.with_name(path.name + ".tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2, sort_keys=True)
-        fh.write("\n")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=str(path.parent),
+            prefix=".%s." % path.name,
+            suffix=".tmp",
+            delete=False,
+        ) as fh:
+            tmp = Path(fh.name)
+            json.dump(
+                payload,
+                fh,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            fh.write("\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    finally:
+        if tmp is not None and tmp.exists():
+            tmp.unlink()
 
 
 def _read_json(path: Path) -> Optional[Dict[str, Any]]:
@@ -124,14 +153,46 @@ def day_path(date: str, home: "Path | str | None" = None) -> Path:
     return journal_home(home) / DAYS_DIR / ("%s.json" % _valid_date(date))
 
 
-def save_day(date: str, payload: Dict[str, Any], home: "Path | str | None" = None) -> Path:
-    """Persist one day's journal payload to disk. Returns the file path."""
+@contextmanager
+def _day_lock(date: str, home: "Path | str | None" = None):
+    lock_dir = journal_home(home) / ".locks"
+    _ensure_private_dir(lock_dir)
+    lock_path = lock_dir / ("%s.lock" % _valid_date(date))
+    lock_key = str(lock_path.resolve())
+    with _DAY_THREAD_LOCKS_GUARD:
+        thread_lock = _DAY_THREAD_LOCKS.setdefault(
+            lock_key,
+            threading.Lock(),
+        )
+    with thread_lock:
+        with lock_path.open("a+", encoding="utf-8") as lock:
+            os.chmod(lock_path, 0o600)
+            if _fcntl is not None:
+                _fcntl.flock(lock.fileno(), _fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if _fcntl is not None:
+                    _fcntl.flock(lock.fileno(), _fcntl.LOCK_UN)
+
+
+def _save_day_unlocked(
+    date: str,
+    payload: Dict[str, Any],
+    home: "Path | str | None" = None,
+) -> Path:
     path = day_path(date, home)
     _ensure_private_dir(path.parent)
     body = normalize_day_payload(payload)
     body["date"] = _valid_date(date)
     _write_private_json(path, body)
     return path
+
+
+def save_day(date: str, payload: Dict[str, Any], home: "Path | str | None" = None) -> Path:
+    """Persist one complete day's journal payload to disk."""
+    with _day_lock(date, home):
+        return _save_day_unlocked(date, payload, home)
 
 
 def load_day(date: str, home: "Path | str | None" = None) -> Optional[Dict[str, Any]]:
@@ -278,7 +339,14 @@ def to_observations(day_payload: Dict[str, Any], date: Optional[str] = None) -> 
     return records
 
 
-def persist_day(date: str, payload: Dict[str, Any], db_path, home: "Path | str | None" = None) -> int:
+def persist_day(
+    date: str,
+    payload: Dict[str, Any],
+    db_path,
+    home: "Path | str | None" = None,
+    *,
+    merge: bool = False,
+) -> int:
     """Save a day to disk *and* upsert its records into the SQLite index.
 
     Returns the number of records written to the index. This is the one-call
@@ -286,13 +354,52 @@ def persist_day(date: str, payload: Dict[str, Any], db_path, home: "Path | str |
     observations out.
     """
     from . import index
+    from .storage import now_utc
 
-    save_day(date, payload, home)
-    written = 0
-    for rec in to_observations(payload, date=date):
-        index.upsert_record(db_path, rec)
-        written += 1
-    return written
+    with _day_lock(date, home):
+        body = normalize_day_payload(payload)
+        if merge:
+            existing_path = day_path(date, home)
+            existing_day = _read_json(existing_path)
+            if existing_path.exists() and existing_day is None:
+                raise ValueError(
+                    "existing journal day is unreadable; refusing partial merge"
+                )
+            existing_day = existing_day or {}
+            merged = dict(existing_day)
+            for key, value in body.items():
+                if (
+                    isinstance(value, dict)
+                    and isinstance(merged.get(key), dict)
+                ):
+                    merged[key] = {**merged[key], **value}
+                else:
+                    merged[key] = value
+            body = merged
+        _save_day_unlocked(date, body, home)
+        source = {
+            "source_id": SOURCE_ID,
+            "source_type": SOURCE_TYPE,
+            "owner": "local-user",
+            "label": "Local daily journal",
+            "created_at": now_utc(),
+            "coverage_start": date,
+            "coverage_end": date,
+            "files": [],
+            "parser_status": "manual-entry",
+            "notes": [
+                "Daily check-ins captured locally through the journal interface."
+            ],
+            "metadata": {
+                "storage": "local-first",
+            },
+        }
+        return index.merge_source_coverage_and_upsert_records(
+            db_path,
+            source,
+            [date],
+            to_observations(body, date=date),
+        )
 
 
 # --- week focus ----------------------------------------------------------------

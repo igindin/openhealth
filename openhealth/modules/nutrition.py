@@ -20,6 +20,7 @@ medical intake) and the record keeps only the path.
 No diet advice, no calorie policing. Pure stdlib, zero external deps.
 """
 
+import json
 import shutil
 import stat
 from datetime import date as _date
@@ -39,6 +40,17 @@ ALCOHOL_FREQUENCIES = ("none", "rare", "weekly", "daily")
 
 # Mirrors openhealth.circadian: wind-down is the 2h before bedtime.
 WIND_DOWN_HOURS_BEFORE_BED = 2.0
+MEAL_ESTIMATE_CONFIDENCE = evidence.confidence_to_numeric(evidence.Confidence.C2)
+MEAL_ESTIMATE_CONFIDENCE_LEVEL = evidence.Confidence.C2.value
+_ESTIMATE_FIELDS = ("kcal", "protein_g", "carb_g", "fat_g")
+
+
+class MealCorrectionRedFlag(ValueError):
+    """A correction mentioned a red flag and must not be interpreted."""
+
+    def __init__(self, flags):
+        super().__init__("red-flag text must not be interpreted as a meal correction")
+        self.flags = list(flags)
 
 
 # --- small helpers -----------------------------------------------------------
@@ -62,6 +74,193 @@ def _minutes(hhmm: str) -> int:
 
 def _fmt_minutes(total: int) -> str:
     return "%02d:%02d" % ((total // 60) % 24, total % 60)
+
+
+def normalize_meal_estimate(estimate: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate and normalize a model-produced meal estimate.
+
+    The result is still only a C2 photo/comment estimate. Validation prevents a
+    malformed model response from entering the health index; it does not make
+    the estimate more trustworthy.
+    """
+    if not isinstance(estimate, dict):
+        raise ValueError("meal estimate must be an object")
+    title = str(estimate.get("title") or "").strip()
+    if not title:
+        raise ValueError("meal estimate requires a title")
+    out = {"title": title[:120]}
+    for field in _ESTIMATE_FIELDS:
+        try:
+            value = int(round(float(estimate[field])))
+        except (KeyError, TypeError, ValueError):
+            raise ValueError("meal estimate requires numeric %s" % field)
+        if value < 0:
+            raise ValueError("meal estimate %s cannot be negative" % field)
+        out[field] = value
+    if out["kcal"] <= 0:
+        raise ValueError("meal estimate kcal must be positive")
+    out["note"] = str(estimate.get("note") or "").strip()[:500]
+    ingredients = estimate.get("ingredients")
+    if ingredients is not None:
+        if not isinstance(ingredients, list):
+            raise ValueError("meal estimate ingredients must be a list")
+        out["ingredients"] = [str(item).strip()[:160] for item in ingredients if str(item).strip()]
+    return out
+
+
+def _c2_question(text: str) -> str:
+    """Make a stored weak estimate visibly C2 and interrogative."""
+    body = str(text or "").strip().rstrip(".?")
+    if body.startswith("[C2 Weak signal]"):
+        return body + "?"
+    return "[C2 Weak signal] Could %s?" % body
+
+
+def build_corrected_meal_record(
+    current_record: Dict[str, Any],
+    estimate: Dict[str, Any],
+    display_title: Optional[str] = None,
+    display_summary: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Return the current meal record with one revised C2 estimate applied."""
+    if not isinstance(current_record, dict) or not current_record.get("id"):
+        raise ValueError("current meal record is required")
+    tags = set(current_record.get("tags") or [])
+    kind = current_record.get("observation_kind")
+    if "meal" not in tags and kind not in ("meal", "nutrition_meal"):
+        raise ValueError("record is not a meal observation")
+
+    normalized = normalize_meal_estimate(estimate)
+    updated = json.loads(json.dumps(current_record, ensure_ascii=False))
+    metadata = dict(updated.get("metadata") or {})
+    metadata.update(normalized)
+    metadata["method"] = "photo+user-correction-estimate"
+    metadata["confidence_level"] = MEAL_ESTIMATE_CONFIDENCE_LEVEL
+    updated["metadata"] = metadata
+    updated["confidence"] = MEAL_ESTIMATE_CONFIDENCE
+    updated["metric_name"] = "meal_kcal"
+    updated["value"] = normalized["kcal"]
+    updated["unit"] = "kcal"
+    updated["title"] = _c2_question(
+        display_title or "this meal be %s" % normalized["title"]
+    )
+    updated["summary"] = _c2_question(
+        display_summary
+        or (
+            "%s be ~%d kcal (P%d / F%d / C%d)%s"
+            % (
+                normalized["title"],
+                normalized["kcal"],
+                normalized["protein_g"],
+                normalized["fat_g"],
+                normalized["carb_g"],
+                (": " + normalized["note"]) if normalized["note"] else "",
+            )
+        )
+    )
+    return updated
+
+
+def apply_meal_correction(
+    db_path: Path,
+    record_id: str,
+    estimate: Dict[str, Any],
+    correction_text: str,
+    revision_id: str,
+    created_at: str,
+    source_type: str,
+    evidence_artifact_ids: Optional[List[str]] = None,
+    expected_revision: Optional[int] = None,
+    display_title: Optional[str] = None,
+    display_summary: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Apply one audited text/voice correction to an existing meal record.
+
+    Raw text and audio belong in immutable artifacts; this function stores the
+    artifact ids and an append-only before/after revision, while the ``records``
+    table remains the convenient current view.
+    """
+    correction = str(correction_text or "").strip()
+    if not correction:
+        raise ValueError("meal correction text is required")
+    red_flags = evidence.scan_text_red_flags(correction)
+    if red_flags:
+        raise MealCorrectionRedFlag(red_flags)
+
+    from .. import index
+
+    current = index.get_record(db_path, record_id)
+    if current is None:
+        raise KeyError("record not found: %s" % record_id)
+    observed_revision = int((current.get("metadata") or {}).get("revision") or 0)
+    updated = build_corrected_meal_record(
+        current,
+        estimate,
+        display_title=display_title,
+        display_summary=display_summary,
+    )
+    normalized = normalize_meal_estimate(estimate)
+    return index.apply_record_revision(
+        db_path,
+        updated_record=updated,
+        revision_id=revision_id,
+        created_at=created_at,
+        reason="user_meal_correction",
+        actor="user",
+        evidence_artifact_ids=evidence_artifact_ids,
+        patch={
+            "source_type": source_type,
+            "correction_text": correction,
+            "estimate": normalized,
+            "confidence_level": MEAL_ESTIMATE_CONFIDENCE_LEVEL,
+        },
+        expected_revision=(
+            observed_revision if expected_revision is None else expected_revision
+        ),
+    )
+
+
+def meal_correction_confirmation_required(
+    source_type: str,
+    prior_source_types: Optional[List[str]] = None,
+) -> bool:
+    """Return whether a committed correction still needs explicit confirmation.
+
+    A provider-backed update derived entirely from immutable text is already
+    auditable and can be corrected in a later reply, so a second yes/no adds no
+    safety. Voice, mixed, missing, and legacy source metadata stay fail-closed
+    because a transcription may not reflect the person's exact words.
+    """
+    sources = list(prior_source_types or []) + [source_type]
+    return any(
+        str(item or "").strip().lower() != "text" for item in sources
+    )
+
+
+def format_meal_correction_confirmation(
+    estimate: Dict[str, Any],
+    *,
+    confirmation_required: bool = True,
+) -> str:
+    """Reader-facing C2 question for a revised estimate."""
+    normalized = normalize_meal_estimate(estimate)
+    summary = (
+        "[C2 Weak signal] Could the revised estimate be ~%d kcal "
+        "(P%d / F%d / C%d)?"
+        % (
+            normalized["kcal"],
+            normalized["protein_g"],
+            normalized["fat_g"],
+            normalized["carb_g"],
+        )
+    )
+    if confirmation_required:
+        return summary + " Does that reflect your correction?"
+    return (
+        summary
+        + " No second confirmation is needed; reply with a concrete correction "
+        "if this is wrong."
+    )
 
 
 # --- eating-style profile (setup, updatable) ---------------------------------

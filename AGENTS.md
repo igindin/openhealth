@@ -117,6 +117,36 @@ them with `python -m openhealth modules`.
 
 - Convert incoming text, voice, photos, and captions into a standardized intake
   envelope and pass it into the same ingest pipeline.
+- Treat package-label vision as transcription only: bind the product name,
+  package/serving measures, energy, and each nutrient to exact visible raw
+  fragments; resolve the printed basis and consumed amount explicitly, then do
+  all mapping, validation, and arithmetic locally.
+- Text and locally transcribed voice replies may revise the linked meal record,
+  but the raw photo/message/transcript stays immutable and every change must be
+  idempotent, auditable, and recoverable if delivery or the process fails.
+- When a provider-backed meal update is derived entirely from explicit text,
+  commit the audited C2 revision and show one informational, Reply-correctable
+  summary; do not add a second yes/no ritual. Keep explicit confirmation for
+  voice, mixed text/voice, missing-source, and legacy flows.
+- Log privacy-safe successful intake transitions as structured events so the
+  path can be audited without opening health records. Include only stable event
+  and message identifiers, source kind, revision, and confirmation policy;
+  never log message text, meal names, nutrition values, tokens, paths, or raw
+  artifact contents.
+- A single reply may resolve label basis and consumed amount only when they are
+  stated in independent, explicit clauses (for example, "values per 100 g, ate
+  150 g"). Never reuse the same words as both basis and amount, and fail closed
+  on negation, subtraction, ranges, or conflicting quantity signals.
+- Do not require another acknowledgement after explicit basis and consumption
+  answers have committed a label record: the final summary is informational and
+  correctable via Reply. If a final or legacy prompt asks "Верно?", treat exact
+  text or locally transcribed voice yes/no as a source-bound acknowledgement,
+  never amount parsing or a provider call; stale and unthreaded answers fail
+  closed, and every applied acknowledgement remains auditable.
+- Archive exact provider-response bytes locally before parsing them, bound to
+  the source message, attempt, photo artifact, and a hash of the exact request.
+  A malformed archived response fails closed and must never trigger an
+  automatic resend of the same photo.
 
 ## Suggested Workflow
 

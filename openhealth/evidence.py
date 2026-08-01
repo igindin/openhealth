@@ -133,13 +133,90 @@ class RedFlag:
 # Keyword triggers found in free-text intake (lowercased substring match).
 SYMPTOM_RED_FLAGS: Dict[str, RedFlag] = {
     "chest pain": RedFlag("chest_pain", "Chest pain can be an emergency. Seek urgent medical care now.", "emergency"),
+    "боль в груди": RedFlag(
+        "chest_pain",
+        "Боль в груди может требовать экстренной помощи. Обратитесь за срочной медицинской помощью.",
+        "emergency",
+    ),
     "shortness of breath": RedFlag("dyspnea", "Trouble breathing needs urgent medical attention.", "emergency"),
+    "не могу дышать": RedFlag(
+        "dyspnea",
+        "Затруднение дыхания требует срочной медицинской помощи.",
+        "emergency",
+    ),
+    "не хватает воздуха": RedFlag(
+        "dyspnea",
+        "Затруднение дыхания требует срочной медицинской помощи.",
+        "emergency",
+    ),
+    "одышка": RedFlag(
+        "dyspnea",
+        "Затруднение дыхания требует срочной медицинской помощи.",
+        "emergency",
+    ),
     "fainting": RedFlag("syncope", "Fainting should be assessed by a clinician promptly.", "urgent"),
-    "numbness": RedFlag("focal_neuro", "One-sided weakness or numbness can signal a stroke. Seek emergency care.", "emergency"),
-    "suicidal": RedFlag("mental_health_crisis", "Please reach out to a crisis line or emergency services now.", "emergency"),
+    "обморок": RedFlag(
+        "syncope",
+        "Обморок следует как можно скорее обсудить с врачом.",
+        "urgent",
+    ),
+    "потерял сознание": RedFlag(
+        "syncope",
+        "Потерю сознания следует как можно скорее обсудить с врачом.",
+        "urgent",
+    ),
+    "потеряла сознание": RedFlag(
+        "syncope",
+        "Потерю сознания следует как можно скорее обсудить с врачом.",
+        "urgent",
+    ),
+    "numbness": RedFlag(
+        "focal_neuro",
+        "One-sided weakness or numbness can signal a stroke. Seek emergency care.",
+        "emergency",
+    ),
+    "онемение": RedFlag(
+        "focal_neuro",
+        "Внезапное онемение или слабость с одной стороны могут требовать экстренной помощи.",
+        "emergency",
+    ),
+    "suicidal": RedFlag(
+        "mental_health_crisis",
+        "Please reach out to a crisis line or emergency services now.",
+        "emergency",
+    ),
+    "суицид": RedFlag(
+        "mental_health_crisis",
+        "Пожалуйста, прямо сейчас обратитесь за экстренной профессиональной помощью.",
+        "emergency",
+    ),
+    "хочу умереть": RedFlag(
+        "mental_health_crisis",
+        "Пожалуйста, прямо сейчас обратитесь за экстренной профессиональной помощью.",
+        "emergency",
+    ),
     "blood in stool": RedFlag("gi_bleed", "Blood in stool should be evaluated by a clinician.", "urgent"),
+    "кровь в стуле": RedFlag(
+        "gi_bleed",
+        "Кровь в стуле следует как можно скорее обсудить с врачом.",
+        "urgent",
+    ),
     "coughing blood": RedFlag("hemoptysis", "Coughing up blood needs urgent medical assessment.", "urgent"),
-    "unexplained weight loss": RedFlag("weight_loss", "Unexplained weight loss should be checked by a clinician.", "urgent"),
+    "кашляю кровью": RedFlag(
+        "hemoptysis",
+        "Кашель с кровью требует срочной медицинской оценки.",
+        "urgent",
+    ),
+    "unexplained weight loss": RedFlag(
+        "weight_loss",
+        "Unexplained weight loss should be checked by a clinician.",
+        "urgent",
+    ),
+    "необъяснимая потеря веса": RedFlag(
+        "weight_loss",
+        "Необъяснимую потерю веса следует обсудить с врачом.",
+        "urgent",
+    ),
 }
 
 

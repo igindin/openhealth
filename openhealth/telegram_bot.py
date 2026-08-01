@@ -11,8 +11,8 @@ local intake folder. No webhook, no public port — the bot *pulls* updates via
 What it does:
   * text / voice / photo  → IntakeEnvelope JSON in ``<data-dir>/envelopes/`` +
     a markdown card in ``<data-dir>/inbox/`` (voice/photo files are downloaded
-    into ``<data-dir>/files/``; voice transcription is a TODO hook,
-    ``transcript`` stays ``null`` until a local transcriber exists).
+    into ``<data-dir>/files/``; voice can be transcribed by an explicitly
+    configured local Whisper checkpoint, with no cloud fallback).
   * /checkin — a 4-question daily check-in (sleep, workout, alcohol,
     wellbeing 1-5), one question at a time; answers land as a journal-style
     envelope. Dialog state lives in process memory *and* a JSON state file, so
@@ -56,6 +56,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
+from . import evidence
 from .connectors import telegram_intake as intake
 
 logger = logging.getLogger("openhealth.telegram_bot")
@@ -63,6 +64,7 @@ logger = logging.getLogger("openhealth.telegram_bot")
 API_BASE = "https://api.telegram.org"
 
 ENV_TOKEN = "OPENHEALTH_TG_TOKEN"
+ENV_WHISPER_MODEL = "OPENHEALTH_WHISPER_MODEL"
 DEFAULT_TOKEN_PATH = Path.home() / ".openhealth" / "telegram.token"
 
 DEFAULT_DATA_DIR = Path("data") / "intake" / "telegram"
@@ -564,10 +566,11 @@ class BotConfig:
 class Bot:
     """Routes allowed updates into intake files, check-in flow and commands."""
 
-    def __init__(self, api: TelegramAPI, config: BotConfig):
+    def __init__(self, api: TelegramAPI, config: BotConfig, voice_transcriber=None):
         self.api = api
         self.config = config
         self.checkin = CheckinFlow(config.checkin_state_path)
+        self.voice_transcriber = voice_transcriber
 
     # -- update routing --
 
@@ -661,14 +664,36 @@ class Bot:
         download_failed = False
         for attachment in envelope.get("attachments", []):
             download_failed |= not self._download_attachment(envelope, attachment)
+        transcription_status = self._transcribe_voice(envelope)
+        safety_text = envelope.get("transcript") or envelope.get("text")
+        red_flags = evidence.scan_text_red_flags(safety_text)
+        if red_flags:
+            envelope["metadata"]["red_flags"] = [
+                {
+                    "code": flag.code,
+                    "message": flag.message,
+                    "urgency": flag.urgency,
+                }
+                for flag in red_flags
+            ]
         envelope_file = intake.write_envelope(envelope, self.config.data_dir)
         intake.write_card(envelope, self.config.inbox_dir, envelope_file=envelope_file)
-        indexed = self._push_to_bridge(envelope)
+        indexed = False if red_flags else self._push_to_bridge(envelope)
         logger.info(
             "intake stored type=%s submission_id=%s chat_id=%s indexed=%s",
             envelope["type"], envelope["submission_id"], chat_id, indexed,
         )
-        self.api.send_message(chat_id, self._confirmation(envelope, download_failed))
+        if red_flags:
+            self.api.send_message(
+                chat_id,
+                "Я заметил возможный тревожный симптом и не буду интерпретировать "
+                "сообщение:\n" + "\n".join(flag.message for flag in red_flags),
+            )
+            return
+        self.api.send_message(
+            chat_id,
+            self._confirmation(envelope, download_failed, transcription_status),
+        )
 
     def _push_to_bridge(self, envelope: Dict[str, Any]) -> bool:
         """Best-effort real-time indexing: POST the envelope to the bridge's
@@ -707,11 +732,60 @@ class Bot:
         attachment["path"] = str(relative)
         return True
 
+    def _transcribe_voice(self, envelope: Dict[str, Any]) -> Optional[str]:
+        """Fill a voice envelope through an explicitly configured local backend."""
+        if envelope.get("type") != intake.KIND_VOICE:
+            return None
+        attachments = envelope.get("attachments") or []
+        attachment = attachments[0] if attachments else {}
+        relative = attachment.get("path")
+        if not relative:
+            return "download_failed"
+        if self.voice_transcriber is None:
+            envelope["metadata"]["transcription"] = {"status": "not_configured"}
+            return "not_configured"
+        try:
+            result = self.voice_transcriber.transcribe(self.config.data_dir / relative)
+        except Exception as exc:
+            logger.error(
+                "local transcription failed submission_id=%s: %s",
+                envelope["submission_id"],
+                exc.__class__.__name__,
+            )
+            envelope["metadata"]["transcription"] = {
+                "status": "failed",
+                "error": exc.__class__.__name__,
+            }
+            return "failed"
+        text = str((result or {}).get("text") or "").strip()
+        if not text:
+            envelope["metadata"]["transcription"] = {
+                "status": "failed",
+                "error": "empty_transcript",
+            }
+            return "failed"
+        provenance = dict((result or {}).get("metadata") or {})
+        provenance["status"] = "done"
+        envelope["transcript"] = text
+        attachment["transcript"] = text
+        envelope["metadata"]["transcription"] = provenance
+        return "done"
+
     @staticmethod
-    def _confirmation(envelope: Dict[str, Any], download_failed: bool) -> str:
+    def _confirmation(
+        envelope: Dict[str, Any],
+        download_failed: bool,
+        transcription_status: Optional[str] = None,
+    ) -> str:
         kind = envelope.get("type")
         if kind == intake.KIND_VOICE:
-            base = "Голос сохранён (.oga). Транскрипция появится позже — пока это TODO-hook."
+            if download_failed or transcription_status == "download_failed":
+                return "Голосовое сохранить не удалось — пришли его ещё раз, когда сеть появится."
+            if transcription_status == "done":
+                return "Голос сохранил и локально расшифровал."
+            if transcription_status == "failed":
+                return "Голос сохранил, но локально расшифровать не удалось — напиши текстом."
+            return "Голос сохранил, но локальная расшифровка не настроена."
         elif kind == intake.KIND_PHOTO:
             base = "Фото сохранено{}.".format(" вместе с подписью" if envelope.get("text") else "")
         else:
@@ -807,11 +881,22 @@ def _build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--bridge-url", default=os.environ.get("OPENHEALTH_BRIDGE_URL"),
                        help="POST plain intake to this bridge's /api/intake for real-time "
                             "indexing (e.g. http://127.0.0.1:8770); env OPENHEALTH_BRIDGE_URL")
+    run_p.add_argument(
+        "--whisper-model",
+        type=Path,
+        default=Path(os.environ[ENV_WHISPER_MODEL]).expanduser() if os.environ.get(ENV_WHISPER_MODEL) else None,
+        help="existing local Whisper checkpoint for voice transcription; env OPENHEALTH_WHISPER_MODEL",
+    )
 
     check_p = sub.add_parser("check", help="offline self-check: token, allowlist, folders, agent CLIs")
     check_p.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     check_p.add_argument("--token-file", type=Path, default=DEFAULT_TOKEN_PATH)
     check_p.add_argument("--allowlist-file", type=Path, default=intake.DEFAULT_ALLOWLIST_PATH)
+    check_p.add_argument(
+        "--whisper-model",
+        type=Path,
+        default=Path(os.environ[ENV_WHISPER_MODEL]).expanduser() if os.environ.get(ENV_WHISPER_MODEL) else None,
+    )
     return parser
 
 
@@ -828,6 +913,13 @@ def _cmd_check(args: argparse.Namespace) -> int:
     ))
     print("data dir: {}".format(args.data_dir))
     print("agent CLIs for /ask: {}".format(", ".join(agents) if agents else "none (codex/claude not on PATH)"))
+    whisper_model = getattr(args, "whisper_model", None)
+    print(
+        "local Whisper: {}".format(
+            str(whisper_model) if whisper_model and whisper_model.is_file()
+            else "not configured"
+        )
+    )
     if not token or not allowlist:
         ok = False
         print("verdict: NOT READY — см. docs/TELEGRAM.md")
@@ -865,8 +957,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     config.state_dir.mkdir(parents=True, exist_ok=True)
     config.inbox_dir.mkdir(parents=True, exist_ok=True)
 
+    transcriber = None
+    if args.whisper_model:
+        from .local_transcription import LocalWhisperTranscriber
+
+        transcriber = LocalWhisperTranscriber(args.whisper_model)
+
     api = TelegramAPI(token)
-    bot = Bot(api, config)
+    bot = Bot(api, config, voice_transcriber=transcriber)
     signal.signal(signal.SIGTERM, _sigterm_handler)
     logger.info(
         "bot up: data_dir=%s inbox=%s allowlist=%d chat(s) ask=%s",
