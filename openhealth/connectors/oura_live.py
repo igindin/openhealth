@@ -403,6 +403,7 @@ def sync_oura(
     records: List[Dict[str, Any]] = []
     raw_counts: Dict[str, int] = {}
     notes: List[str] = []
+    failed_collections: List[str] = []
 
     for name in wanted:
         spec = _COLLECTIONS.get(name)
@@ -418,6 +419,7 @@ def sync_oura(
             # so the collections that DID authorize still get saved.
             notes.append("%s skipped: %s" % (name, exc))
             raw_counts[name] = 0
+            failed_collections.append(name)
             continue
         collection_records: List[Dict[str, Any]] = []
         for page in pages:
@@ -428,12 +430,41 @@ def sync_oura(
         raw_counts[name] = len(collection_records)
         records.extend(collection_records)
 
+    attempted = [name for name in wanted if name in _COLLECTIONS]
+    if attempted and len(failed_collections) == len(attempted):
+        # Every collection errored — an API/network outage, not "no data".
+        # Fail loudly so the caller retries later instead of recording success:
+        # OuraApiError also wraps plain network failures (URLError), so treating
+        # this as an empty fetch would let the purge below delete the whole
+        # window's existing records on the strength of an outage.
+        raise OuraApiError(
+            "Oura sync failed: all %d collections errored (%s)"
+            % (len(attempted), "; ".join(notes) or "no detail")
+        )
+
     if not records:
         notes.append("Oura sync returned no records for the requested window.")
 
     # Deterministic ids mean re-sync overwrites in place; we also clear any stale
     # oura-live records that fall inside the window but were not re-emitted.
-    replaced = _purge_window(paths.db_path, records, start_value, end_value)
+    # Only collections whose fetch succeeded AND returned data are purge
+    # candidates: purging a collection that errored (missing scope, outage) or
+    # came back empty would delete existing history the run knows nothing
+    # about. The trade-off is deliberate preservation-over-cleanup: a stale
+    # record merely lingers until its collection next returns data for the
+    # window, while a record deleted on a failed or empty fetch is gone.
+    purgeable = [
+        name
+        for name in attempted
+        if name not in failed_collections and raw_counts.get(name, 0) > 0
+    ]
+    replaced = _purge_window(paths.db_path, records, start_value, end_value, purgeable)
+    unpurged = sorted(set(attempted) - set(purgeable))
+    if unpurged:
+        notes.append(
+            "Purge skipped for collections without a complete, non-empty fetch: %s."
+            % ", ".join(unpurged)
+        )
     for record in records:
         index.upsert_record(paths.db_path, record)
 
@@ -549,8 +580,31 @@ def _obs(
     ).to_dict()
 
 
-def _purge_window(db_path: Path, new_records: List[Dict[str, Any]], start: str, end: str) -> List[str]:
-    """Drop stale oura-live records in the window so a re-sync is idempotent."""
+def _purge_window(
+    db_path: Path,
+    new_records: List[Dict[str, Any]],
+    start: str,
+    end: str,
+    collections: Iterable[str],
+) -> List[str]:
+    """Drop stale in-window oura-live records so a re-sync is idempotent.
+
+    Only records belonging to ``collections`` are candidates — the caller passes
+    the collections whose fetch succeeded with data, so a collection that
+    errored or came back empty never has its existing records deleted. A record
+    is attributed via ``metadata.collection`` (every record this connector
+    writes carries it), with the deterministic id prefix as a defensive
+    fallback for records missing metadata; the fallback picks the longest
+    matching known collection slug, so a collection name that extends another
+    (e.g. a future ``sleep_time`` next to ``sleep``) cannot claim the other's
+    records.
+    """
+    allowed = set(collections)
+    known_slugs = sorted(
+        ((slugify(name), name) for name in _COLLECTIONS),
+        key=lambda pair: len(pair[0]),
+        reverse=True,
+    )
     existing = index.list_records_by_source(db_path, OURA_SOURCE_ID)
     keep_ids = {record["id"] for record in new_records}
     to_delete: List[str] = []
@@ -558,8 +612,21 @@ def _purge_window(db_path: Path, new_records: List[Dict[str, Any]], start: str, 
         if record["id"] in keep_ids:
             continue
         record_date = record.get("date")
-        if record_date and start[:10] <= record_date <= end[:10]:
-            to_delete.append(record["id"])
+        if not (record_date and start[:10] <= record_date <= end[:10]):
+            continue
+        collection = (record.get("metadata") or {}).get("collection")
+        if collection is None:
+            collection = next(
+                (
+                    name
+                    for slug, name in known_slugs
+                    if record["id"].startswith("obs-oura-live-%s-" % slug)
+                ),
+                None,
+            )
+        if collection not in allowed:
+            continue
+        to_delete.append(record["id"])
     index.delete_records_by_ids(db_path, to_delete)
     return to_delete
 
