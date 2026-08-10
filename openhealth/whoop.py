@@ -323,7 +323,22 @@ def sync_whoop(
 
     if not records:
         parser_notes.append("WHOOP sync returned no records for the requested window.")
-    replaced_ids = purge_existing_whoop_records(paths.db_path, records, start_value, end_value)
+    # Only datasets that actually returned data are replace candidates: a
+    # dataset that came back empty (an API brownout answering
+    # 200-with-empty-lists) has given this run no evidence about the window,
+    # and purging on no evidence deletes existing history. The profile/body
+    # datasets never count — they answer independently of the window.
+    purgeable_datasets = [
+        name for name in _WINDOWED_DATASET_KINDS if raw_counts.get(name, 0) > 0
+    ]
+    replaced_ids = purge_existing_whoop_records(
+        paths.db_path, records, start_value, end_value, purgeable_datasets
+    )
+    unpurged = sorted(set(_WINDOWED_DATASET_KINDS) - set(purgeable_datasets))
+    if unpurged:
+        parser_notes.append(
+            "Purge skipped for datasets without windowed data: %s." % ", ".join(unpurged)
+        )
     for artifact in artifacts:
         write_json(paths.artifact_manifests / ("%s.json" % artifact["artifact_id"]), artifact)
         index.upsert_artifact(paths.db_path, artifact)
@@ -741,15 +756,52 @@ def normalize_workouts(items: Iterable[Dict[str, Any]], artifact_id: str, source
     return records
 
 
-def purge_existing_whoop_records(db_path: Path, new_records: List[Dict[str, Any]], start: str, end: str) -> List[str]:
+_WINDOWED_DATASET_KINDS = {
+    "cycles": ("whoop_cycle", "whoop_cycle_metric"),
+    "recoveries": ("whoop_recovery", "whoop_recovery_metric"),
+    "sleeps": ("whoop_sleep", "whoop_sleep_metric"),
+    "workouts": ("whoop_workout", "whoop_workout_metric"),
+}
+
+
+def purge_existing_whoop_records(
+    db_path: Path,
+    new_records: List[Dict[str, Any]],
+    start: str,
+    end: str,
+    datasets: Iterable[str],
+) -> List[str]:
+    """Delete in-window WHOOP records so a re-sync replaces them cleanly.
+
+    ``datasets`` (windowed dataset names from ``_WINDOWED_DATASET_KINDS``)
+    limits which existing records are replace candidates: only records whose
+    kind belongs to a dataset that actually returned data may be dropped, so a
+    dataset whose fetch came back empty never loses its existing history. It
+    is required rather than defaulted, because the only sensible default —
+    "replace everything in the window" — is the behavior that turns an API
+    brownout into data loss. Profile and body-measurement records are never
+    candidates: they answer independently of the window, and their
+    deterministic ids overwrite in place on upsert anyway.
+
+    Note the evidence is per dataset, not per day: one record makes its
+    dataset trusted for the whole window, so a truncated (but non-empty)
+    response still replaces the window's other records for that dataset.
+    """
+    allowed_kinds = {
+        kind for name in datasets for kind in _WINDOWED_DATASET_KINDS.get(name, ())
+    }
     existing = index.list_records_by_source(db_path, WHOOP_SOURCE_ID)
     target_ids = {record["id"] for record in new_records}
     for record in existing:
-        record_date = record.get("date") or record.get("start_date")
         if record["id"] in target_ids:
-            target_ids.add(record["id"])
-        elif record_date and start[:10] <= record_date <= end[:10]:
-            target_ids.add(record["id"])
+            continue
+        record_date = record.get("date") or record.get("start_date")
+        if not (record_date and start[:10] <= record_date <= end[:10]):
+            continue
+        kind = record.get("observation_kind") or record.get("event_kind")
+        if kind not in allowed_kinds:
+            continue
+        target_ids.add(record["id"])
     to_delete = sorted(target_ids)
     index.delete_records_by_ids(db_path, to_delete)
     return to_delete
