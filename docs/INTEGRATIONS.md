@@ -98,13 +98,22 @@ final file promotion is interrupted, the next locked access automatically
 recovers the durable pending token before contacting WHOOP again. A new
 authorization is refused when it would silently replace the existing token with
 fewer scopes; use `--allow-scope-reduction` on the exchange command only when
-that downgrade is intentional. A token shared by scheduled full and body syncs
-needs their exact union:
+that downgrade is intentional. A token shared by the default full sync and a
+body sync needs their exact union:
 `read:profile read:cycles read:recovery read:sleep read:workout read:body_measurement offline`.
-If the full sync uses `--no-profile`, its union with the body scheduler is
-`read:cycles read:recovery read:sleep read:workout read:body_measurement offline`;
-adding `--no-body-measurements` to that full sync does not narrow the union,
-because the separate body scheduler still needs `read:body_measurement`.
+The pinned daily runner uses both `--no-profile` and
+`--no-body-measurements`; the dedicated daily body scheduler owns the current
+body snapshot. Their token still needs the union
+`read:cycles read:recovery read:sleep read:workout read:body_measurement offline`,
+because the separate body scheduler requires `read:body_measurement`.
+
+WHOOP rotates both the access and refresh credential on every successful
+refresh. If a refresh returns a server/transport failure after dispatch, its
+outcome is unknowable: WHOOP may have consumed the old credential without
+delivering the successor. OpenHealth records an owner-only fail-closed state
+and refuses automatic reuse. A definitive rejection is blocked the same way.
+Complete a fresh OAuth authorization to clear either state; the old state is
+preserved in the owner-only recovery quarantine for auditability.
 
 ### Daily body-measurement snapshots
 

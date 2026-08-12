@@ -97,6 +97,10 @@ them with `python -m openhealth modules`.
   Google Calendar, manual notes, future Telegram intake).
 - Create source/artifact manifests; preserve provenance and confidence.
 - Pass everything through the same canonical contract — no special-case paths.
+- For providers with rotating OAuth refresh credentials, durably record an
+  owner-only in-flight state before sending the refresh request. Clear it only
+  after the successor is durable; an ambiguous outcome must fail closed until
+  a recovered successor or fresh authorization is available.
 
 ### Timeline Agent
 

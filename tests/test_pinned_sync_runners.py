@@ -244,6 +244,26 @@ exec "$OPENHEALTH_TEST_REAL_PYTHON" -E -s "$OPENHEALTH_TEST_PLUTIL_SCRIPT" "$@"
                 self.assertIn("PYTHONWARNINGS=unset\n", call)
                 self.assertIn("arg=-P\n", call)
             self.assertIn("arg=whoop-sync\n", calls[0])
+            whoop_args = [
+                line.removeprefix("arg=")
+                for line in calls[0].splitlines()
+                if line.startswith("arg=")
+            ]
+            self.assertEqual(
+                whoop_args,
+                [
+                    "-P",
+                    "-m",
+                    "openhealth",
+                    "--repo-root",
+                    str(data_root),
+                    "whoop-sync",
+                    "--no-profile",
+                    "--no-body-measurements",
+                    "--days-back",
+                    "14",
+                ],
+            )
             self.assertIn("arg=oura-sync\n", calls[1])
             self.assertIn("arg=openhealth.scheduler\n", calls[2])
             self.assertIn(f"arg={runtime / 'ui/web/build_dashboard_data.py'}\n", calls[3])

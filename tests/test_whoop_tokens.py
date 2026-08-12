@@ -10,6 +10,7 @@ import time
 import traceback
 import unittest
 from datetime import datetime, timedelta, timezone
+from http.client import IncompleteRead
 from pathlib import Path
 from unittest.mock import patch
 
@@ -71,6 +72,201 @@ class WhoopTokenRefreshTests(unittest.TestCase):
         self.assertEqual(calls[0][1]["refresh_token"], "refresh-old")
         self.assertEqual(calls[0][1]["scope"], "offline")
         self.assertEqual(refreshed["refresh_token"], "refresh-new")
+
+    def test_refresh_5xx_is_classified_as_outcome_uncertain(self):
+        failure = whoop.WhoopRequestError(
+            "synthetic sanitized 502",
+            http_status=502,
+            outcome_uncertain=True,
+        )
+        with patch.object(whoop, "_post_form", side_effect=failure):
+            with self.assertRaises(whoop.WhoopRefreshOutcomeUncertain):
+                whoop.refresh_tokens(credentials(), "refresh-old")
+
+    def test_refresh_400_is_classified_as_rejected(self):
+        failure = whoop.WhoopRequestError(
+            "synthetic sanitized 400",
+            http_status=400,
+            provider_error_code="invalid_request",
+        )
+        with patch.object(whoop, "_post_form", side_effect=failure):
+            with self.assertRaisesRegex(
+                whoop.WhoopRefreshRejected,
+                "invalid_request",
+            ):
+                whoop.refresh_tokens(credentials(), "refresh-old")
+
+    def test_refresh_requires_a_new_nonempty_refresh_token(self):
+        for successor in (None, "", "   "):
+            with self.subTest(successor=repr(successor)):
+                response = {
+                    "access_token": "access-new",
+                    "expires_in": 3600,
+                    "scope": " ".join(FULL_SCOPES),
+                    "token_type": "bearer",
+                }
+                if successor is not None:
+                    response["refresh_token"] = successor
+                with patch.object(whoop, "_post_form", return_value=response):
+                    with self.assertRaises(whoop.WhoopRefreshOutcomeUncertain):
+                        whoop.refresh_tokens(credentials(), "refresh-old")
+
+    def test_uncertain_refresh_is_persisted_and_never_retried(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "whoop_tokens.json"
+            expired = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+            original = token_payload("access-old", "refresh-old", expired)
+            whoop.save_tokens(path, original)
+
+            with patch.object(
+                whoop,
+                "refresh_tokens",
+                side_effect=whoop.WhoopRefreshOutcomeUncertain("synthetic"),
+            ) as refresh:
+                with self.assertRaisesRegex(whoop.WhoopApiError, "will not reuse"):
+                    whoop.ensure_valid_tokens(path, credentials())
+
+            refresh.assert_called_once()
+            state_path = whoop._refresh_state_path(path)
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(state["format"], whoop.REFRESH_STATE_FORMAT)
+            self.assertEqual(state["state"], "outcome_uncertain")
+            self.assertEqual(stat.S_IMODE(state_path.stat().st_mode), 0o600)
+            state_bytes = state_path.read_bytes()
+            self.assertNotIn(b"access-old", state_bytes)
+            self.assertNotIn(b"refresh-old", state_bytes)
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), original)
+
+            with patch.object(whoop, "refresh_tokens") as second_refresh:
+                with self.assertRaisesRegex(
+                    whoop.WhoopApiError,
+                    "automatic refresh is blocked",
+                ):
+                    whoop.ensure_valid_tokens(path, credentials())
+            second_refresh.assert_not_called()
+
+    def test_refresh_is_marked_in_flight_before_network_dispatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "whoop_tokens.json"
+            expired = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+            future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+            whoop.save_tokens(
+                path,
+                token_payload("access-old", "refresh-old", expired),
+            )
+
+            def fake_refresh(_credentials, _refresh_token):
+                state_path = whoop._refresh_state_path(path)
+                self.assertTrue(state_path.exists())
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+                self.assertEqual(state["state"], "refresh_in_flight")
+                return token_payload("access-new", "refresh-new", future)
+
+            with patch.object(whoop, "refresh_tokens", side_effect=fake_refresh):
+                result = whoop.ensure_valid_tokens(path, credentials())
+
+            self.assertEqual(result["refresh_token"], "refresh-new")
+            self.assertFalse(whoop._refresh_state_path(path).exists())
+
+    def test_process_exit_during_refresh_leaves_a_durable_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "whoop_tokens.json"
+            expired = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+            whoop.save_tokens(
+                path,
+                token_payload("access-old", "refresh-old", expired),
+            )
+
+            with patch.object(whoop, "refresh_tokens", side_effect=SystemExit(9)):
+                with self.assertRaises(SystemExit):
+                    whoop.ensure_valid_tokens(path, credentials())
+
+            state = json.loads(
+                whoop._refresh_state_path(path).read_text(encoding="utf-8")
+            )
+            self.assertEqual(state["state"], "refresh_in_flight")
+            with patch.object(whoop, "refresh_tokens") as second_refresh:
+                with self.assertRaisesRegex(
+                    whoop.WhoopApiError,
+                    "did not finish locally",
+                ):
+                    whoop.ensure_valid_tokens(path, credentials())
+            second_refresh.assert_not_called()
+
+    def test_failed_in_flight_marker_promotion_prevents_network_dispatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "whoop_tokens.json"
+            state_path = whoop._refresh_state_path(path)
+            expired = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+            whoop.save_tokens(
+                path,
+                token_payload("access-old", "refresh-old", expired),
+            )
+            real_replace = whoop.os.replace
+
+            def fail_state_promotion(source, destination):
+                if Path(destination) == state_path:
+                    raise OSError("synthetic marker promotion failure")
+                return real_replace(source, destination)
+
+            with (
+                patch.object(whoop.os, "replace", side_effect=fail_state_promotion),
+                patch.object(whoop, "refresh_tokens") as refresh,
+            ):
+                with self.assertRaisesRegex(whoop.WhoopApiError, "preserved"):
+                    whoop.ensure_valid_tokens(path, credentials())
+
+            refresh.assert_not_called()
+            staged = list(
+                path.parent.glob(path.name + ".refresh-state.pending.*.tmp")
+            )
+            self.assertEqual(len(staged), 1)
+            self.assertEqual(stat.S_IMODE(staged[0].stat().st_mode), 0o600)
+
+    def test_rejected_refresh_is_persisted_and_never_retried(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "whoop_tokens.json"
+            expired = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+            whoop.save_tokens(
+                path,
+                token_payload("access-old", "refresh-old", expired),
+            )
+
+            with patch.object(
+                whoop,
+                "refresh_tokens",
+                side_effect=whoop.WhoopRefreshRejected("synthetic"),
+            ):
+                with self.assertRaisesRegex(whoop.WhoopApiError, "rejected"):
+                    whoop.ensure_valid_tokens(path, credentials())
+
+            state = json.loads(
+                whoop._refresh_state_path(path).read_text(encoding="utf-8")
+            )
+            self.assertEqual(state["state"], "reauthorization_required")
+            with patch.object(whoop, "refresh_tokens") as second_refresh:
+                with self.assertRaisesRegex(whoop.WhoopApiError, "blocked"):
+                    whoop.ensure_valid_tokens(path, credentials())
+            second_refresh.assert_not_called()
+
+    def test_pre_dispatch_dns_failure_remains_retryable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "whoop_tokens.json"
+            expired = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+            whoop.save_tokens(
+                path,
+                token_payload("access-old", "refresh-old", expired),
+            )
+            failure = whoop.WhoopRequestError(
+                "synthetic pre-dispatch failure",
+                outcome_uncertain=False,
+            )
+
+            with patch.object(whoop, "refresh_tokens", side_effect=failure):
+                with self.assertRaises(whoop.WhoopRequestError):
+                    whoop.ensure_valid_tokens(path, credentials())
+
+            self.assertFalse(whoop._refresh_state_path(path).exists())
 
     def test_concurrent_refresh_rotates_only_once(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -481,6 +677,58 @@ class WhoopTokenStorageTests(unittest.TestCase):
                 0o600,
             )
 
+    def test_fresh_authorization_quarantines_refresh_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "whoop_tokens.json"
+            expired = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+            future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+            whoop.save_tokens(
+                path,
+                token_payload("access-old", "refresh-old", expired),
+            )
+            with patch.object(
+                whoop,
+                "refresh_tokens",
+                side_effect=whoop.WhoopRefreshOutcomeUncertain("synthetic"),
+            ):
+                with self.assertRaises(whoop.WhoopApiError):
+                    whoop.ensure_valid_tokens(path, credentials())
+
+            whoop.save_tokens(
+                path,
+                token_payload("access-new", "refresh-new", future),
+                fresh_authorization=True,
+            )
+
+            self.assertFalse(whoop._refresh_state_path(path).exists())
+            result = whoop.ensure_valid_tokens(path, credentials())
+            self.assertEqual(result["refresh_token"], "refresh-new")
+            quarantine = path.with_name(path.name + ".recovery-quarantine")
+            preserved = list(quarantine.iterdir())
+            self.assertEqual(len(preserved), 1)
+            self.assertIn("refresh-state", preserved[0].name)
+            self.assertEqual(stat.S_IMODE(preserved[0].stat().st_mode), 0o600)
+
+    def test_incomplete_staged_refresh_state_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "whoop_tokens.json"
+            future = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+            whoop.save_tokens(
+                path,
+                token_payload("access-old", "refresh-old", future),
+            )
+            staged = path.with_name(path.name + ".refresh-state.pending.partial.tmp")
+            staged.write_text("{truncated", encoding="utf-8")
+            staged.chmod(0o600)
+
+            with patch.object(whoop, "refresh_tokens") as refresh:
+                with self.assertRaisesRegex(
+                    whoop.WhoopApiError,
+                    "state is incomplete",
+                ):
+                    whoop.ensure_valid_tokens(path, credentials())
+            refresh.assert_not_called()
+
 
 class WhoopScopeValidationTests(unittest.TestCase):
     def test_offline_scope_and_refresh_token_are_required(self):
@@ -537,6 +785,42 @@ class WhoopScopeValidationTests(unittest.TestCase):
 
 
 class WhoopCurlFallbackTests(unittest.TestCase):
+    def test_dns_failure_is_known_to_precede_request_dispatch(self):
+        failure = whoop.URLError(whoop.socket.gaierror(-2, "synthetic DNS"))
+        with patch.object(whoop, "urlopen", side_effect=failure):
+            with self.assertRaises(whoop.WhoopRequestError) as caught:
+                whoop._request_json(
+                    "POST",
+                    "https://example.test/token",
+                    headers={},
+                    data=b"synthetic=true",
+                    path_hint="token exchange",
+                )
+
+        self.assertFalse(caught.exception.outcome_uncertain)
+
+    def test_partial_http_response_is_sanitized_and_uncertain(self):
+        marker = b"refresh_token=provider-echoed-secret"
+        failure = IncompleteRead(marker, len(marker) + 100)
+        with patch.object(whoop, "urlopen", side_effect=failure):
+            try:
+                whoop._request_json(
+                    "POST",
+                    "https://example.test/token",
+                    headers={},
+                    data=b"synthetic=true",
+                    path_hint="token exchange",
+                )
+            except whoop.WhoopRequestError as exc:
+                rendered = "".join(
+                    traceback.format_exception(type(exc), exc, exc.__traceback__)
+                )
+                self.assertTrue(exc.outcome_uncertain)
+            else:  # pragma: no cover - the mocked response must fail
+                self.fail("expected WhoopRequestError")
+
+        self.assertNotIn(marker.decode("utf-8"), rendered)
+
     def test_curl_fallback_has_network_and_process_timeouts(self):
         completed = subprocess.CompletedProcess(args=["curl"], returncode=0, stdout='{"ok": true}', stderr="")
         with patch.object(whoop.subprocess, "run", return_value=completed) as run:

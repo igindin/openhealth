@@ -86,7 +86,7 @@ mark_failed() {
 echo "[$(ts)] ===== daily sync start ($RUNTIME_REVISION) ====="
 
 echo "[$(ts)] WHOOP sync (14d)..."
-if ! "$PINNED_PYTHON_BIN" -P -m openhealth --repo-root "$DATA_ROOT" whoop-sync --no-profile --days-back 14; then
+if ! "$PINNED_PYTHON_BIN" -P -m openhealth --repo-root "$DATA_ROOT" whoop-sync --no-profile --no-body-measurements --days-back 14; then
   echo "[$(ts)] ERROR: whoop-sync failed"
   whoop_ok=0
   mark_failed "whoop-sync"
