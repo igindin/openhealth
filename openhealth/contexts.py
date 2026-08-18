@@ -164,11 +164,11 @@ def build_source_status_context(sources: List[Dict], artifacts: List[Dict], reco
         lines.append(
             "- `%s` [%s] artifacts=%s records=%s status=%s"
             % (
-                source["label"],
+                source.get("label") or source["source_id"],
                 source["source_type"],
                 artifacts_by_source[source["source_id"]],
                 records_by_source[source["source_id"]],
-                source["parser_status"],
+                source.get("parser_status") or "unknown",
             )
         )
     if len(lines) == 3:

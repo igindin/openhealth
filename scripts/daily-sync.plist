@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openhealth.daily-sync</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__RUNTIME_ROOT__/scripts/daily-sync-run.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__RUNTIME_ROOT__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPENHEALTH_RUNTIME_ROOT</key>
+    <string>__RUNTIME_ROOT__</string>
+    <key>OPENHEALTH_DATA_ROOT</key>
+    <string>__DATA_ROOT__</string>
+    <key>OPENHEALTH_RUNTIME_REVISION</key>
+    <string>__RUNTIME_REVISION__</string>
+    <key>OPENHEALTH_ENV_FILE</key>
+    <string>__DATA_ROOT__/.env</string>
+    <key>OPENHEALTH_PYTHON_BIN</key>
+    <string>__PYTHON__</string>
+    <key>PYTHONPATH</key>
+    <string>__RUNTIME_ROOT__</string>
+    <key>PYTHONSAFEPATH</key>
+    <string>1</string>
+    <key>PYTHONNOUSERSITE</key>
+    <string>1</string>
+    <key>PYTHONDONTWRITEBYTECODE</key>
+    <string>1</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>Umask</key>
+  <integer>63</integer>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Hour</key><integer>9</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key><integer>14</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key><integer>21</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+  </array>
+  <key>StandardOutPath</key>
+  <string>__DATA_ROOT__/data/index/daily-sync.log</string>
+  <key>StandardErrorPath</key>
+  <string>__DATA_ROOT__/data/index/daily-sync.log</string>
+</dict>
+</plist>

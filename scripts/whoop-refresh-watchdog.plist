@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.openhealth.whoop-refresh-watchdog</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__RUNTIME_ROOT__/scripts/whoop-refresh-watchdog-run.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OPENHEALTH_RUNTIME_ROOT</key>
+    <string>__RUNTIME_ROOT__</string>
+    <key>OPENHEALTH_DATA_ROOT</key>
+    <string>__DATA_ROOT__</string>
+    <key>OPENHEALTH_RUNTIME_REVISION</key>
+    <string>__RUNTIME_REVISION__</string>
+    <key>OPENHEALTH_ENV_FILE</key>
+    <string>__DATA_ROOT__/.env</string>
+    <key>OPENHEALTH_PYTHON_BIN</key>
+    <string>__PYTHON__</string>
+    <key>PYTHONPATH</key>
+    <string>__RUNTIME_ROOT__</string>
+    <key>PYTHONSAFEPATH</key>
+    <string>1</string>
+    <key>PYTHONNOUSERSITE</key>
+    <string>1</string>
+    <key>PYTHONDONTWRITEBYTECODE</key>
+    <string>1</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>__RUNTIME_ROOT__</string>
+  <key>WatchPaths</key>
+  <array>
+    <string>__DATA_ROOT__/data/index/whoop_tokens.json.refresh-state</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>120</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>Umask</key>
+  <integer>63</integer>
+  <key>StandardOutPath</key>
+  <string>__DATA_ROOT__/data/index/whoop-refresh-watchdog.log</string>
+  <key>StandardErrorPath</key>
+  <string>__DATA_ROOT__/data/index/whoop-refresh-watchdog.err</string>
+</dict>
+</plist>

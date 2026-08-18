@@ -97,6 +97,47 @@ them with `python -m openhealth modules`.
   Google Calendar, manual notes, future Telegram intake).
 - Create source/artifact manifests; preserve provenance and confidence.
 - Pass everything through the same canonical contract — no special-case paths.
+- For providers with rotating OAuth refresh credentials, durably record an
+  owner-only in-flight state before sending the refresh request. Clear it only
+  after the successor is durable; an ambiguous outcome must fail closed until
+  a recovered successor or fresh authorization is available.
+- Scheduled WHOOP history and current body measurements are one daily bundle:
+  one sync lock, token validation, and client. Take an fsynced empty `0600`
+  local-date claim before provider access and never retry automatically after a
+  claimed crash or failure that day. Oura and dashboard work remain independent
+  at all three 09:00/14:00/21:00 windows.
+- The daily runner and installer share a per-label lifecycle lock. The runner
+  takes it before the local-date claim and holds it through WHOOP, Oura,
+  scheduler, and dashboard completion; its nested lock order is lifecycle then
+  `whoop-sync.lock`. The watcher takes its own lifecycle lock before reading an
+  incident and holds it through Telegram delivery and dedupe-state persistence.
+  The legacy body runner has no claim and is protected only by
+  `whoop-sync.lock`. Serialize all daily and watcher installer operations with
+  one shared owner-only transaction lock covering preflight through commit or
+  rollback; cross-label helpers share migration temporary names and must not
+  run concurrently.
+- Never leave two effective or boot-loadable WHOOP LaunchAgents. Copy and fsync
+  the legacy body plist to an owner-only hidden non-`.plist` backup. On a
+  legacy-only upgrade, atomically place a validated daily plist at the legacy
+  path as a bridge before disabling and booting out the old label; when a daily
+  plist already exists, retire the old label before removing its path and do
+  not create a duplicate-label bridge. Keep an empty `0600` recovery marker and
+  reconcile every transitional path on rerun. Publish, restore, and remove
+  canonical plists only through validated atomic helpers that fsync both file
+  and LaunchAgents directory. During bootout, hold the service lifecycle lock
+  (plus `whoop-sync.lock` for daily; only the sync lock for legacy), then repeat
+  the PID check; never kill an active provider call, claim, or alert delivery.
+- LaunchAgent stdout and stderr paths must be absolute, owner-only `0600`,
+  single-link regular files. Create or validate them through the pinned helper
+  and fail closed on symlinks, hardlinks, directories, FIFOs, or other special
+  entries.
+- Fresh WHOOP OAuth is not restored until a new process forces an A-to-B token
+  rotation, saves B durably, and proves B with an authenticated GET. Invalidate
+  any prior gate proof crash-consistently before promoting a fresh-authorization
+  transaction. Alert terminal refresh incidents promptly using allowlisted
+  metadata only, deduplicate by state and recorded time, and announce recovery
+  only when the gate proof is newer than the incident and a successful WHOOP
+  import is newer than that proof.
 
 ### Timeline Agent
 

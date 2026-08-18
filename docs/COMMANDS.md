@@ -99,10 +99,54 @@ python -m openhealth module --id recovery --payload-json '{ ... }'
 ```bash
 python -m openhealth whoop-auth-url                      # start OAuth, get a URL
 python -m openhealth whoop-exchange-code --code <code>   # exchange the code for tokens
-python -m openhealth whoop-sync --days-back 30           # pull recovery/sleep/strain/HRV
+# Add --allow-scope-reduction only for an intentional credential downgrade.
+python -m openhealth whoop-sync --days-back 30           # pull recovery/sleep/strain/HRV + current body
+python -m openhealth whoop-refresh-gate                  # prove durable rotation + authenticated GET
+python -m openhealth whoop-body-sync                     # save today's current body-metric snapshot
 python -m openhealth whoop-capabilities                  # what the public API exposes
 python -m openhealth whoop-latest                        # latest synced timestamps
 ```
+
+Pinned macOS scheduling keeps executable code separate from the live data
+workspace. Build and re-verify the committed, non-writable allowlisted release
+first:
+
+```bash
+python3 scripts/build_pinned_runtime.py build \
+  --source /absolute/source --releases-root /absolute/runtime-releases --revision <full-sha>
+python3 scripts/build_pinned_runtime.py verify \
+  --release /absolute/runtime-releases/<sha> --revision <full-sha>
+```
+
+Install the bundled daily service and refresh watcher from that release with
+the same explicit runtime SHA:
+
+```bash
+/absolute/runtime/<sha>/scripts/install-daily-sync-launchagent.sh \
+  --runtime-root /absolute/runtime/<sha> --data-root /absolute/data-root --revision <full-sha>
+/absolute/runtime/<sha>/scripts/install-whoop-refresh-watchdog-launchagent.sh \
+  --runtime-root /absolute/runtime/<sha> --data-root /absolute/data-root --revision <full-sha>
+```
+
+The daily job wakes at 09:00/14:00/21:00. WHOOP history plus body measurements
+run once per local day; Oura and dashboard work still run in every window.
+`install-whoop-body-sync-launchagent.sh` is a compatibility alias for the daily
+installer, not a second service. Add `--render-only /absolute/output.plist` to
+validate a configuration without loading or replacing a service.
+The watcher requires `OPENHEALTH_TELEGRAM_ALERT_CHAT_ID` in the gitignored data
+workspace `.env` and an owner-only `0600` `~/.openhealth/telegram.token`.
+Both installers prepare stdout/stderr through pinned `scripts/operational_file.py`;
+those paths must be single-link regular files, not symlinks, hardlinks, or
+special files. One shared transaction lock serializes daily and watcher
+installers, including cross-label publication and cleanup.
+Daily and watcher runners share separate lifecycle locks with their installer:
+daily holds its lock before the date claim through completion and nests
+`whoop-sync.lock` inside it; watcher holds its lock across incident read,
+Telegram send, and dedupe-state write. Replacement takes the same locks before
+the final active-process check and bootout; legacy body retirement uses only
+the WHOOP sync lock.
+If installation is interrupted between bootout and bootstrap, the fsynced plist
+remains boot-loadable; verify the loaded service and rerun the installer.
 
 **Withings** (scales, OAuth)
 ```bash
