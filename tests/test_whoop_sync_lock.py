@@ -9,6 +9,52 @@ from openhealth import whoop
 
 
 class WhoopSyncLockTests(unittest.TestCase):
+    def test_bundled_full_and_body_sync_uses_one_client_and_one_token_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            credentials = object()
+            tokens = {"access_token": "synthetic"}
+
+            with (
+                patch.object(whoop, "load_credentials_from_env", return_value=credentials),
+                patch.object(whoop, "ensure_valid_tokens", return_value=tokens) as ensure_tokens,
+                patch.object(whoop, "WhoopClient") as client_class,
+            ):
+                client = client_class.return_value
+                client.list_cycles.return_value = []
+                client.list_recoveries.return_value = []
+                client.list_sleeps.return_value = []
+                client.list_workouts.return_value = []
+                client.get_body_measurements.return_value = {}
+
+                result = whoop.sync_whoop(
+                    root,
+                    include_profile=False,
+                    include_body_measurements=True,
+                )
+
+            ensure_tokens.assert_called_once()
+            token_call = ensure_tokens.call_args
+            self.assertEqual(token_call.args, (root / "data/index/whoop_tokens.json", credentials))
+            self.assertEqual(
+                set(token_call.kwargs["required_scopes"]),
+                {
+                    "offline",
+                    "read:cycles",
+                    "read:recovery",
+                    "read:sleep",
+                    "read:workout",
+                    "read:body_measurement",
+                },
+            )
+            self.assertEqual(token_call.kwargs["operation"], "full sync")
+            client_class.assert_called_once_with(credentials, tokens)
+            client.get_body_measurements.assert_called_once_with()
+            self.assertEqual(result["collections"]["body_measurements"], 0)
+            lock_path = root / "data/index/whoop-sync.lock"
+            self.assertTrue(lock_path.is_file())
+            self.assertEqual(stat.S_IMODE(lock_path.stat().st_mode), 0o600)
+
     def test_full_and_body_syncs_cannot_write_concurrently(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

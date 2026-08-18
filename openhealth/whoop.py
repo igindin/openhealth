@@ -5,12 +5,13 @@ import hmac
 import json
 import os
 import socket
+import stat
 import subprocess
 import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from http.client import HTTPException
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Set, Tuple
@@ -38,6 +39,7 @@ CURL_MAX_TIME_SECONDS = 30
 CURL_PROCESS_TIMEOUT_SECONDS = CURL_MAX_TIME_SECONDS + 5
 TOKEN_TRANSACTION_FORMAT = "openhealth-whoop-token-transaction-v1"
 REFRESH_STATE_FORMAT = "openhealth-whoop-refresh-state-v1"
+REFRESH_GATE_FORMAT = "openhealth-whoop-refresh-gate-v1"
 SAFE_HTTP_ERROR_CODES = {
     "access_denied",
     "insufficient_scope",
@@ -50,6 +52,24 @@ SAFE_HTTP_ERROR_CODES = {
     "temporarily_unavailable",
     "unauthorized_client",
     "unsupported_grant_type",
+}
+SAFE_REFRESH_CAUSE_CODES = {
+    "http_uncertain",
+    "invalid_json",
+    "missing_successor",
+    "protocol_incomplete",
+    "provider_rejected",
+    "transport_failure",
+    "transport_timeout",
+    "unusable_successor",
+}
+PROBE_FALLBACK_HTTP_STATUSES = {400, 403, 404, 405, 406, 409, 410, 415, 422}
+PROBE_NON_FALLBACK_ERROR_CODES = {
+    "access_denied",
+    "insufficient_scope",
+    "invalid_client",
+    "invalid_token",
+    "unauthorized_client",
 }
 # WHOOP sits behind Cloudflare, which bans the default urllib User-Agent
 # (Error 1010 "browser_signature_banned"). Send a browser-like UA so OAuth
@@ -132,19 +152,52 @@ class WhoopRequestError(WhoopApiError):
         http_status: Optional[int] = None,
         provider_error_code: Optional[str] = None,
         outcome_uncertain: bool = False,
+        cause_code: Optional[str] = None,
     ) -> None:
         super().__init__(message)
-        self.http_status = http_status
-        self.provider_error_code = provider_error_code
+        self.http_status = _safe_http_status(http_status)
+        self.provider_error_code = _safe_provider_error_code(provider_error_code)
         self.outcome_uncertain = outcome_uncertain
+        self.cause_code = _safe_refresh_cause_code(cause_code)
 
 
-class WhoopRefreshOutcomeUncertain(WhoopApiError):
+class _WhoopRefreshFailure(WhoopApiError):
+    """Refresh failure carrying only fixed, privacy-safe diagnostics."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        cause_code: Optional[str] = None,
+        http_status: Optional[int] = None,
+        provider_error_code: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        self.cause_code = _safe_refresh_cause_code(cause_code)
+        self.http_status = _safe_http_status(http_status)
+        self.provider_error_code = _safe_provider_error_code(provider_error_code)
+
+
+class WhoopRefreshOutcomeUncertain(_WhoopRefreshFailure):
     """The provider may have rotated the token without returning its successor."""
 
 
-class WhoopRefreshRejected(WhoopApiError):
+class WhoopRefreshRejected(_WhoopRefreshFailure):
     """The provider definitively rejected the current refresh credential."""
+
+
+def _safe_refresh_cause_code(value: Any) -> Optional[str]:
+    return value if isinstance(value, str) and value in SAFE_REFRESH_CAUSE_CODES else None
+
+
+def _safe_http_status(value: Any) -> Optional[int]:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 100 <= value <= 599 else None
+
+
+def _safe_provider_error_code(value: Any) -> Optional[str]:
+    return value if isinstance(value, str) and value in SAFE_HTTP_ERROR_CODES else None
 
 
 def _transport_outcome_uncertain(reason: Any) -> bool:
@@ -260,57 +313,104 @@ def refresh_tokens(credentials: WhoopCredentials, refresh_token: str) -> Dict[st
             )
             raise WhoopRefreshRejected(
                 "WHOOP rejected the refresh credential with HTTP %s%s."
-                % (exc.http_status, suffix)
+                % (exc.http_status, suffix),
+                cause_code="provider_rejected",
+                http_status=exc.http_status,
+                provider_error_code=exc.provider_error_code,
             ) from None
         if exc.outcome_uncertain:
             raise WhoopRefreshOutcomeUncertain(
                 "WHOOP did not return a definitive refresh result; the provider "
-                "may have rotated the credential without delivering its successor."
+                "may have rotated the credential without delivering its successor.",
+                cause_code=exc.cause_code or "transport_failure",
+                http_status=exc.http_status,
+                provider_error_code=exc.provider_error_code,
             ) from None
         raise
-    except (
-        json.JSONDecodeError,
-        UnicodeDecodeError,
-        TimeoutError,
-        ConnectionError,
-        subprocess.SubprocessError,
-    ):
+    except json.JSONDecodeError:
         raise WhoopRefreshOutcomeUncertain(
             "WHOOP did not return a definitive refresh result; the provider "
-            "may have rotated the credential without delivering its successor."
+            "may have rotated the credential without delivering its successor.",
+            cause_code="invalid_json",
+        ) from None
+    except (TimeoutError, subprocess.TimeoutExpired):
+        raise WhoopRefreshOutcomeUncertain(
+            "WHOOP did not return a definitive refresh result; the provider "
+            "may have rotated the credential without delivering its successor.",
+            cause_code="transport_timeout",
+        ) from None
+    except UnicodeDecodeError:
+        raise WhoopRefreshOutcomeUncertain(
+            "WHOOP did not return a definitive refresh result; the provider "
+            "may have rotated the credential without delivering its successor.",
+            cause_code="invalid_json",
+        ) from None
+    except (ConnectionError, subprocess.SubprocessError):
+        raise WhoopRefreshOutcomeUncertain(
+            "WHOOP did not return a definitive refresh result; the provider "
+            "may have rotated the credential without delivering its successor.",
+            cause_code="transport_failure",
         ) from None
     except OSError as exc:
         if not _transport_outcome_uncertain(exc):
             raise WhoopRequestError(
                 "WHOOP refresh failed before the request was dispatched.",
                 outcome_uncertain=False,
+                cause_code="transport_failure",
             ) from None
         raise WhoopRefreshOutcomeUncertain(
             "WHOOP did not return a definitive refresh result; the provider "
-            "may have rotated the credential without delivering its successor."
+            "may have rotated the credential without delivering its successor.",
+            cause_code="transport_failure",
         ) from None
+
+    if not isinstance(response, dict):
+        raise WhoopRefreshOutcomeUncertain(
+            "WHOOP returned an unusable refresh response; the provider may have "
+            "rotated the credential without delivering a usable successor.",
+            cause_code="unusable_successor",
+        )
+    successor_refresh_token = response.get("refresh_token")
+    if not isinstance(successor_refresh_token, str) or not successor_refresh_token.strip():
+        raise WhoopRefreshOutcomeUncertain(
+            "WHOOP refresh response did not include a usable successor "
+            "refresh credential.",
+            cause_code="missing_successor",
+        )
+    if hmac.compare_digest(successor_refresh_token.strip(), refresh_token.strip()):
+        raise WhoopRefreshOutcomeUncertain(
+            "WHOOP refresh response did not rotate the refresh credential.",
+            cause_code="unusable_successor",
+        )
     try:
-        successor_refresh_token = response.get("refresh_token")
-        if not isinstance(successor_refresh_token, str) or not successor_refresh_token.strip():
-            raise WhoopRefreshOutcomeUncertain(
-                "WHOOP refresh response did not include a usable successor "
-                "refresh credential."
-            )
-        return _normalize_token_response(response)
+        normalized = _normalize_token_response(response)
     except (
-        AttributeError,
         KeyError,
         OverflowError,
         TypeError,
         ValueError,
-        WhoopApiError,
     ):
         # A successful HTTP response with an unusable body may still have
         # consumed WHOOP's single-use refresh credential.
         raise WhoopRefreshOutcomeUncertain(
             "WHOOP returned an unusable refresh response; the provider may have "
-            "rotated the credential without delivering a usable successor."
+            "rotated the credential without delivering a usable successor.",
+            cause_code="unusable_successor",
         ) from None
+    successor_access_token = normalized.get("access_token")
+    normalized_refresh_token = normalized.get("refresh_token")
+    if (
+        not isinstance(successor_access_token, str)
+        or not successor_access_token.strip()
+        or not isinstance(normalized_refresh_token, str)
+        or not normalized_refresh_token.strip()
+    ):
+        raise WhoopRefreshOutcomeUncertain(
+            "WHOOP returned an unusable refresh response; the provider may have "
+            "rotated the credential without delivering a usable successor.",
+            cause_code="unusable_successor",
+        )
+    return normalized
 
 
 @contextmanager
@@ -485,15 +585,114 @@ def _refresh_state_paths(path: Path) -> List[Path]:
     ]
 
 
+def whoop_refresh_gate_path(path: Path) -> Path:
+    """Return the owner-only proof sidecar path used by the local watcher."""
+    return path.with_name(path.name + ".refresh-gate")
+
+
+def _refresh_gate_paths(path: Path) -> List[Path]:
+    gate_path = whoop_refresh_gate_path(path)
+    return [
+        candidate
+        for candidate in [
+            gate_path,
+            *path.parent.glob(gate_path.name + ".pending.*.tmp"),
+        ]
+        if candidate.exists()
+    ]
+
+
+def load_whoop_refresh_gate_proof(path: Path) -> Optional[Dict[str, str]]:
+    """Read only the fixed, non-sensitive fields from a valid gate proof."""
+    gate_path = whoop_refresh_gate_path(path)
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    elif gate_path.is_symlink():
+        return None
+    descriptor = -1
+    try:
+        descriptor = os.open(gate_path, flags)
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+        ):
+            return None
+        with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+            descriptor = -1
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    verified_at = payload.get("verified_at") if isinstance(payload, dict) else None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("format") != REFRESH_GATE_FORMAT
+        or not isinstance(verified_at, str)
+    ):
+        return None
+    try:
+        parsed = datetime.fromisoformat(verified_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return {"format": REFRESH_GATE_FORMAT, "verified_at": verified_at}
+
+
+def _write_refresh_gate_proof_unlocked(path: Path) -> Dict[str, str]:
+    gate_path = whoop_refresh_gate_path(path)
+    proof = {
+        "format": REFRESH_GATE_FORMAT,
+        "verified_at": datetime.now(timezone.utc).isoformat(),
+    }
+    temporary_path = _write_token_file(
+        path,
+        proof,
+        prefix=gate_path.name + ".pending.",
+    )
+    try:
+        os.replace(temporary_path, gate_path)
+        _fsync_parent_directory(gate_path)
+        _set_owner_only(gate_path)
+    except OSError as exc:
+        preserved = gate_path if gate_path.exists() else temporary_path
+        if preserved.exists():
+            _set_owner_only(preserved)
+        raise WhoopApiError(
+            "Could not persist the WHOOP refresh-gate proof; scheduled syncs "
+            "remain blocked."
+        ) from exc
+    stale = [candidate for candidate in _refresh_gate_paths(path) if candidate != gate_path]
+    for candidate in stale:
+        try:
+            candidate.unlink()
+        except OSError as exc:
+            raise WhoopApiError(
+                "WHOOP refresh-gate proof was saved, but stale proof state "
+                "could not be cleaned; scheduled syncs remain blocked."
+            ) from exc
+    if stale:
+        _fsync_parent_directory(gate_path)
+    return proof
+
+
 def _write_refresh_state_unlocked(
     path: Path,
     state: str,
     base_payload: Dict[str, Any],
+    failure: Optional[Any] = None,
+    verification_required: bool = False,
 ) -> None:
     if state not in {
         "refresh_in_flight",
         "outcome_uncertain",
         "reauthorization_required",
+        "successor_verification_pending",
     }:
         raise ValueError("Unsupported WHOOP refresh state: %s" % state)
     state_path = _refresh_state_path(path)
@@ -503,6 +702,20 @@ def _write_refresh_state_unlocked(
         "base_fingerprint": _token_fingerprint(base_payload),
         "recorded_at": datetime.now(timezone.utc).isoformat(),
     }
+    if state == "refresh_in_flight" and verification_required is True:
+        payload["verification_required"] = True
+    if failure is not None:
+        cause_code = _safe_refresh_cause_code(getattr(failure, "cause_code", None))
+        http_status = _safe_http_status(getattr(failure, "http_status", None))
+        provider_error_code = _safe_provider_error_code(
+            getattr(failure, "provider_error_code", None)
+        )
+        if cause_code is not None:
+            payload["cause_code"] = cause_code
+        if http_status is not None:
+            payload["http_status"] = http_status
+        if provider_error_code is not None:
+            payload["provider_error_code"] = provider_error_code
     temporary_path = _write_token_file(
         path,
         payload,
@@ -533,6 +746,51 @@ def _clear_refresh_state_unlocked(path: Path) -> None:
         _fsync_parent_directory(path)
 
 
+def _successor_verification_pending_unlocked(
+    path: Path,
+    active_payload: Dict[str, Any],
+) -> bool:
+    candidates = _refresh_state_paths(path)
+    state_path = _refresh_state_path(path)
+    if not candidates or not state_path.exists():
+        return False
+    if len(candidates) != 1:
+        raise WhoopApiError(
+            "WHOOP successor verification state is incomplete; automatic "
+            "rotation remains blocked."
+        )
+    _set_owner_only(state_path)
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if payload.get("format") != REFRESH_STATE_FORMAT:
+        return False
+    state = payload.get("state")
+    active_fingerprint = _token_fingerprint(active_payload)
+    base_fingerprint = payload.get("base_fingerprint")
+    if (
+        state == "refresh_in_flight"
+        and payload.get("verification_required") is True
+        and isinstance(base_fingerprint, str)
+        and base_fingerprint != active_fingerprint
+    ):
+        _write_refresh_state_unlocked(
+            path,
+            "successor_verification_pending",
+            active_payload,
+        )
+        return True
+    if state != "successor_verification_pending":
+        return False
+    if base_fingerprint != active_fingerprint:
+        raise WhoopApiError(
+            "WHOOP successor verification state does not match the active "
+            "token; automatic rotation remains blocked."
+        )
+    return True
+
+
 def _raise_if_refresh_blocked_unlocked(path: Path) -> None:
     candidates = _refresh_state_paths(path)
     if not candidates:
@@ -548,25 +806,39 @@ def _raise_if_refresh_blocked_unlocked(path: Path) -> None:
     if state == "refresh_in_flight":
         base_fingerprint = payload.get("base_fingerprint")
         try:
-            active_fingerprint = _token_fingerprint(load_tokens(path))
+            active_payload = load_tokens(path)
+            active_fingerprint = _token_fingerprint(active_payload)
         except (OSError, ValueError, WhoopApiError):
+            active_payload = None
             active_fingerprint = None
         if (
             isinstance(base_fingerprint, str)
             and active_fingerprint is not None
             and base_fingerprint != active_fingerprint
         ):
-            # A durable successor was recovered or promoted before the process
-            # died. The old in-flight marker no longer refers to the active
-            # credential and can be removed without contacting WHOOP.
-            _clear_refresh_state_unlocked(path)
-            return
+            if payload.get("verification_required") is True and active_payload is not None:
+                _write_refresh_state_unlocked(
+                    path,
+                    "successor_verification_pending",
+                    active_payload,
+                )
+                state = "successor_verification_pending"
+            else:
+                _clear_refresh_state_unlocked(path)
+                return
     if state == "reauthorization_required":
         detail = "the provider rejected the current refresh credential"
     elif state == "outcome_uncertain":
         detail = "the previous refresh outcome was uncertain"
     elif state == "refresh_in_flight":
         detail = "the previous refresh did not finish locally"
+    elif state == "successor_verification_pending":
+        raise WhoopApiError(
+            "WHOOP automatic sync is blocked because the durable successor "
+            "has not passed its authenticated GET gate. Run "
+            "whoop-refresh-gate again; it will retry only the GET without "
+            "another token rotation."
+        )
     else:
         detail = "the local refresh state is incomplete"
     raise WhoopApiError(
@@ -589,13 +861,18 @@ def _token_fingerprint(payload: Dict[str, Any]) -> str:
 def _token_transaction(
     base_payload: Optional[Dict[str, Any]],
     successor_payload: Dict[str, Any],
+    *,
+    fresh_authorization: bool = False,
 ) -> Dict[str, Any]:
-    return {
+    transaction = {
         "format": TOKEN_TRANSACTION_FORMAT,
         "base_fingerprint": _token_fingerprint(base_payload) if base_payload is not None else None,
         "successor_fingerprint": _token_fingerprint(successor_payload),
         "token": successor_payload,
     }
+    if fresh_authorization:
+        transaction["fresh_authorization"] = True
+    return transaction
 
 
 def _read_token_candidate(path: Path) -> Optional[Dict[str, Any]]:
@@ -608,9 +885,12 @@ def _read_token_candidate(path: Path) -> Optional[Dict[str, Any]]:
     payload = transaction.get("token")
     base_fingerprint = transaction.get("base_fingerprint")
     successor_fingerprint = transaction.get("successor_fingerprint")
+    fresh_authorization = transaction.get("fresh_authorization", False)
     if not isinstance(payload, dict) or not payload.get("access_token"):
         return None
     if base_fingerprint is not None and not isinstance(base_fingerprint, str):
+        return None
+    if not isinstance(fresh_authorization, bool):
         return None
     if successor_fingerprint != _token_fingerprint(payload):
         return None
@@ -753,7 +1033,15 @@ def _recover_pending_tokens_unlocked(path: Path) -> None:
             conflicts.append(candidate)
 
     distinct_successors = {transaction["successor_fingerprint"] for _, transaction in successors}
-    if conflicts or len(distinct_successors) > 1:
+    fresh_authorization_modes = {
+        transaction.get("fresh_authorization", False)
+        for _, transaction in successors
+    }
+    if (
+        conflicts
+        or len(distinct_successors) > 1
+        or len(fresh_authorization_modes) > 1
+    ):
         raise WhoopApiError(
             "WHOOP token recovery conflicts with the active credential at %s. "
             "The canonical token was left unchanged; inspect the owner-only "
@@ -784,6 +1072,19 @@ def _recover_pending_tokens_unlocked(path: Path) -> None:
                 "preserved at %s. Retry after fixing the filesystem error." % selected_path
             ) from exc
     _set_owner_only(pending_path)
+    if selected_transaction.get("fresh_authorization") is True:
+        # A fresh OAuth exchange supersedes every prior refresh incident and
+        # gate proof. Do this before canonical promotion so a crash can never
+        # expose the new token alongside a proof produced for an older token
+        # lineage. If quarantine fails, leave the canonical token unchanged
+        # and the durable pending transaction available for a safe retry.
+        _quarantine_token_recovery_files(
+            path,
+            # Invalidate proof first. If a later state move fails, the absent
+            # proof is itself fail-closed for the watcher while the canonical
+            # token remains unchanged.
+            [*_refresh_gate_paths(path), *_refresh_state_paths(path)],
+        )
     _promote_pending_token_unlocked(path, pending_path, selected_transaction)
     _remove_token_recovery_files(path, [candidate for candidate, _ in successors] + duplicates)
 
@@ -827,8 +1128,13 @@ def _save_fresh_authorization_tokens_unlocked(
     _check_scope_reduction(path, payload, allow_scope_reduction)
     path.parent.mkdir(parents=True, exist_ok=True)
     base_payload = load_tokens(path) if path.exists() else None
-    transaction = _token_transaction(base_payload, payload)
+    transaction = _token_transaction(
+        base_payload,
+        payload,
+        fresh_authorization=True,
+    )
     stale_candidates = _token_recovery_paths(path)
+    stale_candidates.extend(_refresh_gate_paths(path))
     stale_candidates.extend(_refresh_state_paths(path))
     temporary_path = _write_token_file(
         path,
@@ -880,6 +1186,84 @@ def load_tokens(path: Path) -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _rotate_tokens_unlocked(
+    path: Path,
+    credentials: WhoopCredentials,
+    tokens: Dict[str, Any],
+    *,
+    required_scopes: Optional[Iterable[str]] = None,
+    operation: str,
+    require_successor_verification: bool = False,
+) -> Dict[str, Any]:
+    refresh_token = str(tokens.get("refresh_token") or "").strip()
+    if not refresh_token:
+        raise WhoopApiError(
+            "WHOOP token has no refresh token for %s. "
+            "Reauthorize WHOOP with the offline scope." % operation
+        )
+    _write_refresh_state_unlocked(
+        path,
+        "refresh_in_flight",
+        tokens,
+        verification_required=require_successor_verification,
+    )
+    try:
+        refreshed = refresh_tokens(credentials, refresh_token)
+    except WhoopRefreshOutcomeUncertain as exc:
+        _write_refresh_state_unlocked(
+            path,
+            "outcome_uncertain",
+            tokens,
+            failure=exc,
+        )
+        raise WhoopApiError(
+            "WHOOP refresh outcome is uncertain. Reauthorize WHOOP before "
+            "syncing; OpenHealth will not reuse a possibly consumed "
+            "refresh token."
+        ) from None
+    except WhoopRefreshRejected as exc:
+        _write_refresh_state_unlocked(
+            path,
+            "reauthorization_required",
+            tokens,
+            failure=exc,
+        )
+        raise WhoopApiError(
+            "WHOOP rejected the current refresh credential. Reauthorize "
+            "WHOOP before syncing; automatic retries are blocked."
+        ) from None
+    except WhoopRequestError:
+        _clear_refresh_state_unlocked(path)
+        raise
+    if not _token_scopes(refreshed):
+        inherited_scopes = sorted(_token_scopes(tokens))
+        refreshed["scope"] = inherited_scopes or list(credentials.scopes)
+    _save_tokens_unlocked(path, refreshed, allow_scope_reduction=True)
+    if required_scopes is not None:
+        try:
+            require_token_scopes(refreshed, required_scopes, operation)
+        except WhoopApiError:
+            _write_refresh_state_unlocked(
+                path,
+                "reauthorization_required",
+                refreshed,
+                failure=WhoopRefreshRejected(
+                    "WHOOP returned a successor with reduced scopes.",
+                    cause_code="unusable_successor",
+                ),
+            )
+            raise
+    if require_successor_verification:
+        _write_refresh_state_unlocked(
+            path,
+            "successor_verification_pending",
+            refreshed,
+        )
+    else:
+        _clear_refresh_state_unlocked(path)
+    return refreshed
+
+
 def ensure_valid_tokens(
     path: Path,
     credentials: WhoopCredentials,
@@ -893,53 +1277,29 @@ def ensure_valid_tokens(
         tokens = load_tokens(path)
         _set_owner_only(path)
         if required_scopes is not None:
-            require_token_scopes(tokens, required_scopes, operation)
+            try:
+                require_token_scopes(tokens, required_scopes, operation)
+            except WhoopApiError:
+                _write_refresh_state_unlocked(
+                    path,
+                    "reauthorization_required",
+                    tokens,
+                    failure=WhoopRefreshRejected(
+                        "WHOOP authorization does not satisfy required scopes.",
+                        cause_code="unusable_successor",
+                    ),
+                )
+                raise
         expires_at = _parse_iso_datetime(tokens.get("expires_at"))
         if not expires_at or expires_at - timedelta(minutes=5) > datetime.now(timezone.utc):
             return tokens
-        refresh_token = str(tokens.get("refresh_token") or "").strip()
-        if not refresh_token:
-            raise WhoopApiError(
-                "WHOOP token has no refresh token for %s. "
-                "Reauthorize WHOOP with the offline scope." % operation
-            )
-        _write_refresh_state_unlocked(path, "refresh_in_flight", tokens)
-        try:
-            refreshed = refresh_tokens(credentials, refresh_token)
-        except WhoopRefreshOutcomeUncertain:
-            _write_refresh_state_unlocked(path, "outcome_uncertain", tokens)
-            raise WhoopApiError(
-                "WHOOP refresh outcome is uncertain. Reauthorize WHOOP before "
-                "syncing; OpenHealth will not reuse a possibly consumed "
-                "refresh token."
-            ) from None
-        except WhoopRefreshRejected:
-            _write_refresh_state_unlocked(
-                path,
-                "reauthorization_required",
-                tokens,
-            )
-            raise WhoopApiError(
-                "WHOOP rejected the current refresh credential. Reauthorize "
-                "WHOOP before syncing; automatic retries are blocked."
-            ) from None
-        except WhoopRequestError:
-            # DNS resolution, connection refusal, rate limiting, and other
-            # classified pre-dispatch/definitive failures do not consume a
-            # rotating refresh credential and remain retryable.
-            _clear_refresh_state_unlocked(path)
-            raise
-        if not _token_scopes(refreshed):
-            inherited_scopes = sorted(_token_scopes(tokens))
-            refreshed["scope"] = inherited_scopes or list(credentials.scopes)
-        # WHOOP rotates both tokens during refresh. Persist the returned pair
-        # before rejecting a provider-side scope reduction, otherwise the old
-        # (now invalid) refresh token would be the only token left on disk.
-        _save_tokens_unlocked(path, refreshed, allow_scope_reduction=True)
-        _clear_refresh_state_unlocked(path)
-        if required_scopes is not None:
-            require_token_scopes(refreshed, required_scopes, operation)
-        return refreshed
+        return _rotate_tokens_unlocked(
+            path,
+            credentials,
+            tokens,
+            required_scopes=required_scopes,
+            operation=operation,
+        )
 
 
 class WhoopClient:
@@ -952,6 +1312,38 @@ class WhoopClient:
 
     def get_body_measurements(self) -> Dict[str, Any]:
         return self._get("/user/measurement/body")
+
+    def verify_authenticated_access(self) -> str:
+        """Run one minimal authenticated GET and discard its response body."""
+        scopes = _token_scopes(self.tokens)
+        probes = (
+            ("read:cycles", "/cycle", {"limit": 1}),
+            ("read:body_measurement", "/user/measurement/body", None),
+            ("read:profile", "/user/profile/basic", None),
+            ("read:recovery", "/recovery", {"limit": 1}),
+            ("read:sleep", "/activity/sleep", {"limit": 1}),
+            ("read:workout", "/activity/workout", {"limit": 1}),
+        )
+        last_endpoint_error = None
+        for scope, path, query in probes:
+            if scope not in scopes:
+                continue
+            try:
+                self._get(path, query)
+            except WhoopRequestError as exc:
+                if (
+                    exc.http_status in PROBE_FALLBACK_HTTP_STATUSES
+                    and exc.provider_error_code not in PROBE_NON_FALLBACK_ERROR_CODES
+                ):
+                    last_endpoint_error = exc
+                    continue
+                raise
+            return scope
+        if last_endpoint_error is not None:
+            raise last_endpoint_error
+        raise WhoopApiError(
+            "WHOOP rotation gate needs at least one supported read scope."
+        )
 
     def list_cycles(self, start: Optional[str], end: Optional[str]) -> List[Dict[str, Any]]:
         return self._paginate("/cycle", start, end)
@@ -995,6 +1387,109 @@ class WhoopClient:
         return _request_json("GET", url, headers=headers, path_hint=path)
 
 
+def verify_whoop_refresh_rotation(
+    root: Path,
+    *,
+    credentials: Optional[WhoopCredentials] = None,
+) -> Dict[str, Any]:
+    """Force one A-to-B rotation and prove durable B with an authenticated GET."""
+    paths = ensure_repo_structure(root)
+    active_credentials = credentials or load_credentials_from_env()
+    sync_lock_path = paths.whoop_tokens_path.with_name("whoop-sync.lock")
+    with _exclusive_file_lock(sync_lock_path):
+        with _token_file_lock(paths.whoop_tokens_path):
+            _recover_pending_tokens_unlocked(paths.whoop_tokens_path)
+            candidate = load_tokens(paths.whoop_tokens_path)
+            _set_owner_only(paths.whoop_tokens_path)
+            verification_pending = _successor_verification_pending_unlocked(
+                paths.whoop_tokens_path,
+                candidate,
+            )
+            if not verification_pending:
+                _raise_if_refresh_blocked_unlocked(paths.whoop_tokens_path)
+            configured_scopes = set(active_credentials.scopes) | {"offline"}
+            try:
+                require_token_scopes(
+                    candidate,
+                    configured_scopes,
+                    "refresh rotation gate",
+                )
+            except WhoopApiError:
+                _write_refresh_state_unlocked(
+                    paths.whoop_tokens_path,
+                    "reauthorization_required",
+                    candidate,
+                    failure=WhoopRefreshRejected(
+                        "WHOOP authorization does not satisfy configured scopes.",
+                        cause_code="unusable_successor",
+                    ),
+                )
+                raise
+            if verification_pending:
+                persisted = candidate
+                rotation_performed = False
+            else:
+                candidate_scopes = _token_scopes(candidate)
+                candidate_fingerprint = _token_fingerprint(candidate)
+                rotated = _rotate_tokens_unlocked(
+                    paths.whoop_tokens_path,
+                    active_credentials,
+                    candidate,
+                    required_scopes=candidate_scopes,
+                    operation="refresh rotation gate",
+                    require_successor_verification=True,
+                )
+                persisted = load_tokens(paths.whoop_tokens_path)
+                if (
+                    _token_fingerprint(persisted) != _token_fingerprint(rotated)
+                    or _token_fingerprint(persisted) == candidate_fingerprint
+                ):
+                    raise WhoopApiError(
+                        "WHOOP rotation gate could not verify the durable successor."
+                    )
+                rotation_performed = True
+            try:
+                probe_scope = WhoopClient(
+                    active_credentials,
+                    persisted,
+                ).verify_authenticated_access()
+            except Exception as exc:
+                http_status = _safe_http_status(getattr(exc, "http_status", None))
+                provider_error_code = _safe_provider_error_code(
+                    getattr(exc, "provider_error_code", None)
+                )
+                suffix = ""
+                if http_status is not None:
+                    suffix += " HTTP %s" % http_status
+                if provider_error_code is not None:
+                    suffix += " (%s)" % provider_error_code
+                _write_refresh_state_unlocked(
+                    paths.whoop_tokens_path,
+                    "successor_verification_pending",
+                    persisted,
+                    failure=exc,
+                )
+                raise WhoopApiError(
+                    "WHOOP rotation gate kept the durable successor blocked "
+                    "because its authenticated GET failed%s. Rerun this gate "
+                    "to retry only the GET without another token rotation."
+                    % suffix
+                ) from None
+            gate_proof = _write_refresh_gate_proof_unlocked(
+                paths.whoop_tokens_path
+            )
+            _clear_refresh_state_unlocked(paths.whoop_tokens_path)
+    return {
+        "rotation_verified": True,
+        "rotation_performed": rotation_performed,
+        "authenticated_get": True,
+        "probe_scope": probe_scope,
+        "expires_at": persisted.get("expires_at"),
+        "scope": sorted(_token_scopes(persisted)),
+        "verified_at": gate_proof["verified_at"],
+    }
+
+
 def sync_whoop(
     root: Path,
     start: Optional[str] = None,
@@ -1018,6 +1513,17 @@ def sync_whoop(
             include_body_measurements=include_body_measurements,
             client=client,
         )
+
+
+def _local_snapshot_time(
+    instant: str,
+    local_timezone: Optional[tzinfo] = None,
+) -> str:
+    """Render one aware sync instant in the machine's local calendar time."""
+    parsed = datetime.fromisoformat(instant.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("WHOOP snapshot instant must include a timezone")
+    return parsed.astimezone(local_timezone).replace(microsecond=0).isoformat()
 
 
 def _sync_whoop_unlocked(
@@ -1046,6 +1552,11 @@ def _sync_whoop_unlocked(
         )
         client = WhoopClient(credentials, tokens)
     sync_started_at = now_utc()
+    body_fetched_at = (
+        _local_snapshot_time(sync_started_at)
+        if include_body_measurements
+        else None
+    )
     sync_stamp = sync_started_at.replace(":", "").replace("+00:00", "z")
     state = load_sync_state(paths.whoop_sync_state_path)
     start_value, end_value = resolve_sync_window(start, end, days_back, state)
@@ -1078,12 +1589,17 @@ def _sync_whoop_unlocked(
                 page_index=page_index,
             )
             artifacts.append(artifact)
+            fetched_at = (
+                body_fetched_at
+                if dataset_name == "body_measurements"
+                else sync_started_at
+            )
             page_records = normalize_whoop_payload(
                 dataset_name=dataset_name,
                 payload=payload,
                 artifact_id=artifact["artifact_id"],
                 source_id=WHOOP_SOURCE_ID,
-                fetched_at=sync_started_at,
+                fetched_at=fetched_at,
             )
             raw_counts[dataset_name] += len(page_records)
             records.extend(page_records)
@@ -1879,7 +2395,15 @@ def _request_json(
         with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
             return json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="ignore")
+        try:
+            raw_detail = exc.read()
+        except Exception:
+            raw_detail = b""
+        detail = (
+            raw_detail.decode("utf-8", errors="ignore")
+            if isinstance(raw_detail, bytes)
+            else ""
+        )
         error_code = _safe_http_error_code(detail)
         suffix = " (%s)" % error_code if error_code else ""
         # Provider error bodies can echo OAuth forms or bearer credentials.
@@ -1893,15 +2417,26 @@ def _request_json(
                 method.upper() not in {"GET", "HEAD"}
                 and (exc.code >= 500 or exc.code == 408)
             ),
+            cause_code=(
+                "http_uncertain"
+                if exc.code >= 500 or exc.code == 408
+                else None
+            ),
         ) from None
     except URLError as exc:
         if "CERTIFICATE_VERIFY_FAILED" not in str(exc.reason):
+            outcome_uncertain = (
+                method.upper() not in {"GET", "HEAD"}
+                and _transport_outcome_uncertain(exc.reason)
+            )
             raise WhoopRequestError(
                 "WHOOP %s failed without a definitive HTTP response."
                 % (path_hint or method),
-                outcome_uncertain=(
-                    method.upper() not in {"GET", "HEAD"}
-                    and _transport_outcome_uncertain(exc.reason)
+                outcome_uncertain=outcome_uncertain,
+                cause_code=(
+                    "transport_timeout"
+                    if isinstance(exc.reason, (TimeoutError, socket.timeout))
+                    else "transport_failure"
                 ),
             ) from None
         return _request_json_with_curl(method, url, headers=headers, data=data, path_hint=path_hint)
@@ -1912,6 +2447,7 @@ def _request_json(
             "WHOOP %s ended before a complete response was received."
             % (path_hint or method),
             outcome_uncertain=method.upper() not in {"GET", "HEAD"},
+            cause_code="protocol_incomplete",
         ) from None
 
 
@@ -1922,8 +2458,8 @@ def _safe_http_error_code(detail: str) -> Optional[str]:
     except (TypeError, ValueError):
         return None
     error_code = payload.get("error") if isinstance(payload, dict) else None
-    if error_code in SAFE_HTTP_ERROR_CODES:
-        return str(error_code)
+    if isinstance(error_code, str) and error_code in SAFE_HTTP_ERROR_CODES:
+        return error_code
     return None
 
 
@@ -1962,12 +2498,20 @@ def _request_json_with_curl(
             timeout=CURL_PROCESS_TIMEOUT_SECONDS,
         )
     except subprocess.CalledProcessError as exc:
+        outcome_uncertain = (
+            method.upper() not in {"GET", "HEAD"}
+            and exc.returncode not in {5, 6, 7, 35, 60}
+        )
         raise WhoopRequestError(
             "WHOOP %s failed via curl fallback with exit code %s."
             % (path_hint or method, exc.returncode),
-            outcome_uncertain=(
-                method.upper() not in {"GET", "HEAD"}
-                and exc.returncode not in {5, 6, 7, 35, 60}
+            outcome_uncertain=outcome_uncertain,
+            cause_code=(
+                "http_uncertain"
+                if exc.returncode == 22
+                else "transport_timeout"
+                if exc.returncode == 28
+                else "transport_failure"
             ),
         ) from None
     except subprocess.TimeoutExpired:
@@ -1975,6 +2519,7 @@ def _request_json_with_curl(
             "WHOOP %s timed out via curl fallback after %s seconds."
             % (path_hint or method, CURL_PROCESS_TIMEOUT_SECONDS),
             outcome_uncertain=method.upper() not in {"GET", "HEAD"},
+            cause_code="transport_timeout",
         ) from None
     return json.loads(output.stdout)
 

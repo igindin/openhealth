@@ -21,13 +21,18 @@ REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 PACKAGE_PREFIX = PurePosixPath("openhealth")
 REQUIRED_FILES = (
     PurePosixPath("scripts/build_pinned_runtime.py"),
-    PurePosixPath("scripts/whoop-body-sync-run.sh"),
-    PurePosixPath("scripts/whoop-body-sync.plist"),
     PurePosixPath("scripts/daily-sync-run.sh"),
     PurePosixPath("scripts/daily-sync.plist"),
+    PurePosixPath("scripts/daily_sync_claim.py"),
+    PurePosixPath("scripts/launchagent_migration.py"),
+    PurePosixPath("scripts/operational_file.py"),
+    PurePosixPath("scripts/runner_lifecycle.py"),
     PurePosixPath("scripts/install-whoop-body-sync-launchagent.sh"),
     PurePosixPath("scripts/install-daily-sync-launchagent.sh"),
     PurePosixPath("scripts/install-pinned-sync-launchagent.sh"),
+    PurePosixPath("scripts/whoop-refresh-watchdog-run.sh"),
+    PurePosixPath("scripts/whoop-refresh-watchdog.plist"),
+    PurePosixPath("scripts/install-whoop-refresh-watchdog-launchagent.sh"),
     PurePosixPath("ui/web/build_dashboard_data.py"),
 )
 EXECUTABLE_FILES = frozenset(

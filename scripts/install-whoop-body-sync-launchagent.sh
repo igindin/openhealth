@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Install the daily WHOOP body snapshot LaunchAgent from an explicit pinned
-# runtime release. The shared installer keeps the old service runnable until
-# the replacement has bootstrapped successfully.
+# Compatibility entry point. WHOOP history and body measurements now share the
+# daily bundle, so this installs the single daily LaunchAgent.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+echo "WHOOP body sync is included in the daily LaunchAgent; installing that service." >&2
 exec "$SCRIPT_DIR/install-pinned-sync-launchagent.sh" --service whoop-body "$@"

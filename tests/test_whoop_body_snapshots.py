@@ -1,14 +1,19 @@
+import json
 import tempfile
 import unittest
+from datetime import timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from openhealth import index
 from openhealth.contexts import build_source_status_context
 from openhealth.storage import ensure_repo_structure
 from openhealth.whoop import (
     WHOOP_SOURCE_ID,
+    _local_snapshot_time,
     normalize_body_measurements,
     purge_existing_whoop_records,
+    sync_whoop,
     sync_whoop_body_measurements,
 )
 
@@ -23,6 +28,18 @@ class FakeBodyMeasurementClient:
             "weight_kilogram": self.weight,
             "max_heart_rate": 190,
         }
+
+    def list_cycles(self, start, end):
+        return []
+
+    def list_recoveries(self, start, end):
+        return []
+
+    def list_sleeps(self, start, end):
+        return []
+
+    def list_workouts(self, start, end):
+        return []
 
 
 class WhoopBodySnapshotTests(unittest.TestCase):
@@ -101,6 +118,64 @@ class WhoopBodySnapshotTests(unittest.TestCase):
         self.assertEqual(
             records[0]["metadata"]["openhealth_snapshot"]["date_basis"],
             "provider_timestamp",
+        )
+
+    def test_full_sync_buckets_current_body_snapshot_by_local_date(self):
+        local_snapshot_at = _local_snapshot_time(
+            "2026-08-18T20:30:00+00:00",
+            timezone(timedelta(hours=14)),
+        )
+        self.assertEqual(local_snapshot_at, "2026-08-19T10:30:00+14:00")
+
+        with (
+            patch("openhealth.whoop.now_utc", return_value="2026-08-18T20:30:00+00:00"),
+            patch(
+                "openhealth.whoop._local_snapshot_time",
+                return_value=local_snapshot_at,
+            ),
+        ):
+            sync_whoop(
+                self.root,
+                client=FakeBodyMeasurementClient(),
+                include_profile=False,
+                include_body_measurements=True,
+            )
+
+        records = index.list_records_by_source(self.paths.db_path, WHOOP_SOURCE_ID)
+        weight_record = next(
+            record
+            for record in records
+            if record.get("metric_name") == "weight_kilogram"
+        )
+        self.assertEqual(weight_record["date"], "2026-08-19")
+        self.assertEqual(
+            weight_record["id"],
+            "whoop-body-weight-kilogram-2026-08-19",
+        )
+        self.assertEqual(weight_record["captured_at"], local_snapshot_at)
+        self.assertEqual(
+            weight_record["metadata"]["openhealth_snapshot"]["fetched_at"],
+            local_snapshot_at,
+        )
+        source = json.loads(
+            (self.paths.source_manifests / f"{WHOOP_SOURCE_ID}.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(source["created_at"], "2026-08-18T20:30:00+00:00")
+        self.assertEqual(
+            source["metadata"]["fetched_at"],
+            "2026-08-18T20:30:00+00:00",
+        )
+        artifact = json.loads(
+            (
+                self.paths.artifact_manifests
+                / f"{weight_record['artifact_ids'][0]}.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            artifact["provenance"]["ingested_at"],
+            "2026-08-18T20:30:00+00:00",
         )
 
     def test_full_sync_purge_preserves_older_body_snapshots(self):

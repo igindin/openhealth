@@ -19,6 +19,7 @@ from .whoop import (
     save_tokens,
     sync_whoop,
     sync_whoop_body_measurements,
+    verify_whoop_refresh_rotation,
     verify_webhook_signature,
 )
 
@@ -89,6 +90,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("whoop-capabilities", help="Show WHOOP collections and gaps in the public API.")
     subparsers.add_parser("whoop-latest", help="Show the latest WHOOP timestamps from local OpenHealth data.")
+    subparsers.add_parser(
+        "whoop-refresh-gate",
+        help=(
+            "In a new process, force one WHOOP token rotation and verify the "
+            "durably saved successor with one authenticated GET."
+        ),
+    )
 
     whoop_verify = subparsers.add_parser("whoop-verify-webhook", help="Verify a WHOOP webhook signature for a saved payload file.")
     whoop_verify.add_argument("--body-file", required=True, help="Path to the raw webhook body file.")
@@ -259,6 +267,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         result = CAPABILITIES
     elif args.command == "whoop-latest":
         result = latest_whoop_summary(repo_root)
+    elif args.command == "whoop-refresh-gate":
+        result = verify_whoop_refresh_rotation(repo_root)
     elif args.command == "whoop-verify-webhook":
         body_file = Path(args.body_file).resolve()
         secret = load_credentials_from_env().client_secret

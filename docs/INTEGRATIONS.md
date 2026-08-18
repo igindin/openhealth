@@ -98,14 +98,13 @@ final file promotion is interrupted, the next locked access automatically
 recovers the durable pending token before contacting WHOOP again. A new
 authorization is refused when it would silently replace the existing token with
 fewer scopes; use `--allow-scope-reduction` on the exchange command only when
-that downgrade is intentional. A token shared by the default full sync and a
-body sync needs their exact union:
+that downgrade is intentional. The bundled history-and-body sync needs this
+scope union:
 `read:profile read:cycles read:recovery read:sleep read:workout read:body_measurement offline`.
-The pinned daily runner uses both `--no-profile` and
-`--no-body-measurements`; the dedicated daily body scheduler owns the current
-body snapshot. Their token still needs the union
-`read:cycles read:recovery read:sleep read:workout read:body_measurement offline`,
-because the separate body scheduler requires `read:body_measurement`.
+The pinned daily runner uses `--no-profile` but includes the current body
+snapshot in the same `whoop-sync` invocation. Its scheduled token therefore
+needs `read:cycles read:recovery read:sleep read:workout
+read:body_measurement offline`.
 
 WHOOP rotates both the access and refresh credential on every successful
 refresh. If a refresh returns a server/transport failure after dispatch, its
@@ -115,26 +114,36 @@ and refuses automatic reuse. A definitive rejection is blocked the same way.
 Complete a fresh OAuth authorization to clear either state; the old state is
 preserved in the owner-only recovery quarantine for auditability.
 
-### Daily body-measurement snapshots
+After authorization, run `openhealth whoop-refresh-gate` once. The gate forces
+one A-to-B token rotation, verifies that the successor is durable, and proves it
+with one authenticated GET. It also requires every scope configured in
+`OPENHEALTH_WHOOP_SCOPES` plus `offline`; an intentionally reduced integration
+must declare that reduced scope set explicitly. If that GET is interrupted,
+rerunning the gate retries only the GET and does not rotate the token again. A
+private gate proof is operational evidence; it is not evidence that today's
+WHOOP data was imported.
 
-WHOOP's public body-measurement endpoint exposes the current values, not a
-historical collection. `openhealth whoop-body-sync` therefore stores one
-idempotent snapshot per local fetch date. Re-running it on the same date updates
-that date; later dates are retained. If WHOOP does not include a measurement
-timestamp, OpenHealth explicitly records that the date came from fetch time.
+### Daily bundled snapshots and pinned scheduling
 
-On macOS, the body snapshot and the full WHOOP/Oura daily sync can run from the
-same immutable code release while continuing to read credentials, tokens, the
-database, and derived output from the separate local data workspace. A release
-root must be an absolute, non-symlink directory containing the committed tree
-and a `REVISION` file with its full 40-character Git SHA. The data root must be
-a different absolute path containing `.env` and `data/`.
+WHOOP's public body-measurement endpoint exposes current values, not a
+historical collection. The scheduled `whoop-sync --no-profile --days-back 14`
+therefore stores one idempotent body snapshot per local fetch date alongside
+history in the same client/token-validation/lock lifetime. Re-running on the
+same date updates that date; later dates remain. If WHOOP omits a measurement
+timestamp, OpenHealth records that the date came from fetch time.
 
-Build that owner-only release directly from the committed Git object, not from
-the working tree. The builder archives only the `openhealth` package, the two
-sync runners and their installer/plist files, and the dashboard-data builder;
-it records every payload checksum and mode in `MANIFEST.json` and removes write
-permissions before publishing the release:
+On macOS, the bundled WHOOP job and separate Oura/dashboard work run from one
+immutable code release while credentials, tokens, database, and derived output
+stay in the local data workspace. A release root must be an absolute,
+non-symlink directory with a full-SHA `REVISION`; the different absolute data
+root must contain `.env` and `data/`.
+
+Build that owner-only release from the committed Git object, not the working
+tree. The allowlist includes the `openhealth` package, daily and watchdog
+runners/plists, `daily_sync_claim.py`, `runner_lifecycle.py`,
+`launchagent_migration.py`, `operational_file.py`, their installers, and the
+dashboard-data builder. Every payload checksum and mode is recorded in
+`MANIFEST.json`, then write permissions are removed:
 
 ```bash
 python3 scripts/build_pinned_runtime.py build \
@@ -147,46 +156,126 @@ python3 scripts/build_pinned_runtime.py verify \
 ```
 
 Building the same SHA again repeats verification and fails closed if an existing
-release was modified. A WHOOP-specific releases root may be used; do not add
-files to an already-installed bot runtime.
+release was modified. Do not add files to an installed runtime.
 
-Render and validate a LaunchAgent without touching `launchctl`:
+Render, review, and install the single daily LaunchAgent:
 
 ```bash
-/absolute/path/to/whoop-runtime-releases/<sha>/scripts/install-whoop-body-sync-launchagent.sh \
+/absolute/path/to/whoop-runtime-releases/<sha>/scripts/install-daily-sync-launchagent.sh \
   --runtime-root /absolute/path/to/whoop-runtime-releases/<sha> \
   --data-root /absolute/path/to/openhealth-data \
   --revision <full-sha> \
-  --render-only /tmp/whoop-body-sync.plist
-```
+  --render-only /tmp/openhealth-daily-sync.plist
 
-After reviewing that plist, install the daily 12:15 body snapshot (which also
-runs at login):
-
-```bash
-/absolute/path/to/whoop-runtime-releases/<sha>/scripts/install-whoop-body-sync-launchagent.sh \
-  --runtime-root /absolute/path/to/whoop-runtime-releases/<sha> \
-  --data-root /absolute/path/to/openhealth-data \
-  --revision <full-sha>
-```
-
-Install the committed replacement for the mutable
-`~/.openhealth/daily-sync.sh` runner with the **same** three pinning arguments:
-
-```bash
 /absolute/path/to/whoop-runtime-releases/<sha>/scripts/install-daily-sync-launchagent.sh \
   --runtime-root /absolute/path/to/whoop-runtime-releases/<sha> \
   --data-root /absolute/path/to/openhealth-data \
   --revision <full-sha>
 ```
 
-Both runners source the data workspace's gitignored `.env`, use its token files
-and database, and import Python only from the pinned runtime (`python -P`,
-`PYTHONSAFEPATH=1`). The installer validates a staged plist before stopping an
-existing service. The prior plist and runtime runner remain intact until the
-replacement has successfully bootstrapped; a failed bootstrap restarts the
-previous loaded service. Keep old runtime release directories until both
-LaunchAgents have been verified on the new SHA.
+The service wakes at 09:00, 14:00, and 21:00 local time. WHOOP takes a durable,
+empty, owner-only local-date claim before any provider request, so only the
+first window can run its bundle. A crash or failure after the claim suppresses
+automatic WHOOP retries until the next local day, avoiding another rotating
+token refresh. 09:00 is preferred because recovery/sleep data is normally
+available after waking; 14:00 and 21:00 are fallbacks when the Mac was asleep.
+Oura and dashboard work still run in all three windows. The weekly pass runs
+only when today's WHOOP success marker exists and that window's Oura sync
+succeeds.
+
+`install-whoop-body-sync-launchagent.sh` remains only as a compatibility alias
+for the daily installer; never install it as a second service. On upgrade, the
+installer copies and fsyncs the legacy body plist to an owner-only hidden
+non-`.plist` recovery backup. On a legacy-only upgrade, it atomically puts a
+validated daily plist at the legacy path as a bridge before disabling and
+booting out the old label, then moves the bridge to the canonical daily path.
+When a canonical daily plist already exists, that plist supplies coverage and
+the installer retires the old label before removing its path, without creating
+a second daily-label plist. An empty owner-only migration marker makes every
+transitional path recoverable. Re-running the installer reconciles the marker,
+then finally verifies that the legacy plist and service are absent. The
+installer holds the same `whoop-sync.lock` as imports and repeats the PID check
+immediately before each bootout, so it waits for a provider call rather than
+killing one. Legacy logs and the validated recovery backup are preserved.
+Canonical plist publication, rollback, and removal validate the expected
+label, use same-directory atomic operations, and fsync the file and
+LaunchAgents directory. One shared owner-only transaction lock serializes both
+daily and watcher installers from preflight through commit or rollback, so
+cross-label cleanup and publication cannot interleave. A power loss after
+bootout but before bootstrap can leave the service temporarily unregistered;
+the fsynced canonical boot plist remains valid, so reboot or rerunning the
+installer converges. Rollout must verify the loaded service and rerun the
+installer if that gap was interrupted.
+
+Install the privacy-safe refresh watcher from the same release:
+
+```bash
+/absolute/path/to/whoop-runtime-releases/<sha>/scripts/install-whoop-refresh-watchdog-launchagent.sh \
+  --runtime-root /absolute/path/to/whoop-runtime-releases/<sha> \
+  --data-root /absolute/path/to/openhealth-data \
+  --revision <full-sha>
+```
+
+Before installation, set `OPENHEALTH_TELEGRAM_ALERT_CHAT_ID` in the data
+workspace's gitignored `.env` and keep the bot token in the owner-only `0600`
+`~/.openhealth/telegram.token` file. The watcher reacts to the fail-closed
+refresh marker and also checks every 120 seconds. It sends one alert per
+`state + recorded_at` incident and reports recovery only when a live-rotation
+gate proof is newer than the incident and a successful WHOOP import is newer
+than that proof. Its state and alerts contain only allowlisted operational
+fields—never tokens, provider response bodies, paths, or health values. All
+runners source the data workspace's gitignored `.env` and import Python only
+from the pinned runtime (`python -P`, `PYTHONSAFEPATH=1`). Keep old releases
+until the daily and watcher LaunchAgents have both been verified on the new SHA.
+
+Each runner shares a per-label lifecycle lock with its installer. Daily takes
+`daily-sync.lifecycle.lock` before creating the date claim and holds it through
+all WHOOP, Oura, weekly, and dashboard work; when WHOOP runs, the nested order
+is lifecycle lock then `whoop-sync.lock`. The watcher takes
+`whoop-refresh-watchdog.lifecycle.lock` before reading an incident and holds it
+through Telegram delivery and durable dedupe state. The installer takes the
+same lifecycle lock around the final state check and bootout (and also takes
+`whoop-sync.lock` for daily). Thus a start after the final check blocks before a
+claim or alert send and can be stopped safely; a visible process makes the
+installer refuse and retry. Legacy body retirement uses only
+`whoop-sync.lock`, because that runner has no daily claim.
+
+Before loading either LaunchAgent, the installer creates or validates every
+stdout/stderr path through pinned `scripts/operational_file.py`. Each path must be
+absolute and name a single-link regular file, never a symlink, with owner-only
+`0600` permissions. The helper uses non-following, non-blocking file opens and
+fsyncs a newly created file and its parent directory entry. The plist `Umask`
+is defense in depth, not a substitute for this check.
+
+If WHOOP is repaired after today's scheduled claim, the scheduler still will
+not retry it. Take/validate today's claim, run one direct bundled import, and
+write success only after that command exits successfully:
+
+```bash
+TODAY="$(unset TZ; date +%F)"
+DATA=/absolute/path/to/openhealth-data
+CLAIMS="$DATA/data/index/daily-sync-claims"
+PINNED_PYTHON=/absolute/path/to/python3
+RUNTIME=/absolute/path/to/whoop-runtime-releases/<sha>
+REVISION=<full-sha>
+set -a
+source "$DATA/.env"
+set +a
+unset TZ
+for name in "${!PYTHON@}"; do unset "$name"; done
+export PYTHONPATH="$RUNTIME" PYTHONSAFEPATH=1 PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
+"$PINNED_PYTHON" -P "$RUNTIME/scripts/build_pinned_runtime.py" verify \
+  --release "$RUNTIME" --revision "$REVISION" && \
+"$PINNED_PYTHON" -P "$RUNTIME/scripts/daily_sync_claim.py" claim \
+  --root "$CLAIMS" --date "$TODAY" && \
+(cd "$RUNTIME" && "$PINNED_PYTHON" -P -m openhealth --repo-root "$DATA" \
+  whoop-sync --no-profile --days-back 14 && \
+  "$PINNED_PYTHON" -P "$RUNTIME/scripts/daily_sync_claim.py" success \
+    --root "$CLAIMS" --date "$TODAY")
+```
+
+Never create the success marker before the direct import succeeds. Claim and
+success markers are empty and contain no health values.
 
 Rate limits: per-app defaults around 100 req/min and 10,000/day — a daily sync uses a handful of calls.
 
