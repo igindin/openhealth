@@ -84,6 +84,15 @@ Create credentials:
 5. Copy Client ID and Client Secret (the secret is server-side only).
 6. Export `OPENHEALTH_WHOOP_CLIENT_ID`, `OPENHEALTH_WHOOP_CLIENT_SECRET`, `OPENHEALTH_WHOOP_REDIRECT_URI` (optionally `OPENHEALTH_WHOOP_SCOPES`), then run `openhealth whoop-auth-url` and `openhealth whoop-exchange-code` to finish the flow; `openhealth whoop-sync` pulls data.
 
+Honest note: re-syncing a window replaces that window's records, but only for
+datasets that actually returned data. A dataset whose fetch came back empty
+keeps its existing records untouched (an empty response is indistinguishable
+from an API brownout, and deleting on it loses history that cannot be
+recovered), and the sync manifest records this as `Purge skipped for datasets
+without windowed data: …` — expect it routinely, e.g. `workouts` on a rest
+day. The guard covers a fully empty response, not a truncated one: a dataset
+that returns some records is trusted for the whole window.
+
 Rate limits: per-app defaults around 100 req/min and 10,000/day — a daily sync uses a handful of calls.
 
 ### Oura Ring — supported (export connector + live OAuth2 v2 connector)
@@ -103,7 +112,8 @@ Live pull: `connectors/oura_live.py` (CLI: `oura-auth-url`, `oura-exchange-code`
 Honest notes (verified against a live developer app):
 - Legacy Personal Access Tokens were **deprecated in December 2025** — OAuth2 is the only auth method now.
 - Token exchange happens at Oura's Ory identity server (`https://moi.ouraring.com/oauth/v2/ext/oauth-token`), not the legacy `api.ouraring.com/oauth/token` (which now returns `400 invalid_request`). The data API stays on `https://api.ouraring.com/v2`.
-- `daily_spo2` needs the separate `spo2` OAuth scope; `oura-sync` skips any collection the granted token can't reach (with a note) instead of aborting.
+- `daily_spo2` needs the separate `spo2` OAuth scope; `oura-sync` skips any collection the granted token can't reach (with a note) instead of aborting, as long as at least one requested collection succeeds — if every collection fails (an outage, or a single-collection sync without its scope) the sync aborts with an error rather than reporting an empty success. A skipped or empty collection is also excluded from the idempotency purge, so its existing records are never deleted on the strength of a failed fetch. As with WHOOP, that guard covers a fully empty collection, not a truncated one.
+- The API filters `/sleep` by the period's **`bedtime_start`**, not by the `day` it is attributed to, so the night filed under a window's first day (which began the evening before) is not returned by a fetch starting on that day. `oura-sync` therefore fetches period collections one day further back; the extra day's records simply upsert.
 
 ### Garmin — supported (export connector; official API is business-gated)
 

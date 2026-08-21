@@ -361,6 +361,189 @@ class SyncMappingTests(unittest.TestCase):
         self.assertEqual(end, "2026-06-30")
         self.assertEqual(start, "2026-05-31")
 
+    def test_total_outage_raises_and_never_purges(self):
+        # If every collection errors (OuraApiError also wraps plain network
+        # failures), the fetch comes back empty — treating that as "no data"
+        # would let the idempotency purge delete every existing in-window
+        # record while the sync reports success. It must raise instead,
+        # leaving the database untouched.
+        db = self.root / "data" / "index" / "health_os.sqlite3"
+        oura_live.sync_oura(self.root, start="2026-06-01", end="2026-06-01", client=_StubClient())
+        count_before = len(index.list_records_by_source(db, "oura-live"))
+        self.assertGreater(count_before, 0)
+
+        class _OutageClient:
+            def list_collection(self, path, start, end):
+                raise oura_live.OuraApiError("Oura %s failed: simulated network failure" % path)
+
+        with self.assertRaises(oura_live.OuraApiError):
+            oura_live.sync_oura(self.root, start="2026-06-01", end="2026-06-01", client=_OutageClient())
+        count_after = len(index.list_records_by_source(db, "oura-live"))
+        self.assertEqual(count_before, count_after)
+
+    def test_partial_fetch_protects_failed_collection_but_still_purges_healthy_ones(self):
+        # One collection failing (e.g. daily_spo2 without the spo2 scope) must
+        # not abort the sync, and must not have its existing records purged —
+        # while the collections that DID fetch keep their idempotency cleanup.
+        db = self.root / "data" / "index" / "health_os.sqlite3"
+        oura_live.sync_oura(self.root, start="2026-06-01", end="2026-06-01", client=_StubClient())
+
+        # A stale record of a healthy collection: right id shape, in-window
+        # date, but never re-emitted by the API.
+        stale_readiness = {
+            "id": "obs-oura-live-daily-readiness-recovery_score-stale",
+            "record_type": "Observation",
+            "source_id": "oura-live",
+            "title": "Oura recovery score (stale)",
+            "summary": "recovery_score = 50 %",
+            "artifact_ids": [],
+            "evidence_class": "personal",
+            "confidence": 0.9,
+            "date": "2026-06-01",
+            "metadata": {"connector": "oura-live", "collection": "daily_readiness"},
+            "observation_kind": "recovery",
+            "metric_name": "recovery_score",
+            "value": 50,
+            "unit": "%",
+        }
+        index.upsert_record(db, stale_readiness)
+
+        class _PartialClient(_StubClient):
+            def list_collection(self, path, start, end):
+                if path == "/daily_spo2":
+                    raise oura_live.OuraApiError("Oura %s failed: HTTP 403" % path)
+                return super().list_collection(path, start, end)
+
+        result = oura_live.sync_oura(
+            self.root, start="2026-06-01", end="2026-06-01", client=_PartialClient()
+        )
+        self.assertGreater(result["records_imported"], 0)
+
+        records = index.list_records_by_source(db, "oura-live")
+        ids = {record["id"] for record in records}
+        spo2 = _by(records, "spo2_pct", "2026-06-01")
+        self.assertIsNotNone(spo2, "existing spo2 record must survive a partial fetch")
+        self.assertNotIn(
+            stale_readiness["id"], ids,
+            "healthy collections must keep their idempotency cleanup",
+        )
+
+    def test_window_first_day_keeps_its_sleep_period(self):
+        # Oura filters /sleep by the period's bedtime_start, not by the day it
+        # is attributed to: the night filed under the window's first day began
+        # the evening before, so a fetch starting exactly on that day never
+        # returns it — and the purge then deleted it as "not re-emitted".
+        # Because the scheduled window advances daily, that destroyed one day
+        # of sleep metrics (HRV, resting HR, sleep stages) every single run.
+        # The connector must look one day further back for period collections.
+        db = self.root / "data" / "index" / "health_os.sqlite3"
+
+        class _BoundaryClient(_StubClient):
+            """/sleep honours start_date against bedtime_start, like the API."""
+
+            NIGHT = {
+                "id": "sleep-boundary",
+                "day": "2026-06-01",
+                "bedtime_start": "2026-05-31T23:10:00+00:00",
+                "average_hrv": 65,
+                "lowest_heart_rate": 48,
+                "total_sleep_duration": 27000,
+            }
+
+            def list_collection(self, path, start, end):
+                self.seen.append((path, start, end))
+                if path == "/sleep":
+                    if start <= "2026-05-31":
+                        return [{"data": [self.NIGHT], "next_token": None}]
+                    return [{"data": [], "next_token": None}]
+                return [self.PAGES[path]]
+
+        oura_live.sync_oura(
+            self.root, start="2026-06-01", end="2026-06-01", client=_BoundaryClient()
+        )
+        hrv = _by(index.list_records_by_source(db, "oura-live"), "hrv_rmssd_milli", "2026-06-01")
+        self.assertIsNotNone(
+            hrv, "the window's first day must keep its sleep metrics"
+        )
+
+        # And re-syncing the same window must not erode it either.
+        oura_live.sync_oura(
+            self.root, start="2026-06-01", end="2026-06-01", client=_BoundaryClient()
+        )
+        hrv_again = _by(index.list_records_by_source(db, "oura-live"), "hrv_rmssd_milli", "2026-06-01")
+        self.assertIsNotNone(hrv_again, "a repeated sync must stay idempotent, not erosive")
+
+    def test_lookback_only_night_does_not_unlock_the_purge(self):
+        # Period collections are fetched one day early, so a brownout can come
+        # back holding ONLY that pre-window night. That is no evidence about
+        # the window itself — it must not count as "this collection returned
+        # data" and let the purge delete the window's existing sleep records.
+        db = self.root / "data" / "index" / "health_os.sqlite3"
+
+        class _LookbackOnlyClient(_StubClient):
+            NIGHT = {
+                "id": "sleep-before-window",
+                "day": "2026-05-31",
+                "bedtime_start": "2026-05-30T23:10:00+00:00",
+                "average_hrv": 61,
+                "total_sleep_duration": 26000,
+            }
+
+            def list_collection(self, path, start, end):
+                self.seen.append((path, start, end))
+                if path == "/sleep":
+                    return [{"data": [self.NIGHT], "next_token": None}]
+                return [self.PAGES[path]]
+
+        oura_live.sync_oura(self.root, start="2026-06-01", end="2026-06-01", client=_StubClient())
+        self.assertIsNotNone(
+            _by(index.list_records_by_source(db, "oura-live"), "hrv_rmssd_milli", "2026-06-01")
+        )
+
+        oura_live.sync_oura(
+            self.root, start="2026-06-01", end="2026-06-01", client=_LookbackOnlyClient()
+        )
+        self.assertIsNotNone(
+            _by(index.list_records_by_source(db, "oura-live"), "hrv_rmssd_milli", "2026-06-01"),
+            "a fetch holding only the pre-window night must not purge the window",
+        )
+
+    def test_empty_collection_is_not_purged(self):
+        # A collection that "succeeds" with zero records (a brownout returning
+        # 200-with-empty-lists) is no evidence its history is gone — its
+        # existing in-window records must survive.
+        db = self.root / "data" / "index" / "health_os.sqlite3"
+        oura_live.sync_oura(self.root, start="2026-06-01", end="2026-06-01", client=_StubClient())
+        spo2_before = _by(index.list_records_by_source(db, "oura-live"), "spo2_pct", "2026-06-01")
+        self.assertIsNotNone(spo2_before)
+
+        class _EmptySpo2Client(_StubClient):
+            def list_collection(self, path, start, end):
+                if path == "/daily_spo2":
+                    return [{"data": [], "next_token": None}]
+                return super().list_collection(path, start, end)
+
+        oura_live.sync_oura(self.root, start="2026-06-01", end="2026-06-01", client=_EmptySpo2Client())
+        spo2_after = _by(index.list_records_by_source(db, "oura-live"), "spo2_pct", "2026-06-01")
+        self.assertIsNotNone(spo2_after, "an empty fetch must not delete existing records")
+
+
+class CollectionClassificationTests(unittest.TestCase):
+    def test_every_collection_is_classified_by_its_filter_semantics(self):
+        # Oura filters some collections by the day and others by the period's
+        # start timestamp; the latter need a lookback day or their first day
+        # is eroded on every sync. A new collection must be classified, not
+        # silently default into the eroding behaviour.
+        self.assertEqual(
+            set(oura_live._COLLECTIONS),
+            set(oura_live._PERIOD_COLLECTIONS) | set(oura_live._DAILY_COLLECTIONS),
+            "every collection must be listed as period-filtered or day-filtered",
+        )
+        self.assertFalse(
+            set(oura_live._PERIOD_COLLECTIONS) & set(oura_live._DAILY_COLLECTIONS),
+            "a collection cannot be both",
+        )
+
 
 class ClientPaginationTests(unittest.TestCase):
     def test_client_follows_next_token(self):
