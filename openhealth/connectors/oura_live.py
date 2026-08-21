@@ -216,6 +216,24 @@ _COLLECTIONS: Dict[str, Tuple[str, Dict[str, Tuple[str, str]], str]] = {
     "daily_spo2": ("/daily_spo2", _SPO2_FIELDS, "oura_spo2"),
 }
 
+# Collections the API filters by the period's START timestamp rather than by
+# the day the period is attributed to. A night filed under day D typically
+# begins the evening of D-1, so requesting exactly D never returns it — while
+# the record we build is still dated D, and the idempotency purge below would
+# then delete it as "not re-emitted". Fetch one extra day back for these so the
+# window's first day comes back intact. The extra day's records simply upsert;
+# they fall outside the purge window, so nothing else is affected.
+_PERIOD_COLLECTIONS = frozenset({"sleep"})
+
+# Collections the API filters by the day itself, so no lookback is needed.
+# Every key of _COLLECTIONS must be classified in exactly one of these two
+# sets and the test suite enforces it: wiring up another start-timestamp
+# collection (``/workout`` is one) without classifying it would silently
+# reintroduce the erosion above, and nothing else would catch it.
+_DAILY_COLLECTIONS = frozenset(
+    {"daily_readiness", "daily_sleep", "daily_activity", "daily_spo2"}
+)
+
 
 # --------------------------------------------------------------------------- #
 # Config / env
@@ -411,8 +429,11 @@ def sync_oura(
             notes.append("Unknown collection skipped: %s" % name)
             continue
         endpoint, field_map, kind_label = spec
+        fetch_start = start_value
+        if name in _PERIOD_COLLECTIONS:
+            fetch_start = (_to_date(start_value) - timedelta(days=1)).isoformat()
         try:
-            pages = client.list_collection(endpoint, start_value, end_value)
+            pages = client.list_collection(endpoint, fetch_start, end_value)
         except OuraApiError as exc:
             # A collection the granted token can't reach (e.g. daily_spo2 without
             # the spo2 scope) must not abort the whole sync — skip it with a note
@@ -427,6 +448,19 @@ def sync_oura(
                 collection_records.extend(_map_summary(name, item, field_map, kind_label))
             if page.get("next_token"):
                 notes.append("%s returned a pagination token." % name)
+        # A sync writes exactly the window it was asked for. The extra day a
+        # period collection fetches exists only so that periods ATTRIBUTED to
+        # the window's first day come back; records attributed to the lookback
+        # day itself are outside the request. Keeping them would write rows no
+        # later run can ever purge — the window only moves forward — and would
+        # misreport coverage and counts. Dropping them also means an otherwise
+        # healthy fetch holding nothing but that night reads as "no data for
+        # the window", so it cannot unlock the purge below.
+        collection_records = [
+            record
+            for record in collection_records
+            if record.get("date") and start_value[:10] <= record["date"] <= end_value[:10]
+        ]
         raw_counts[name] = len(collection_records)
         records.extend(collection_records)
 
@@ -462,7 +496,8 @@ def sync_oura(
     unpurged = sorted(set(attempted) - set(purgeable))
     if unpurged:
         notes.append(
-            "Purge skipped for collections without a complete, non-empty fetch: %s."
+            "Purge skipped for collections that returned no usable data for "
+            "the window (errored, or empty): %s."
             % ", ".join(unpurged)
         )
     for record in records:
