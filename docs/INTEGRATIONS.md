@@ -113,6 +113,7 @@ Honest notes (verified against a live developer app):
 - Legacy Personal Access Tokens were **deprecated in December 2025** — OAuth2 is the only auth method now.
 - Token exchange happens at Oura's Ory identity server (`https://moi.ouraring.com/oauth/v2/ext/oauth-token`), not the legacy `api.ouraring.com/oauth/token` (which now returns `400 invalid_request`). The data API stays on `https://api.ouraring.com/v2`.
 - `daily_spo2` needs the separate `spo2` OAuth scope; `oura-sync` skips any collection the granted token can't reach (with a note) instead of aborting, as long as at least one requested collection succeeds — if every collection fails (an outage, or a single-collection sync without its scope) the sync aborts with an error rather than reporting an empty success. A skipped or empty collection is also excluded from the idempotency purge, so its existing records are never deleted on the strength of a failed fetch. As with WHOOP, that guard covers a fully empty collection, not a truncated one.
+- The API filters `/sleep` by the period's **`bedtime_start`**, not by the `day` it is attributed to, so the night filed under a window's first day (which began the evening before) is not returned by a fetch starting on that day. `oura-sync` therefore fetches period collections one day further back; the extra day's records simply upsert.
 
 ### Garmin — supported (export connector; official API is business-gated)
 
