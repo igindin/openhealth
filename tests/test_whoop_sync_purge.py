@@ -1,14 +1,25 @@
 """WHOOP sync must never purge its window without windowed evidence.
 
-The idempotency purge (delete in-window records the API did not re-emit) is
-only safe after the windowed datasets (cycles/recoveries/sleeps/workouts)
-actually return data. A fetch where they all come back empty — an API
-brownout returning 200-with-empty-lists — must leave the database
-untouched, or the purge deletes the whole sync window. The evidence is
-per-dataset: cycles answering says nothing about sleeps, and the profile /
-body-measurement datasets answer independently of the window entirely, so
-neither may put another dataset's records on the purge list. All data is
-synthetic.
+The idempotency purge deletes stored records the API did not re-emit, and
+only records the fetched window proves stale: a record whose whole provider
+interval [start, end] lies inside the window with ``WHOOP_PURGE_MARGIN`` to
+spare at both edges (a recovery borrows its sleep's interval, or its
+cycle's), or a metric whose parent event came back without it. WHOOP filters
+on timestamps, so an item that ended before the window opened is absent, not
+deleted; an unknown interval keeps the record, the attributed date never
+decides, and a per-dataset breaker keeps everything when too many in-window
+events are missing at once. ``test_whoop_purge_interval.py`` covers that rule
+in detail; every stored record seeded here carries a realistic in-window
+provider interval, so the guard under test is the only reason it survives.
+
+The purge is also only safe after the windowed datasets
+(cycles/recoveries/sleeps/workouts) actually return data. A fetch where they
+all come back empty — an API brownout returning 200-with-empty-lists — must
+leave the database untouched, or the purge deletes the whole sync window. The
+evidence is per-dataset: cycles answering says nothing about sleeps, and the
+profile / body-measurement datasets answer independently of the window
+entirely, so neither may put another dataset's records on the purge list. All
+data is synthetic.
 
 Run directly:  PYTHONPATH=$PWD python3 tests/test_whoop_sync_purge.py
 """
@@ -44,9 +55,30 @@ class _OneCycleClient(_EmptyWindowClient):
         return [{"records": [{"id": "c-new", "start": "2026-07-27T08:00:00Z", "score": {"strain": 9.5}}]}]
 
 
-def _seed_record(db_path, record_id, event_kind):
+# Stored items lying wholly inside the tests' window (2026-07-26T00:00:00Z to
+# 2026-07-28T23:59:59Z) with the purge margin to spare at both edges, so the
+# purge rule itself would delete them once their dataset returned data.
+_IN_WINDOW_ITEMS = {
+    "whoop_cycle": {
+        "start": "2026-07-26T22:30:00.000Z",
+        "end": "2026-07-27T21:15:00.000Z",
+        "timezone_offset": "+02:00",
+        "score_state": "SCORED",
+    },
+    "whoop_sleep": {
+        "start": "2026-07-26T22:30:00.000Z",
+        "end": "2026-07-27T06:20:00.000Z",
+        "timezone_offset": "+02:00",
+        "nap": False,
+        "score_state": "SCORED",
+    },
+}
+_RECORD_ID_PREFIX = {"whoop_cycle": "whoop-cycle-", "whoop_sleep": "whoop-sleep-"}
+
+
+def _seed_record(db_path, item_id, event_kind):
     record = {
-        "id": record_id,
+        "id": _RECORD_ID_PREFIX[event_kind] + item_id,
         "record_type": "TimelineEvent",
         "source_id": WHOOP_SOURCE_ID,
         "title": "Existing record",
@@ -56,13 +88,14 @@ def _seed_record(db_path, record_id, event_kind):
         "confidence": 0.95,
         "date": "2026-07-27",
         "event_kind": event_kind,
+        "metadata": dict(_IN_WINDOW_ITEMS[event_kind], id=item_id),
     }
     index.upsert_record(db_path, record)
     return record
 
 
-def _seed_cycle(db_path, record_id="whoop-cycle-existing"):
-    return _seed_record(db_path, record_id, "whoop_cycle")
+def _seed_cycle(db_path, item_id="existing"):
+    return _seed_record(db_path, item_id, "whoop_cycle")
 
 
 class EmptyFetchPurgeTests(unittest.TestCase):
@@ -122,7 +155,7 @@ class EmptyFetchPurgeTests(unittest.TestCase):
     def test_windowed_data_still_purges_stale_records(self):
         # The guard must not disable the cleanup: once a windowed dataset
         # returns data, a stale in-window record that was not re-emitted goes.
-        stale = _seed_cycle(self.paths.db_path, record_id="whoop-cycle-stale")
+        stale = _seed_cycle(self.paths.db_path, item_id="stale")
 
         summary = sync_whoop(
             self.root,
@@ -142,10 +175,8 @@ class EmptyFetchPurgeTests(unittest.TestCase):
         # about sleeps. If sleeps comes back 200-with-empty-list, its existing
         # in-window records must survive — while the cycles dataset (which DID
         # return data) still gets its stale records cleaned up.
-        stale_cycle = _seed_cycle(self.paths.db_path, record_id="whoop-cycle-stale")
-        existing_sleep = _seed_record(
-            self.paths.db_path, "whoop-sleep-existing", "whoop_sleep"
-        )
+        stale_cycle = _seed_cycle(self.paths.db_path, item_id="stale")
+        existing_sleep = _seed_record(self.paths.db_path, "existing", "whoop_sleep")
 
         summary = sync_whoop(
             self.root,
