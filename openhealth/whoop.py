@@ -7,7 +7,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.error import URLError
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -22,6 +22,10 @@ from .storage import ensure_repo_structure, now_utc, sha256sum, slugify, write_j
 AUTHORIZATION_URL = "https://api.prod.whoop.com/oauth/oauth2/auth"
 TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
 API_BASE_URL = "https://api.prod.whoop.com/developer/v2"
+# Items per page the client asks for. WHOOP pages every collection newest
+# first, so the window purge treats an answer this long or longer as one that
+# may have lost its oldest page (see ``plan_whoop_purge``).
+WHOOP_PAGE_LIMIT = 25
 WHOOP_SOURCE_ID = "whoop-live"
 # WHOOP sits behind Cloudflare, which bans the default urllib User-Agent
 # (Error 1010 "browser_signature_banned"). Send a browser-like UA so OAuth
@@ -233,7 +237,7 @@ class WhoopClient:
         next_token = None
         pages: List[Dict[str, Any]] = []
         while True:
-            query = {"limit": 25}
+            query = {"limit": WHOOP_PAGE_LIMIT}
             if start:
                 query["start"] = start
             if end:
@@ -323,7 +327,31 @@ def sync_whoop(
 
     if not records:
         parser_notes.append("WHOOP sync returned no records for the requested window.")
-    replaced_ids = purge_existing_whoop_records(paths.db_path, records, start_value, end_value)
+    # Only datasets that actually returned data are replace candidates: a
+    # dataset that came back empty (an API brownout answering
+    # 200-with-empty-lists) has given this run no evidence about the window,
+    # and purging on no evidence deletes existing history. The profile/body
+    # datasets never count — they answer independently of the window.
+    purgeable_datasets = [
+        name for name in _WINDOWED_DATASET_KINDS if raw_counts.get(name, 0) > 0
+    ]
+    # A stored record counts as stale only when its provider interval lies
+    # inside the window with a margin (``plan_whoop_purge``), never by date.
+    purge_plan = plan_whoop_purge(
+        index.list_records_by_source(paths.db_path, WHOOP_SOURCE_ID),
+        records,
+        start_value,
+        end_value,
+        purgeable_datasets,
+    )
+    replaced_ids = purge_plan.ids
+    index.delete_records_by_ids(paths.db_path, replaced_ids)
+    unpurged = sorted(set(_WINDOWED_DATASET_KINDS) - set(purgeable_datasets))
+    if unpurged:
+        parser_notes.append(
+            "Purge skipped for datasets without windowed data: %s." % ", ".join(unpurged)
+        )
+    parser_notes.extend(purge_plan.notes)
     for artifact in artifacts:
         write_json(paths.artifact_manifests / ("%s.json" % artifact["artifact_id"]), artifact)
         index.upsert_artifact(paths.db_path, artifact)
@@ -374,6 +402,14 @@ def sync_whoop(
         "artifacts_archived": len(artifacts),
         "collections": raw_counts,
         "replaced_record_ids": len(replaced_ids),
+        # Counts only: stale records deleted per dataset that returned data;
+        # stale events kept per dataset whose breaker tripped; events kept at
+        # the old edge of an answer that may have lost its oldest page; and
+        # metrics kept because their event came back without a score.
+        "stale_purged": dict(purge_plan.stale_purged),
+        "purge_suppressed": dict(purge_plan.purge_suppressed),
+        "old_edge_kept": dict(purge_plan.old_edge_kept),
+        "unscored_kept": dict(purge_plan.unscored_kept),
         "contexts": context_stats,
         "capabilities": CAPABILITIES,
     }
@@ -741,16 +777,471 @@ def normalize_workouts(items: Iterable[Dict[str, Any]], artifact_id: str, source
     return records
 
 
-def purge_existing_whoop_records(db_path: Path, new_records: List[Dict[str, Any]], start: str, end: str) -> List[str]:
-    existing = index.list_records_by_source(db_path, WHOOP_SOURCE_ID)
-    target_ids = {record["id"] for record in new_records}
+_WINDOWED_DATASET_KINDS = {
+    "cycles": ("whoop_cycle", "whoop_cycle_metric"),
+    "recoveries": ("whoop_recovery", "whoop_recovery_metric"),
+    "sleeps": ("whoop_sleep", "whoop_sleep_metric"),
+    "workouts": ("whoop_workout", "whoop_workout_metric"),
+}
+
+
+# A stored record counts as stale only when its whole provider interval lies at
+# least this far inside the fetched window, at both edges, because:
+# - WHOOP revises item boundaries for days after an item ends (sleep ends have
+#   moved up to about 5 h later, a workout's start 15 min earlier), so a stored
+#   interval can be hours off the provider's current one;
+# - a recovery's created_at can lag the end of its sleep by up to about 6 h;
+# - a record wholly inside the window by this margin is returned under every
+#   plausible filter model (interval overlap, start point, end point), so the
+#   decision holds even if WHOOP changes how it filters.
+WHOOP_PURGE_MARGIN = timedelta(hours=6)
+# Safety breaker against a well-formed answer that lost many items. Per
+# dataset: when more of its stored events inside the margin window are missing
+# (those the old-edge guard keeps included, see WHOOP_PAGE_LIMIT) than this
+# many, and than this percentage of those events rounded up, the run deletes
+# none of that dataset's interval-stale records.
+WHOOP_PURGE_BREAKER_MIN_EVENTS = 3
+WHOOP_PURGE_BREAKER_PERCENT = 10
+
+# Where each windowed kind's provider interval comes from. A recovery has no
+# interval of its own: WHOOP returns a recovery exactly when it returns the
+# recovery's sleep, so recovery events and metrics borrow that sleep's interval
+# (or, with no sleep on record, the enclosing cycle's, which contains it).
+_PURGE_INTERVAL_SOURCE = {
+    "whoop_cycle": "item",
+    "whoop_cycle_metric": "item",
+    "whoop_sleep": "item",
+    "whoop_sleep_metric": "item",
+    "whoop_workout": "item",
+    "whoop_workout_metric": "item",
+    "whoop_recovery": "linked_sleep",
+    "whoop_recovery_metric": "linked_sleep",
+}
+
+# The parent event of each metric kind: its id pattern, and the raw-item fields
+# the normalizers build the id from, in their order (``str(first or second)``).
+_PURGE_PARENT_ID = {
+    "whoop_cycle_metric": ("whoop-cycle-%s", ("id", "cycle_id")),
+    "whoop_recovery_metric": ("whoop-recovery-%s", ("cycle_id", "id")),
+    "whoop_sleep_metric": ("whoop-sleep-%s", ("id", "sleep_id")),
+    "whoop_workout_metric": ("whoop-workout-%s", ("id", "workout_id")),
+}
+
+# Event kinds a recovery links to, looked up by record id.
+_PURGE_LINK_KINDS = ("whoop_sleep", "whoop_cycle")
+
+_Interval = Tuple[datetime, datetime]
+
+
+@dataclass(frozen=True)
+class WhoopPurgePlan:
+    """What one WHOOP window re-sync deletes, with per-dataset counts only.
+
+    ``ids`` is sorted: every re-emitted id (rewritten in place) plus each stale
+    id. ``stale_purged`` counts the stale records (events and metrics) deleted
+    in each dataset that returned data. ``purge_suppressed`` counts, for each
+    dataset whose breaker tripped, the stale events kept. ``old_edge_kept``
+    counts, per dataset, the events (their metrics go with them) kept because
+    they start before, or within the margin after, the oldest item of an
+    answer that may have lost its oldest page. ``unscored_kept`` counts, per
+    dataset, the metrics kept because their event came back without any
+    metric. The last three list only datasets with something kept, and
+    ``notes`` explains each of them for the source manifest.
+    """
+
+    ids: List[str]
+    stale_purged: Dict[str, int]
+    purge_suppressed: Dict[str, int]
+    notes: List[str]
+    old_edge_kept: Dict[str, int]
+    unscored_kept: Dict[str, int]
+
+
+def plan_whoop_purge(
+    existing_records: Iterable[Dict[str, Any]],
+    new_records: List[Dict[str, Any]],
+    start: str,
+    end: str,
+    datasets: Iterable[str],
+) -> WhoopPurgePlan:
+    """Plan which WHOOP records a re-sync of ``start``..``end`` replaces.
+
+    Pure: it reads only its arguments and writes nothing. The caller deletes
+    ``ids`` and then upserts ``new_records`` (``sync_whoop`` does; so does
+    ``purge_existing_whoop_records`` for direct callers).
+
+    Every id in ``new_records`` is replaced, because it is rewritten. An existing
+    record that was not re-emitted is deleted as stale only when
+
+    - its dataset is in ``datasets``, the windowed datasets that returned data
+      this run: an empty answer (an API brownout's 200 with empty lists) is no
+      evidence about the window, so that dataset keeps its history. It is
+      required rather than defaulted, because the only sensible default,
+      "every dataset", turns a brownout into data loss. Body measurements and
+      the profile are never candidates, since no window answers for them; and
+    - either its parent event was re-emitted without it (the fresh item no
+      longer carries that metric), whatever its interval, or its whole provider
+      interval lies inside the window with ``WHOOP_PURGE_MARGIN`` to spare:
+      ``start + margin <= interval start`` and ``interval end <= end - margin``.
+
+    WHOOP filters on timestamps, never on dates: it returns an item when the
+    item's interval overlaps the window (an open item always), and a recovery
+    exactly when it returns the recovery's sleep. Cycles, sleeps and workouts,
+    events and metrics alike, take their interval from the raw item's start and
+    end. Recoveries take their linked sleep's (this run's version first, then
+    the stored one), or their cycle's when no sleep is on record. A missing,
+    open or unparseable boundary makes the interval unknown, and an unknown
+    interval keeps the record. The attributed date never decides.
+
+    The trade-off is deliberate. WHOOP's own overlap rule would also delete an
+    item it dropped near a window edge; the margin keeps such an item until a
+    later window covers it with room to spare, which for the leading edge of a
+    scheduled window is never (a backfill with an earlier ``--start`` reaches
+    it). In exchange a record the provider still has, merely absent because it
+    ended before the window or because its boundaries moved, is never deleted.
+
+    Two guards keep what an answer cannot speak for:
+
+    - The old edge. WHOOP pages each collection newest first, so an answer of
+      ``WHOOP_PAGE_LIMIT`` or more events may have lost its oldest page without
+      a sign. In such an answer an event that starts before, or within
+      ``WHOOP_PURGE_MARGIN`` after, the oldest returned event's start (a
+      recovery by its sleep, else its cycle, as above) is kept with its
+      metrics, because a stored start can lag a revised one; so is every
+      missing event when no returned event has a known interval. A shorter
+      answer was a single page that was not full, so it reached the end of the
+      collection.
+    - The unscored event. A re-emitted event that normalized to no metric at
+      all (WHOOP is re-scoring it, gave up on it, or answered without scores)
+      says nothing about its stored metrics: they are kept whatever their
+      interval. An event that came back with any metric retires the ones it
+      no longer carries.
+
+    A per-dataset breaker guards against a well-formed answer that lost many
+    items: when more of a dataset's stored events inside the margin window are
+    missing (those kept at the old edge included) than
+    ``max(WHOOP_PURGE_BREAKER_MIN_EVENTS, ceil(WHOOP_PURGE_BREAKER_PERCENT
+    percent of them))``, none of that dataset's interval-stale records goes
+    (metrics retired by a re-emitted parent with metrics still do) and the
+    plan reports it. The guards therefore only ever keep more than the
+    interval rule and breaker alone would.
+    """
+    window_start = _parse_iso_datetime(start)
+    window_end = _parse_iso_datetime(end)
+    margin_window: Optional[_Interval]
+    try:
+        margin_window = (window_start + WHOOP_PURGE_MARGIN, window_end - WHOOP_PURGE_MARGIN)
+    except OverflowError:
+        # The window opens less than the margin before the latest representable
+        # instant, or closes less than the margin after the earliest: no instant
+        # lies the margin inside it, so nothing is interval-stale.
+        margin_window = None
+    # Either argument may be a one-shot iterable: read each exactly once.
+    existing = list(existing_records)
+    fresh = list(new_records)
+    reemitted = {record["id"] for record in fresh}
+    purgeable = sorted({name for name in datasets if name in _WINDOWED_DATASET_KINDS})
+    dataset_of_kind = {kind: name for name in purgeable for kind in _WINDOWED_DATASET_KINDS[name]}
+    links = _purge_link_intervals(existing, fresh)
+    scored_parents = _scored_parent_ids(fresh)
+    old_edges = _answer_old_edges(fresh, purgeable, links)
+
+    def inside(interval: Optional[_Interval]) -> bool:
+        if interval is None or margin_window is None:
+            return False
+        return margin_window[0] <= interval[0] and interval[1] <= margin_window[1]
+
+    def beyond_answer(dataset: str, interval: _Interval) -> bool:
+        if dataset not in old_edges:
+            return False
+        edge = old_edges[dataset][0]
+        return edge is None or interval[0] <= edge
+
+    in_window_events = dict.fromkeys(purgeable, 0)
+    missing_events = dict.fromkeys(purgeable, 0)
+    old_edge_kept = dict.fromkeys(purgeable, 0)
+    unscored_kept = dict.fromkeys(purgeable, 0)
+    stale_by_interval: Dict[str, List[str]] = {name: [] for name in purgeable}
+    stale_by_parent: Dict[str, List[str]] = {name: [] for name in purgeable}
     for record in existing:
-        record_date = record.get("date") or record.get("start_date")
-        if record["id"] in target_ids:
-            target_ids.add(record["id"])
-        elif record_date and start[:10] <= record_date <= end[:10]:
-            target_ids.add(record["id"])
-    to_delete = sorted(target_ids)
+        record_id = record.get("id")
+        if not isinstance(record_id, str) or _never_purged(record):
+            continue
+        kind = record.get("observation_kind") or record.get("event_kind")
+        dataset = dataset_of_kind.get(kind)
+        if dataset is None:
+            continue
+        is_event = kind == _WINDOWED_DATASET_KINDS[dataset][0]
+        metadata = record.get("metadata")
+        if record_id in reemitted:
+            if is_event and inside(_purge_interval(kind, metadata, links)):
+                in_window_events[dataset] += 1
+            continue
+        if not is_event:
+            parent_id = _purge_parent_id(kind, metadata)
+            if parent_id in reemitted:
+                # The parent came back: the metric's absence is evidence only
+                # when the parent carries a score this time.
+                if parent_id in scored_parents:
+                    stale_by_parent[dataset].append(record_id)
+                else:
+                    unscored_kept[dataset] += 1
+                continue
+        interval = _purge_interval(kind, metadata, links)
+        if interval is None or not inside(interval):
+            continue
+        if beyond_answer(dataset, interval):
+            # Kept whatever the breaker decides, yet still missing: the breaker
+            # weighs the whole shortfall, so this guard only ever keeps more
+            # than the interval rule alone would, never lets more go.
+            if is_event:
+                old_edge_kept[dataset] += 1
+                in_window_events[dataset] += 1
+                missing_events[dataset] += 1
+            continue
+        if is_event:
+            in_window_events[dataset] += 1
+            missing_events[dataset] += 1
+        stale_by_interval[dataset].append(record_id)
+
+    selected = set(reemitted)
+    stale_purged: Dict[str, int] = {}
+    purge_suppressed: Dict[str, int] = {}
+    notes: List[str] = []
+    for name in purgeable:
+        stale = list(stale_by_parent[name])
+        limit = _purge_breaker_limit(in_window_events[name])
+        if missing_events[name] > limit:
+            purge_suppressed[name] = missing_events[name]
+            notes.append(
+                "Purge suppressed for %s: %d of %d stored events inside the window were missing "
+                "from the answer (limit %d); kept them and their metrics."
+                % (name, missing_events[name], in_window_events[name], limit)
+            )
+        else:
+            stale.extend(stale_by_interval[name])
+        if old_edge_kept[name]:
+            edge, answered = old_edges[name]
+            if edge is None:
+                notes.append(
+                    "Old edge kept for %s: none of the %d items in the answer has a known start and end, "
+                    "so %d stored events missing from it were kept with their metrics."
+                    % (name, answered, old_edge_kept[name])
+                )
+            else:
+                notes.append(
+                    "Old edge kept for %s: %d stored events start before, or within %d h after, the oldest "
+                    "of the %d items in the answer, which may have been cut short there; kept them and "
+                    "their metrics."
+                    % (name, old_edge_kept[name], WHOOP_PURGE_MARGIN // timedelta(hours=1), answered)
+                )
+        if unscored_kept[name]:
+            notes.append(
+                "Unscored events for %s: %d stored metrics belong to events that came back without any "
+                "metric; kept them." % (name, unscored_kept[name])
+            )
+        stale_purged[name] = len(stale)
+        selected.update(stale)
+    return WhoopPurgePlan(
+        ids=sorted(selected),
+        stale_purged=stale_purged,
+        purge_suppressed=purge_suppressed,
+        notes=notes,
+        old_edge_kept={name: count for name, count in old_edge_kept.items() if count},
+        unscored_kept={name: count for name, count in unscored_kept.items() if count},
+    )
+
+
+def _scored_parent_ids(new_records: List[Dict[str, Any]]) -> Set[str]:
+    """The events this run re-emitted with at least one metric of their own."""
+    parents: Set[str] = set()
+    for record in new_records:
+        parent_id = _purge_parent_id(record.get("observation_kind"), record.get("metadata"))
+        if parent_id is not None:
+            parents.add(parent_id)
+    return parents
+
+
+def _answer_old_edges(
+    new_records: List[Dict[str, Any]],
+    purgeable: List[str],
+    links: Dict[str, Optional[_Interval]],
+) -> Dict[str, Tuple[Optional[datetime], int]]:
+    """For each dataset whose answer holds a full page of events or more: how
+    far its old edge reaches, and how many events it returned.
+
+    The edge is the earliest start among the returned events plus
+    ``WHOOP_PURGE_MARGIN``: a stored start can lag the provider's revised one,
+    so an item on a lost page may look newer than the oldest returned item. It
+    is None when no returned event has a known interval (start and end).
+    """
+    dataset_of_event = {_WINDOWED_DATASET_KINDS[name][0]: name for name in purgeable}
+    answered: Dict[str, int] = {}
+    oldest: Dict[str, datetime] = {}
+    for record in new_records:
+        kind = record.get("event_kind")
+        dataset = dataset_of_event.get(kind)
+        if dataset is None:
+            continue
+        answered[dataset] = answered.get(dataset, 0) + 1
+        interval = _purge_interval(kind, record.get("metadata"), links)
+        if interval is not None and (dataset not in oldest or interval[0] < oldest[dataset]):
+            oldest[dataset] = interval[0]
+    edges: Dict[str, Tuple[Optional[datetime], int]] = {}
+    for name, count in answered.items():
+        if count < WHOOP_PAGE_LIMIT:
+            continue
+        edge: Optional[datetime] = None
+        if name in oldest:
+            try:
+                edge = oldest[name] + WHOOP_PURGE_MARGIN
+            except OverflowError:
+                # Within the margin of the latest instant: everything is older.
+                edge = datetime.max.replace(tzinfo=timezone.utc)
+        edges[name] = (edge, count)
+    return edges
+
+
+def _purge_breaker_limit(in_window_events: int) -> int:
+    """The most missing in-window events a dataset tolerates in one answer."""
+    percent_limit = (in_window_events * WHOOP_PURGE_BREAKER_PERCENT + 99) // 100
+    return max(WHOOP_PURGE_BREAKER_MIN_EVENTS, percent_limit)
+
+
+def _never_purged(record: Dict[str, Any]) -> bool:
+    """Records no window answers for: body measurements and the profile.
+
+    Both answer independently of the window, and their deterministic ids
+    overwrite in place on upsert anyway.
+    """
+    return (
+        record.get("observation_kind") == "whoop_body_measurement"
+        or record.get("note_kind") == "whoop_profile"
+    )
+
+
+def _purge_link_intervals(
+    existing: List[Dict[str, Any]],
+    new_records: List[Dict[str, Any]],
+) -> Dict[str, Optional[_Interval]]:
+    """Every sleep and cycle event's interval by record id; this run's version wins."""
+    intervals: Dict[str, Optional[_Interval]] = {}
+    for records in (existing, new_records):
+        for record in records:
+            record_id = record.get("id")
+            if isinstance(record_id, str) and record.get("event_kind") in _PURGE_LINK_KINDS:
+                intervals[record_id] = _item_interval(record.get("metadata"))
+    return intervals
+
+
+def _purge_interval(
+    kind: Optional[str],
+    metadata: Any,
+    links: Dict[str, Optional[_Interval]],
+) -> Optional[_Interval]:
+    """A stored windowed record's provider interval, or None when it is unknown."""
+    source = _PURGE_INTERVAL_SOURCE.get(kind or "")
+    if source == "item":
+        return _item_interval(metadata)
+    if source == "linked_sleep":
+        return _recovery_interval(metadata, links)
+    return None
+
+
+def _recovery_interval(metadata: Any, links: Dict[str, Optional[_Interval]]) -> Optional[_Interval]:
+    """A recovery's interval: its sleep's when that sleep is on record, else its cycle's.
+
+    A sleep on record decides even when its own interval is unknown; the cycle
+    stands in only for a sleep nobody has seen.
+    """
+    if not isinstance(metadata, dict):
+        return None
+    sleep_key = _provider_key(metadata.get("sleep_id"))
+    if sleep_key is not None:
+        sleep_id = "whoop-sleep-%s" % sleep_key
+        if sleep_id in links:
+            return links[sleep_id]
+    cycle_key = _provider_key(metadata.get("cycle_id"))
+    if cycle_key is None:
+        return None
+    return links.get("whoop-cycle-%s" % cycle_key)
+
+
+def _purge_parent_id(kind: Optional[str], metadata: Any) -> Optional[str]:
+    """The event id a metric observation belongs to, derived from its raw item
+    exactly as the normalizers derive it; None without a usable item id."""
+    rule = _PURGE_PARENT_ID.get(kind or "")
+    if rule is None or not isinstance(metadata, dict):
+        return None
+    pattern, (first, second) = rule
+    value = metadata.get(first) or metadata.get(second)
+    if value is None or value == "":
+        return None
+    return pattern % str(value)
+
+
+def _provider_key(value: Any) -> Optional[str]:
+    """A linked provider id (an int or a UUID string) as record ids render it."""
+    if isinstance(value, bool) or not isinstance(value, (int, str)) or value == "":
+        return None
+    return str(value)
+
+
+def _item_interval(metadata: Any) -> Optional[_Interval]:
+    """A raw item's [start, end], read as the normalizers read it; None when unknown."""
+    if not isinstance(metadata, dict):
+        return None
+    lo = _provider_instant(metadata.get("start") or metadata.get("start_time"))
+    hi = _provider_instant(metadata.get("end") or metadata.get("end_time"))
+    if lo is None or hi is None or hi < lo:
+        return None
+    return lo, hi
+
+
+def _provider_instant(value: Any) -> Optional[datetime]:
+    """One provider timestamp as an aware UTC instant, or None.
+
+    Accepts strings only, with ``Z`` or an explicit offset and optional
+    fractional seconds; a naive timestamp is UTC, as in ``_parse_iso_datetime``.
+    A bare date names no instant, with or without a zone designator: the date
+    must be followed by ``T``, ``t`` or a space and then a time, because
+    ``datetime.fromisoformat`` takes any character after the date as the
+    separator and would read ``2026-07-27+02:00`` as 02:00 that day. Anything
+    else, unparseable or out of range, is unknown rather than an error.
+    Instants compare correctly where strings do not: ``...:39.500Z`` sorts
+    before ``...:39Z`` as text.
+    """
+    date_length = len("YYYY-MM-DD")
+    if not isinstance(value, str) or len(value) <= date_length or value[date_length] not in "Tt ":
+        return None
+    try:
+        return _parse_iso_datetime(value)
+    except (TypeError, ValueError, OverflowError, WhoopApiError):
+        return None
+
+
+def purge_existing_whoop_records(
+    db_path: Path,
+    new_records: List[Dict[str, Any]],
+    start: str,
+    end: str,
+    datasets: Iterable[str],
+) -> List[str]:
+    """Delete the WHOOP records a re-sync of ``start``..``end`` replaces.
+
+    Kept for direct callers; the rules live in ``plan_whoop_purge`` (stale only
+    when the record's provider interval lies inside the window with a margin,
+    unknown keeps, the old-edge and unscored-event guards and the per-dataset
+    breaker apply). ``sync_whoop`` plans the purge itself, so that it can report
+    the plan's counts and notes. Returns the deleted ids, sorted.
+    """
+    to_delete = plan_whoop_purge(
+        index.list_records_by_source(db_path, WHOOP_SOURCE_ID),
+        new_records,
+        start,
+        end,
+        datasets,
+    ).ids
     index.delete_records_by_ids(db_path, to_delete)
     return to_delete
 

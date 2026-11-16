@@ -100,6 +100,12 @@ python -m openhealth module --id recovery --payload-json '{ ... }'
 python -m openhealth whoop-auth-url                      # start OAuth, get a URL
 python -m openhealth whoop-exchange-code --code <code>   # exchange the code for tokens
 python -m openhealth whoop-sync --days-back 30           # pull recovery/sleep/strain/HRV
+# --days-back sizes only the first window, before any successful sync. After
+# that, a run without --start re-syncs from 2 days before the last success.
+# Backfill history from an explicit start; back up the index first, as in
+# INTEGRATIONS.md ("Re-sync windows, stale records, and backfills").
+python -m openhealth whoop-sync --no-profile --no-body-measurements \
+  --start <ISO start before the gap>
 python -m openhealth whoop-capabilities                  # what the public API exposes
 python -m openhealth whoop-latest                        # latest synced timestamps
 ```
