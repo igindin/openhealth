@@ -97,6 +97,18 @@ them with `python -m openhealth modules`.
   Google Calendar, manual notes, future Telegram intake).
 - Create source/artifact manifests; preserve provenance and confidence.
 - Pass everything through the same canonical contract — no special-case paths.
+- A window re-sync deletes a stored record only when the window proves it
+  stale. For WHOOP that means the record's provider interval lies inside the
+  fetched window with a 6 h margin at both edges (a recovery takes its linked
+  sleep's interval). Providers filter on timestamps, so an item that ended
+  before the window opened is absent, not deleted: an unknown interval keeps
+  the record, and the attributed date never decides. Only datasets that
+  returned data may lose records, and a per-dataset breaker keeps a dataset's
+  stale records when too many of its in-window events are missing at once.
+  WHOOP pages newest first, so an answer of a full page or more proves nothing
+  missing at or near its oldest item (within the margin), and an item
+  re-emitted without any metric keeps its stored metrics; these guards only
+  ever keep more than the breaker would.
 
 ### Timeline Agent
 

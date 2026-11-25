@@ -84,6 +84,101 @@ Create credentials:
 5. Copy Client ID and Client Secret (the secret is server-side only).
 6. Export `OPENHEALTH_WHOOP_CLIENT_ID`, `OPENHEALTH_WHOOP_CLIENT_SECRET`, `OPENHEALTH_WHOOP_REDIRECT_URI` (optionally `OPENHEALTH_WHOOP_SCOPES`), then run `openhealth whoop-auth-url` and `openhealth whoop-exchange-code` to finish the flow; `openhealth whoop-sync` pulls data.
 
+Honest note: re-syncing a window replaces that window's records, but only for
+datasets that actually returned data. A dataset whose fetch came back empty
+keeps its existing records untouched (an empty response is indistinguishable
+from an API brownout, and deleting on it loses history that cannot be
+recovered), and the sync manifest records this as `Purge skipped for datasets
+without windowed data: …` — expect it routinely, e.g. `workouts` on a rest
+day. That guard covers a fully empty response only; what a non-empty answer
+may delete is described below.
+
+#### Re-sync windows, stale records, and backfills
+
+Every `whoop-sync` fetches cycles, recoveries, sleeps and workouts for one
+window and then replaces what the index holds for it. Without `--start`, the
+window starts two days before the last successful sync and ends now;
+`--days-back` sizes only the first window, before any sync has succeeded.
+WHOOP filters these collections on timestamps, not dates: it returns an item
+whose interval overlaps the window (an in-progress item always) and a recovery
+exactly when it returns that recovery's sleep. An item that ended before the
+window opened is absent from the answer, not deleted.
+
+A stored record that the answer did not re-emit is deleted only when:
+
+- its dataset returned data in this run (a dataset that came back empty keeps
+  its history), and it is not a body measurement or the profile; and
+- its whole provider interval lies inside the window with a 6-hour margin at
+  both edges. Cycles, sleeps and workouts use their own start and end; a
+  recovery uses its linked sleep's, or its cycle's when no sleep is on record.
+  A metric whose parent event came back with other metrics but without that
+  one goes whatever its interval. A parent that came back without any metric
+  (no score: WHOOP is re-scoring it, could not score it, or answered without
+  scores) keeps its stored metrics.
+
+A missing, open or unparseable boundary keeps the record, and the attributed
+date never decides. The margin absorbs WHOOP's later boundary revisions (sleep
+ends move by hours) and holds under any plausible filter model; in exchange,
+an item WHOOP really deleted right at a window edge can survive.
+
+WHOOP pages each collection newest first, 25 items to a page, so an answer
+can lose its oldest page without any sign. When a dataset's answer holds 25
+items or more, nothing that starts before, or within the 6-hour margin after,
+its oldest returned item (a recovery by its sleep, else its cycle) can be
+deleted: those events stay with their metrics, since a stored start can lag a
+revised one. A shorter answer was a single page that was not full, so it
+reached the end of the collection. While syncs keep succeeding, scheduled
+windows of about two days stay well below a page; the first run after a long
+outage spans the whole gap and can reach one.
+
+A per-dataset breaker caps what one answer can delete. When more of a
+dataset's stored events inside the margin window are missing (those kept at
+the old edge included) than max(3, 10 % of them rounded up), the run deletes
+none of that dataset's stale records (metrics dropped by re-emitted items
+that still carry other metrics still go) and says so in the source manifest
+notes. A smaller shortfall goes through: an answer missing up to that many
+events inside the range it covers deletes them with their metrics, and only
+`stale_purged` shows it. On a long backfill window, where a dataset holds a
+few hundred events, a page lost from the middle of the answer (rather than its
+end) can be that size. The command's JSON reports, counts only:
+`stale_purged` (records deleted per dataset that returned data),
+`purge_suppressed` (stale events kept per dataset whose breaker tripped),
+`old_edge_kept` (events kept at the old edge of an answer of a full page or
+more) and `unscored_kept` (stored metrics kept because their event came back
+without any metric). The manifest notes explain the last three whenever they
+are non-empty.
+
+To backfill history (after an outage, or to bring back records an earlier
+release deleted at a window's leading edge), run one sync with an explicit
+start before the gap:
+
+```bash
+python -m openhealth whoop-sync --no-profile --no-body-measurements \
+  --start <ISO start before the gap>
+```
+
+It re-imports every item WHOOP still has from that start until now, and it
+deletes only stored records that lie inside the window with the margin and
+that WHOOP no longer returns. A start earlier than the first sync this index
+ever ran also imports older history the index never held; expect those
+additions. `--no-profile --no-body-measurements` keeps the run to the windowed
+collections, so it needs only their scopes. Before the run, with no sync
+running, back up the index through SQLite's backup API, for example
+`sqlite3 data/index/health_os.sqlite3 ".backup '<backup path>'"`. Afterwards,
+read the JSON: expect `stale_purged` to be 0 for every dataset and
+`purge_suppressed`, `old_edge_kept` and `unscored_kept` to be empty. A
+deletion means the answer lacked events the index held; restore the backup
+unless WHOOP really deleted those items. A non-empty `old_edge_kept` or
+`unscored_kept` deleted nothing, but compare with the backup before trusting
+the run.
+
+A backfill counts as a successful sync, so the next window without `--start`
+starts two days before it. With an explicit past `--end`, a record that
+reaches past the end minus the margin is kept. Such a run still counts as the
+last successful sync, so the next window then skips the time between `--end`
+and two days before the run. For a repair, omit `--end`, or follow up with a
+run that has no `--end` and a `--start` no later than the first run's `--end`.
+
 Rate limits: per-app defaults around 100 req/min and 10,000/day — a daily sync uses a handful of calls.
 
 ### Oura Ring — supported (export connector + live OAuth2 v2 connector)
@@ -103,7 +198,8 @@ Live pull: `connectors/oura_live.py` (CLI: `oura-auth-url`, `oura-exchange-code`
 Honest notes (verified against a live developer app):
 - Legacy Personal Access Tokens were **deprecated in December 2025** — OAuth2 is the only auth method now.
 - Token exchange happens at Oura's Ory identity server (`https://moi.ouraring.com/oauth/v2/ext/oauth-token`), not the legacy `api.ouraring.com/oauth/token` (which now returns `400 invalid_request`). The data API stays on `https://api.ouraring.com/v2`.
-- `daily_spo2` needs the separate `spo2` OAuth scope; `oura-sync` skips any collection the granted token can't reach (with a note) instead of aborting.
+- `daily_spo2` needs the separate `spo2` OAuth scope; `oura-sync` skips any collection the granted token can't reach (with a note) instead of aborting, as long as at least one requested collection succeeds — if every collection fails (an outage, or a single-collection sync without its scope) the sync aborts with an error rather than reporting an empty success. A skipped or empty collection is also excluded from the idempotency purge, so its existing records are never deleted on the strength of a failed fetch. As with WHOOP, that guard covers a fully empty collection, not a truncated one.
+- The API filters `/sleep` by the period's **`bedtime_start`**, not by the `day` it is attributed to, so the night filed under a window's first day (which began the evening before) is not returned by a fetch starting on that day. `oura-sync` therefore fetches period collections one day further back; the extra day's records simply upsert.
 
 ### Garmin — supported (export connector; official API is business-gated)
 
